@@ -315,6 +315,31 @@ fn revisions(match_prefix: &str, revset_filter: Option<&str>) -> Vec<CompletionC
         const CHANGE_ID: usize = 2;
         const REMOTE_BOOKMARK: usize = 3;
         const REVSET_ALIAS: usize = 4;
+        const REVSET_FUNCTION_ALIAS: usize = 5;
+        const BUILTIN_REVSET_FUNCTION: usize = 6;
+        const ZERO_ARG_BUILTIN_REVSET_FUNCTIONS: &[&str] = &[
+            "all",
+            "bookmarks",
+            "conflicts",
+            "divergent",
+            "empty",
+            "git_head",
+            "git_refs",
+            "merges",
+            "mine",
+            "none",
+            "remote_bookmarks",
+            "remote_tags",
+            "root",
+            "signed",
+            "tags",
+            "tracked_remote_bookmarks",
+            "tracked_remote_tags",
+            "untracked_remote_bookmarks",
+            "untracked_remote_tags",
+            "visible_heads",
+            "working_copies",
+        ];
 
         let mut candidates = Vec::new();
 
@@ -442,6 +467,43 @@ fn revisions(match_prefix: &str, revset_filter: Option<&str>) -> Vec<CompletionC
                     CompletionCandidate::new(symbol)
                         .help(Some(help.into()))
                         .display_order(Some(REVSET_ALIAS))
+                }),
+        );
+
+        let function_names = revset_aliases
+            .function_names()
+            .sorted_unstable()
+            .collect_vec();
+        let shadowed_builtin_function_names =
+            function_names.iter().copied().collect::<HashSet<_>>();
+        candidates.extend(
+            function_names
+                .iter()
+                .copied()
+                .filter(|name| format!("{name}()").starts_with(match_prefix))
+                .filter_map(|name| {
+                    let (_, params, defn, doc) = revset_aliases.get_function(name, 0)?;
+                    debug_assert!(params.is_empty());
+                    // Prefer TOML `.doc` over definition text
+                    let help: String = doc.map(|s| s.to_owned()).unwrap_or_else(|| defn.clone());
+                    Some(
+                        CompletionCandidate::new(format!("{name}()"))
+                            .help(Some(help.into()))
+                            .display_order(Some(REVSET_FUNCTION_ALIAS)),
+                    )
+                }),
+        );
+
+        candidates.extend(
+            ZERO_ARG_BUILTIN_REVSET_FUNCTIONS
+                .iter()
+                .copied()
+                .filter(|name| !shadowed_builtin_function_names.contains(name))
+                .map(|name| format!("{name}()"))
+                .filter(|function_call| function_call.starts_with(match_prefix))
+                .map(|function_call| {
+                    CompletionCandidate::new(function_call)
+                        .display_order(Some(BUILTIN_REVSET_FUNCTION))
                 }),
         );
 

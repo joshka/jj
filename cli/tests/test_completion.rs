@@ -976,6 +976,36 @@ fn test_alias_descriptions_in_completions() {
     let output = work_dir.complete_fish(["log", "-r", "min"]);
     insta::assert_snapshot!(output, @"
     mine	All my work
+    mine()
+    [EOF]
+    ");
+
+    // revset function aliases
+    test_env.add_config(indoc! {r#"
+        [revset-aliases]
+        'func_with_doc()'.doc = 'Documented function alias'
+        'func_with_doc()'.definition = '@'
+        'func_plain()' = '@'
+        'func_param(x)' = 'x'
+    "#});
+
+    let output = work_dir.complete_fish(["log", "-r", "func_"]);
+    insta::assert_snapshot!(output, @"
+    func_plain()	@
+    func_with_doc()	Documented function alias
+    [EOF]
+    ");
+
+    // function aliases shadow built-ins by name
+    test_env.add_config(indoc! {r#"
+        [revset-aliases]
+        'root()'.doc = 'Configured root'
+        'root()'.definition = '@'
+    "#});
+
+    let output = work_dir.complete_fish(["log", "-r", "root"]);
+    insta::assert_snapshot!(output, @"
+    root()	Configured root
     [EOF]
     ");
 
@@ -1115,6 +1145,34 @@ fn test_revisions() {
     remote_bookmark@origin	remote_commit
     alias_with_newline	    roots(
     siblings	@-+ ~@
+    builtin_immutable_heads()	trunk() | tags() | untracked_remote_bookmarks()
+    hidden()	~visible()
+    immutable()	::(immutable_heads() | root())
+    immutable_heads()	immutable_bookmark
+    mutable()	~immutable()
+    trunk()	latest(
+    visible()	::visible_heads()
+    all()
+    bookmarks()
+    conflicts()
+    divergent()
+    empty()
+    git_head()
+    git_refs()
+    merges()
+    mine()
+    none()
+    remote_bookmarks()
+    remote_tags()
+    root()
+    signed()
+    tags()
+    tracked_remote_bookmarks()
+    tracked_remote_tags()
+    untracked_remote_bookmarks()
+    untracked_remote_tags()
+    visible_heads()
+    working_copies()
     [EOF]
     ");
 
@@ -1138,6 +1196,34 @@ fn test_revisions() {
     ..remote_bookmark@origin	remote_commit
     ..alias_with_newline	    roots(
     ..siblings	@-+ ~@
+    ..builtin_immutable_heads()	trunk() | tags() | untracked_remote_bookmarks()
+    ..hidden()	~visible()
+    ..immutable()	::(immutable_heads() | root())
+    ..immutable_heads()	immutable_bookmark
+    ..mutable()	~immutable()
+    ..trunk()	latest(
+    ..visible()	::visible_heads()
+    ..all()
+    ..bookmarks()
+    ..conflicts()
+    ..divergent()
+    ..empty()
+    ..git_head()
+    ..git_refs()
+    ..merges()
+    ..mine()
+    ..none()
+    ..remote_bookmarks()
+    ..remote_tags()
+    ..root()
+    ..signed()
+    ..tags()
+    ..tracked_remote_bookmarks()
+    ..tracked_remote_tags()
+    ..untracked_remote_bookmarks()
+    ..untracked_remote_tags()
+    ..visible_heads()
+    ..working_copies()
     [EOF]
     ");
 
@@ -1155,6 +1241,34 @@ fn test_revisions() {
     r	remote_commit
     alias_with_newline	    roots(
     siblings	@-+ ~@
+    builtin_immutable_heads()	trunk() | tags() | untracked_remote_bookmarks()
+    hidden()	~visible()
+    immutable()	::(immutable_heads() | root())
+    immutable_heads()	immutable_bookmark
+    mutable()	~immutable()
+    trunk()	latest(
+    visible()	::visible_heads()
+    all()
+    bookmarks()
+    conflicts()
+    divergent()
+    empty()
+    git_head()
+    git_refs()
+    merges()
+    mine()
+    none()
+    remote_bookmarks()
+    remote_tags()
+    root()
+    signed()
+    tags()
+    tracked_remote_bookmarks()
+    tracked_remote_tags()
+    untracked_remote_bookmarks()
+    untracked_remote_tags()
+    visible_heads()
+    working_copies()
     [EOF]
     ");
 
@@ -1172,6 +1286,34 @@ fn test_revisions() {
     y::r	remote_commit
     y::alias_with_newline	    roots(
     y::siblings	@-+ ~@
+    y::builtin_immutable_heads()	trunk() | tags() | untracked_remote_bookmarks()
+    y::hidden()	~visible()
+    y::immutable()	::(immutable_heads() | root())
+    y::immutable_heads()	immutable_bookmark
+    y::mutable()	~immutable()
+    y::trunk()	latest(
+    y::visible()	::visible_heads()
+    y::all()
+    y::bookmarks()
+    y::conflicts()
+    y::divergent()
+    y::empty()
+    y::git_head()
+    y::git_refs()
+    y::merges()
+    y::mine()
+    y::none()
+    y::remote_bookmarks()
+    y::remote_tags()
+    y::root()
+    y::signed()
+    y::tags()
+    y::tracked_remote_bookmarks()
+    y::tracked_remote_tags()
+    y::untracked_remote_bookmarks()
+    y::untracked_remote_tags()
+    y::visible_heads()
+    y::working_copies()
     [EOF]
     ");
 
@@ -1189,6 +1331,34 @@ fn test_revisions() {
     x	conflicted
     alias_with_newline	    roots(
     siblings	@-+ ~@
+    builtin_immutable_heads()	trunk() | tags() | untracked_remote_bookmarks()
+    hidden()	~visible()
+    immutable()	::(immutable_heads() | root())
+    immutable_heads()	immutable_bookmark
+    mutable()	~immutable()
+    trunk()	latest(
+    visible()	::visible_heads()
+    all()
+    bookmarks()
+    conflicts()
+    divergent()
+    empty()
+    git_head()
+    git_refs()
+    merges()
+    mine()
+    none()
+    remote_bookmarks()
+    remote_tags()
+    root()
+    signed()
+    tags()
+    tracked_remote_bookmarks()
+    tracked_remote_tags()
+    untracked_remote_bookmarks()
+    untracked_remote_tags()
+    visible_heads()
+    working_copies()
     [EOF]
     ");
 
@@ -1213,6 +1383,34 @@ fn test_revisions() {
     remote_bookmark@origin	remote_commit
     alias_with_newline	    roots(
     siblings	@-+ ~@
+    builtin_immutable_heads()	trunk() | tags() | untracked_remote_bookmarks()
+    hidden()	~visible()
+    immutable()	::(immutable_heads() | root())
+    immutable_heads()	immutable_bookmark
+    mutable()	~immutable()
+    trunk()	latest(
+    visible()	::visible_heads()
+    all()
+    bookmarks()
+    conflicts()
+    divergent()
+    empty()
+    git_head()
+    git_refs()
+    merges()
+    mine()
+    none()
+    remote_bookmarks()
+    remote_tags()
+    root()
+    signed()
+    tags()
+    tracked_remote_bookmarks()
+    tracked_remote_tags()
+    untracked_remote_bookmarks()
+    untracked_remote_tags()
+    visible_heads()
+    working_copies()
     [EOF]
     ");
 
@@ -1244,12 +1442,41 @@ fn test_revisions() {
     a=remote_bookmark@origin	remote_commit
     a=alias_with_newline	    roots(
     a=siblings	@-+ ~@
+    a=builtin_immutable_heads()	trunk() | tags() | untracked_remote_bookmarks()
+    a=hidden()	~visible()
+    a=immutable()	::(immutable_heads() | root())
+    a=immutable_heads()	immutable_bookmark
+    a=mutable()	~immutable()
+    a=trunk()	latest(
+    a=visible()	::visible_heads()
+    a=all()
+    a=bookmarks()
+    a=conflicts()
+    a=divergent()
+    a=empty()
+    a=git_head()
+    a=git_refs()
+    a=merges()
+    a=mine()
+    a=none()
+    a=remote_bookmarks()
+    a=remote_tags()
+    a=root()
+    a=signed()
+    a=tags()
+    a=tracked_remote_bookmarks()
+    a=tracked_remote_tags()
+    a=untracked_remote_bookmarks()
+    a=untracked_remote_tags()
+    a=visible_heads()
+    a=working_copies()
     [EOF]
     ");
 
     let output = work_dir.complete_fish(["git", "push", "--named", "a=a"]);
     insta::assert_snapshot!(output, @"
     a=alias_with_newline	    roots(
+    a=all()
     [EOF]
     ");
 }

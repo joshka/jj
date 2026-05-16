@@ -584,8 +584,10 @@ HEAD = '@-'
 
 ### Alias descriptions
 
-Alias descriptions can be surfaced in shell completions by defining the alias
-as a table with `.doc` and `.definition` properties. For example:
+Dynamic shell completions can surface symbol aliases and zero-argument function
+aliases, such as `HEAD` and `trunk()`. Alias descriptions can be shown by
+defining the alias as a table with `.doc` and `.definition` properties. For
+example:
 
 ```toml
 [revset-aliases]
