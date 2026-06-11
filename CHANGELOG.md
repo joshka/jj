@@ -17,6 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### New features
 
 ### Fixed bugs
+* `jj arrange` now scrolls the viewport to keep the selected commit visible
+  when the commit stack is taller than the terminal.
+  [#9033](https://github.com/jj-vcs/jj/issues/9033).
 
 ## [0.43.0] - 2026-07-01
 
