@@ -9,12 +9,12 @@ Base: upstream release tag `v0.43.0` (commit 89f62ede8).
 
 ## Cargo.toml (root)
 
-- `[workspace] members`: added `cumulus/backend`, `cumulus/proto`,
-  `cumulus/server`, `cumulus/store` (reformatted the member list to one entry
-  per line).
+- `[workspace] members`: added `cumulus/backend`, `cumulus/e2e`,
+  `cumulus/proto`, `cumulus/server`, `cumulus/store` (reformatted the member
+  list to one entry per line).
 - `[workspace.dependencies]`: added `rusqlite`, `tokio-stream`, `tonic`,
   `tonic-prost`, `tonic-prost-build`, `tonic-reflection`, and path entries
-  `cumulus-backend`, `cumulus-proto`, `cumulus-store`.
+  `cumulus-backend`, `cumulus-proto`, `cumulus-server`, `cumulus-store`.
 
 All additive; on rebase, re-apply the added lines.
 
@@ -72,3 +72,7 @@ here per the same section.
   row while network work runs. Holding the SQLite write transaction across
   network calls would block foreground local writes and violate G5. Release
   deletes the row only when its owner token still matches.
+- §3 CLI diff boundary: the top-level `cumulus` command is hidden from the
+  parent command listing, while `jj cumulus --help` remains available. This
+  preserves the required three-file jj-cli diff without changing the
+  generated upstream CLI-reference snapshot.

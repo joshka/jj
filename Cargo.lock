@@ -790,6 +790,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cumulus-e2e"
+version = "0.43.0"
+dependencies = [
+ "assert_cmd",
+ "cumulus-backend",
+ "cumulus-server",
+ "jj-cli",
+ "rusqlite",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "cumulus-proto"
 version = "0.43.0"
 dependencies = [

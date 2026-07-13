@@ -1,0 +1,31 @@
+[package]
+name = "cumulus-e2e"
+description = "End-to-end acceptance suite for the Cumulus jj backend"
+publish = false
+autotests = false
+version = { workspace = true }
+license = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+
+[[bin]]
+name = "cumulus-test-jj"
+path = "main.rs"
+
+[[test]]
+name = "e2e"
+path = "e2e.rs"
+
+[dependencies]
+cumulus-backend = { workspace = true }
+jj-cli = { path = "../../cli" }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+cumulus-server = { workspace = true }
+rusqlite = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

@@ -5,6 +5,7 @@ resolver = "3"
 members = [
     "cli",
     "cumulus/backend",
+    "cumulus/e2e",
     "cumulus/proto",
     "cumulus/server",
     "cumulus/store",
@@ -154,6 +155,7 @@ winreg = "0.56"
 # their own (alphabetically sorted) block
 cumulus-backend = { path = "cumulus/backend" }
 cumulus-proto = { path = "cumulus/proto" }
+cumulus-server = { path = "cumulus/server" }
 cumulus-store = { path = "cumulus/store" }
 jj-lib = { path = "lib", version = "0.43.0", default-features = false }
 jj-lib-proc-macros = { path = "lib/proc-macros", version = "0.43.0" }
