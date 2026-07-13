@@ -767,6 +767,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "cumulus-backend"
+version = "0.43.0"
+dependencies = [
+ "assert_matches",
+ "async-trait",
+ "cumulus-proto",
+ "cumulus-store",
+ "futures 0.3.32",
+ "jj-lib",
+ "pollster",
+ "prost",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
 name = "cumulus-proto"
 version = "0.43.0"
 dependencies = [

@@ -9,11 +9,12 @@ Base: upstream release tag `v0.43.0` (commit 89f62ede8).
 
 ## Cargo.toml (root)
 
-- `[workspace] members`: added `cumulus/proto`, `cumulus/server`,
-  `cumulus/store` (reformatted the member list to one entry per line).
+- `[workspace] members`: added `cumulus/backend`, `cumulus/proto`,
+  `cumulus/server`, `cumulus/store` (reformatted the member list to one entry
+  per line).
 - `[workspace.dependencies]`: added `rusqlite`, `tokio-stream`, `tonic`,
   `tonic-prost`, `tonic-prost-build`, `tonic-reflection`, and path entries
-  `cumulus-proto`, `cumulus-store`.
+  `cumulus-backend`, `cumulus-proto`, `cumulus-store`.
 
 All additive; on rebase, re-apply the added lines.
 
