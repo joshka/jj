@@ -1,0 +1,82 @@
+// Operation/view encodings for the Cumulus op log (SPEC.md §5, §6.2).
+//
+// Shapes mirror lib/src/protos/simple_op_store.proto, native (non-legacy)
+// forms only: ref targets are always encoded as alternating positive and
+// negative terms (RefTargetTerm), and local/remote bookmarks are separate
+// fields rather than the legacy combined Bookmark message. Conversions
+// always start from in-memory jj-lib values, so the legacy encodings never
+// occur on the wire.
+
+syntax = "proto3";
+
+package cumulus.v1;
+
+// Ref target term in native form: positive and negative terms alternate,
+// and the term count is always odd. An absent ref is the single term
+// `{value: unset}`.
+message RefTargetTerm {
+  optional bytes value = 1;
+}
+
+enum RemoteRefState {
+  NEW = 0;
+  TRACKED = 1;
+}
+
+message RemoteRef {
+  string name = 1;
+  repeated RefTargetTerm target_terms = 2;
+  RemoteRefState state = 3;
+}
+
+// A named local ref (bookmark, tag, or git ref).
+message NamedRefTarget {
+  string name = 1;
+  repeated RefTargetTerm target_terms = 2;
+}
+
+message RemoteView {
+  string name = 1;
+  repeated RemoteRef bookmarks = 2;
+  repeated RemoteRef tags = 3;
+}
+
+message View {
+  repeated bytes head_ids = 1;
+  repeated NamedRefTarget local_bookmarks = 2;
+  repeated NamedRefTarget local_tags = 3;
+  repeated RemoteView remote_views = 4;
+  repeated NamedRefTarget git_refs = 5;
+  repeated RefTargetTerm git_head = 6;
+  map<string, bytes> wc_commit_ids = 7;
+}
+
+message Operation {
+  bytes view_id = 1;
+  repeated bytes parents = 2;
+  OperationMetadata metadata = 3;
+  repeated CommitPredecessors commit_predecessors = 4;
+  // Whether or not `commit_predecessors` is recorded.
+  bool stores_commit_predecessors = 5;
+}
+
+message Timestamp {
+  int64 millis_since_epoch = 1;
+  int32 tz_offset = 2;
+}
+
+message OperationMetadata {
+  Timestamp start_time = 1;
+  Timestamp end_time = 2;
+  string description = 3;
+  string hostname = 4;
+  string username = 5;
+  bool is_snapshot = 7;
+  optional string workspace_name = 8;
+  map<string, string> attributes = 6;
+}
+
+message CommitPredecessors {
+  bytes commit_id = 1;
+  repeated bytes predecessor_ids = 2;
+}

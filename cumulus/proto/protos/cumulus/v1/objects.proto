@@ -1,0 +1,59 @@
+// Commit/tree object encodings for the Cumulus backend (SPEC.md §5, §6.2).
+//
+// Field shapes and numbers mirror lib/src/protos/simple_store.proto for
+// mechanical conversion; the one addition is `TreeValue.submodule_id`,
+// because Cumulus round-trips GitSubmodule values opaquely (§5) where
+// SimpleBackend rejects them.
+
+syntax = "proto3";
+
+package cumulus.v1;
+
+message TreeValue {
+  message File {
+    bytes id = 1;
+    bool executable = 2;
+    bytes copy_id = 3;
+  }
+
+  oneof value {
+    File file = 2;
+    bytes symlink_id = 3;
+    bytes tree_id = 4;
+    // Git submodule commit id, carried opaquely.
+    bytes submodule_id = 5;
+  }
+}
+
+message Tree {
+  message Entry {
+    string name = 1;
+    TreeValue value = 2;
+  }
+
+  repeated Entry entries = 1;
+}
+
+message Commit {
+  repeated bytes parents = 1;
+  repeated bytes predecessors = 2;
+  // Alternating positive and negative terms.
+  repeated bytes root_tree = 3;
+  // Labels for the terms of a conflict.
+  repeated string conflict_labels = 10;
+  bytes change_id = 4;
+  string description = 5;
+
+  message Timestamp {
+    int64 millis_since_epoch = 1;
+    int32 tz_offset = 2;
+  }
+  message Signature {
+    string name = 1;
+    string email = 2;
+    Timestamp timestamp = 3;
+  }
+  Signature author = 6;
+  Signature committer = 7;
+  optional bytes secure_sig = 9;
+}

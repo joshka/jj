@@ -770,6 +770,7 @@ dependencies = [
 name = "cumulus-proto"
 version = "0.43.0"
 dependencies = [
+ "assert_matches",
  "blake2",
  "digest",
  "jj-lib",

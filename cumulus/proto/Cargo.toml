@@ -26,4 +26,7 @@ tonic-prost = { workspace = true }
 tonic-prost-build = { workspace = true }
 
 [dev-dependencies]
+assert_matches = { workspace = true }
+jj-lib = { workspace = true }
 maplit = { workspace = true }
+prost = { workspace = true }
