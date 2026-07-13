@@ -26,10 +26,10 @@ jj-lib = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
-tokio-stream = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
+tokio-stream = { workspace = true, features = ["net"] }
 toml = { workspace = true }
-tonic = { workspace = true }
+tonic = { workspace = true, features = ["tls-ring"] }
 tonic-prost = { workspace = true }
 tonic-reflection = { workspace = true }
 tracing = { workspace = true }
