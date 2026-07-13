@@ -26,5 +26,9 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use jj_cli::cli_util::CliRunner;
 
 fn main() -> std::process::ExitCode {
-    CliRunner::init().version(env!("JJ_VERSION")).run().into()
+    CliRunner::init()
+        .version(env!("JJ_VERSION"))
+        .add_store_factories(cumulus_backend::store_factories())
+        .run()
+        .into()
 }

@@ -22,6 +22,15 @@ All additive; on rebase, re-apply the added lines.
 
 - Regenerated for the new workspace members and their dependencies.
 
+## jj-cli Run 2 wiring
+
+- `cli/src/commands/mod.rs`: registered the additive `cumulus` command family
+  and dispatch arm.
+- `cli/src/main.rs`: registered the Cumulus backend, op-store, and op-heads
+  factories through `CliRunner::add_store_factories`.
+- `cli/Cargo.toml`: added the `cumulus-backend` dependency used by the new
+  command modules.
+
 ## Run 1 crate extensions
 
 - `cumulus/store/src/store.rs`: added the narrow client-side transaction

@@ -9,15 +9,20 @@
 
 mod backend;
 mod config;
+mod factories;
 mod op_heads;
 mod op_store;
+mod remote;
 mod sync;
 
 pub use backend::CumulusBackend;
 pub use config::CumulusConfig;
 pub use config::CumulusConfigError;
+pub use factories::store_factories;
 pub use op_heads::CumulusOpHeadsStore;
 pub use op_store::CumulusOpStore;
+pub use remote::RemoteConfigError;
+pub use remote::fetch_remote_config;
 pub use sync::SyncEngine;
 pub use sync::SyncError;
 pub use sync::SyncReport;

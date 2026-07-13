@@ -2777,6 +2777,7 @@ dependencies = [
  "clap_mangen",
  "criterion",
  "crossterm",
+ "cumulus-backend",
  "datatest-stable",
  "dunce",
  "erased-serde",

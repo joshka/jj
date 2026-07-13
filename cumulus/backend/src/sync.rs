@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -84,6 +85,12 @@ pub struct SyncEngine {
 }
 
 impl SyncEngine {
+    /// Opens the Cumulus cache under a jj backend store directory.
+    pub fn open(config: CumulusConfig, backend_store_path: &Path) -> Result<Self, SyncError> {
+        let store = Arc::new(Store::open(&backend_store_path.join("cumulus"))?);
+        Self::new(config, store)
+    }
+
     /// Creates a sync engine for a local cache and its remote configuration.
     pub fn new(config: CumulusConfig, store: Arc<Store>) -> Result<Self, SyncError> {
         let token = config
@@ -783,7 +790,9 @@ fn stream_blob_frames(blob: Blob, sender: tokio::sync::mpsc::Sender<v1::PutBlobF
 
 fn connect_lazy(url: &str) -> Result<Channel, SyncError> {
     let endpoint = Endpoint::from_shared(url.to_owned())
-        .map_err(|error| SyncError::Remote(error.to_string()))?;
+        .map_err(|error| SyncError::Remote(error.to_string()))?
+        .connect_timeout(std::time::Duration::from_secs(3))
+        .timeout(std::time::Duration::from_secs(30));
     Ok(endpoint.connect_lazy())
 }
 
