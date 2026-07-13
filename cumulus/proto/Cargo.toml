@@ -1,0 +1,29 @@
+[package]
+name = "cumulus-proto"
+description = "Protocol definitions and jj-lib conversions for the Cumulus backend"
+publish = false
+version = { workspace = true }
+license = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+documentation = { workspace = true }
+
+[lints]
+workspace = true
+
+[dependencies]
+blake2 = { workspace = true }
+digest = { workspace = true }
+jj-lib = { workspace = true }
+prost = { workspace = true }
+thiserror = { workspace = true }
+tonic = { workspace = true }
+tonic-prost = { workspace = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true }
+
+[dev-dependencies]
+maplit = { workspace = true }

@@ -1,0 +1,40 @@
+[package]
+name = "cumulus-server"
+description = "cumulusd, the Cumulus object/op server for Jujutsu"
+publish = false
+version = { workspace = true }
+license = { workspace = true }
+rust-version = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+documentation = { workspace = true }
+
+[[bin]]
+name = "cumulusd"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true }
+cumulus-proto = { workspace = true }
+cumulus-store = { workspace = true }
+futures = { workspace = true }
+jj-lib = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+toml = { workspace = true }
+tonic = { workspace = true }
+tonic-prost = { workspace = true }
+tonic-reflection = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+tempfile = { workspace = true }
