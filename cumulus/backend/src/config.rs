@@ -2,6 +2,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use cumulus_proto::v1;
+use jj_lib::object_id::ObjectId as _;
 use serde::Deserialize;
 use serde::Serialize;
 use thiserror::Error;
@@ -19,6 +20,9 @@ pub struct CumulusConfig {
     /// Optional file containing a bearer token.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_file: Option<PathBuf>,
+    /// Whether op-head updates launch a detached best-effort pusher.
+    #[serde(default = "default_true")]
+    pub auto_push: bool,
     /// Commit id length advertised by the server.
     pub commit_id_length: usize,
     /// Change id length advertised by the server.
@@ -108,10 +112,18 @@ impl CumulusConfig {
                 "root commit or empty tree id has the wrong length".into(),
             ));
         }
+        if info.root_commit_id != cumulus_proto::ids::root_commit_id().to_bytes()
+            || info.empty_tree_id != cumulus_proto::ids::empty_tree_id().to_bytes()
+        {
+            return Err(CumulusConfigError::InvalidRepoInfo(
+                "server root commit or empty tree id is not canonical".into(),
+            ));
+        }
         Ok(Self {
             repo: info.name.clone(),
             url: url.into(),
             token_file,
+            auto_push: true,
             commit_id_length: info.commit_id_length as usize,
             change_id_length: info.change_id_length as usize,
             root_commit_id: hex_encode(&info.root_commit_id),
@@ -164,6 +176,10 @@ impl CumulusConfig {
             field: "empty_tree_id",
         })
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

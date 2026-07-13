@@ -22,6 +22,13 @@ All additive; on rebase, re-apply the added lines.
 
 - Regenerated for the new workspace members and their dependencies.
 
+## Run 1 crate extensions
+
+- `cumulus/store/src/store.rs`: added the narrow client-side transaction
+  helpers required by Run 2 for atomic local view/op outbox writes, local and
+  pulled op-head updates, operation-prefix lookup, and logical push-lock
+  ownership. The existing server ingest and wire behavior are unchanged.
+
 ## Deviations from SPEC.md
 
 Spec §3: pinned source wins on signatures, spec wins on semantics. Recorded
@@ -51,3 +58,8 @@ here per the same section.
   ids at 32 bytes and change ids at 16); cumulus uses full 64-byte
   Blake2b-512, matching `SimpleOpStore`. The server enforces this at `PushOps`
   ingest.
+- §7.3 detached-pusher lock: the push lock is claimed atomically in a short
+  `BEGIN IMMEDIATE` transaction, then represented by its owned `sync_state`
+  row while network work runs. Holding the SQLite write transaction across
+  network calls would block foreground local writes and violate G5. Release
+  deletes the row only when its owner token still matches.

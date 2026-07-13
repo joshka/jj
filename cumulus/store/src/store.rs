@@ -504,6 +504,21 @@ impl Store {
         })
     }
 
+    /// Stores a locally-created view and queues it in the outbox atomically.
+    pub fn put_local_view(&self, id: &[u8], data: &[u8], outbox_kind: i64) -> StoreResult<()> {
+        self.with_tx(|tx| {
+            tx.execute(
+                "INSERT OR IGNORE INTO views (id, data) VALUES (?1, ?2)",
+                params![id, data],
+            )?;
+            tx.execute(
+                "INSERT INTO outbox (kind, id) VALUES (?1, ?2)",
+                params![outbox_kind, id],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Reads a view's stored bytes.
     pub fn get_view(&self, id: &[u8]) -> StoreResult<Option<Vec<u8>>> {
         self.with_conn(|conn| {
@@ -527,6 +542,76 @@ impl Store {
                 )
                 .optional()?;
             Ok(row)
+        })
+    }
+
+    /// Stores a locally-created operation and queues it in the outbox atomically.
+    pub fn put_local_op(
+        &self,
+        id: &[u8],
+        data: &[u8],
+        parents: &[Vec<u8>],
+        view_id: &[u8],
+        outbox_kind: i64,
+    ) -> StoreResult<()> {
+        self.with_tx(|tx| {
+            let view_exists = tx
+                .query_row(
+                    "SELECT 1 FROM views WHERE id = ?1",
+                    params![view_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if !view_exists {
+                return Err(StoreError::MissingView {
+                    op_id: id.to_vec(),
+                    view_id: view_id.to_vec(),
+                });
+            }
+            tx.execute(
+                "INSERT OR IGNORE INTO ops (id, data, view_id) VALUES (?1, ?2, ?3)",
+                params![id, data, view_id],
+            )?;
+            for parent in parents {
+                tx.execute(
+                    "INSERT OR IGNORE INTO op_parents (op_id, parent_id) VALUES (?1, ?2)",
+                    params![id, parent],
+                )?;
+            }
+            tx.execute(
+                "INSERT INTO outbox (kind, id) VALUES (?1, ?2)",
+                params![outbox_kind, id],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Stores an operation received from a remote without adding outbox work.
+    pub fn put_remote_op(
+        &self,
+        id: &[u8],
+        data: &[u8],
+        parents: &[Vec<u8>],
+        view_id: &[u8],
+        view_data: &[u8],
+    ) -> StoreResult<()> {
+        self.with_tx(|tx| {
+            tx.execute(
+                "INSERT OR IGNORE INTO views (id, data) VALUES (?1, ?2)",
+                params![view_id, view_data],
+            )?;
+            tx.execute(
+                "INSERT OR IGNORE INTO ops (id, data, view_id) VALUES (?1, ?2, ?3)",
+                params![id, data, view_id],
+            )?;
+            for parent in parents {
+                tx.execute(
+                    "INSERT OR IGNORE INTO op_parents (op_id, parent_id) VALUES (?1, ?2)",
+                    params![id, parent],
+                )?;
+            }
+            Ok(())
         })
     }
 
@@ -561,6 +646,83 @@ impl Store {
             let mut stmt = conn.prepare("SELECT id FROM op_heads ORDER BY id")?;
             let ids = stmt
                 .query_map([], |row| row.get(0))?
+                .collect::<Result<_, _>>()?;
+            Ok(ids)
+        })
+    }
+
+    /// Adds the deterministic root operation as the initial local head.
+    pub fn init_op_head(&self, root_id: &[u8]) -> StoreResult<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO op_heads (id) VALUES (?1)",
+                params![root_id],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Applies the jj-lib op-head replacement contract atomically.
+    pub fn update_local_op_heads(&self, old_ids: &[Vec<u8>], new_id: &[u8]) -> StoreResult<()> {
+        self.with_tx(|tx| {
+            tx.execute(
+                "INSERT OR IGNORE INTO op_heads (id) VALUES (?1)",
+                params![new_id],
+            )?;
+            for old_id in old_ids {
+                if old_id != new_id {
+                    tx.execute("DELETE FROM op_heads WHERE id = ?1", params![old_id])?;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Adds a pulled operation head while pruning only ancestor heads.
+    /// Concurrent local heads remain, so jj-lib can merge their views.
+    pub fn merge_local_op_head(&self, new_id: &[u8]) -> StoreResult<()> {
+        self.with_tx(|tx| {
+            tx.execute(
+                "WITH RECURSIVE anc(id) AS (
+                     SELECT parent_id FROM op_parents WHERE op_id = ?1
+                     UNION
+                     SELECT p.parent_id FROM op_parents p JOIN anc ON p.op_id = anc.id
+                 )
+                 DELETE FROM op_heads WHERE id IN (SELECT id FROM anc)",
+                params![new_id],
+            )?;
+            let is_ancestor_of_head = tx
+                .query_row(
+                    "WITH RECURSIVE anc(id) AS (
+                         SELECT p.parent_id FROM op_parents p
+                         WHERE p.op_id IN (SELECT id FROM op_heads)
+                         UNION
+                         SELECT p.parent_id FROM op_parents p JOIN anc ON p.op_id = anc.id
+                     )
+                     SELECT 1 FROM anc WHERE id = ?1",
+                    params![new_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if !is_ancestor_of_head {
+                tx.execute(
+                    "INSERT OR IGNORE INTO op_heads (id) VALUES (?1)",
+                    params![new_id],
+                )?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Returns stored operation ids whose lowercase hexadecimal form starts
+    /// with `hex_prefix`.
+    pub fn operation_ids_with_prefix(&self, hex_prefix: &str) -> StoreResult<Vec<Vec<u8>>> {
+        self.with_conn(|conn| {
+            let pattern = format!("{}%", hex_prefix.to_ascii_uppercase());
+            let mut stmt = conn.prepare("SELECT id FROM ops WHERE hex(id) LIKE ?1 ORDER BY id")?;
+            let ids = stmt
+                .query_map(params![pattern], |row| row.get(0))?
                 .collect::<Result<_, _>>()?;
             Ok(ids)
         })
@@ -733,6 +895,29 @@ impl Store {
             conn.execute(
                 "INSERT OR REPLACE INTO sync_state (key, value) VALUES (?1, ?2)",
                 params![key, value],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Atomically acquires a logical cross-process sync lock stored in
+    /// `sync_state`. Returns false when another process owns it.
+    pub fn sync_lock_try_acquire(&self, key: &str, owner: &[u8]) -> StoreResult<bool> {
+        self.with_tx(|tx| {
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO sync_state (key, value) VALUES (?1, ?2)",
+                params![key, owner],
+            )?;
+            Ok(inserted == 1)
+        })
+    }
+
+    /// Releases a logical sync lock only if `owner` still owns it.
+    pub fn sync_lock_release(&self, key: &str, owner: &[u8]) -> StoreResult<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "DELETE FROM sync_state WHERE key = ?1 AND value = ?2",
+                params![key, owner],
             )?;
             Ok(())
         })

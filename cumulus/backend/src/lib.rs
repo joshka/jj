@@ -9,7 +9,16 @@
 
 mod backend;
 mod config;
+mod op_heads;
+mod op_store;
+mod sync;
 
 pub use backend::CumulusBackend;
 pub use config::CumulusConfig;
 pub use config::CumulusConfigError;
+pub use op_heads::CumulusOpHeadsStore;
+pub use op_store::CumulusOpStore;
+pub use sync::SyncEngine;
+pub use sync::SyncError;
+pub use sync::SyncReport;
+pub use sync::SyncStatus;

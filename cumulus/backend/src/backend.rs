@@ -96,14 +96,21 @@ impl CumulusBackend {
         config
             .save(store_path)
             .map_err(|error| BackendInitError(error.into()))?;
-        Self::from_config(store_path, config).map_err(|error| BackendInitError(error.into()))
+        let backend = Self::from_config(store_path, config).map_err(BackendInitError)?;
+        let empty_tree = Tree::default();
+        let data = convert::tree_to_proto(&empty_tree).encode_to_vec();
+        backend
+            .store
+            .put_object(ObjectKind::Tree, backend.empty_tree_id.as_bytes(), &data)
+            .map_err(|error| BackendInitError(error.into()))?;
+        Ok(backend)
     }
 
     /// Loads a backend from its persisted remote metadata.
     pub fn load(store_path: &Path) -> Result<Self, BackendLoadError> {
         let config =
             CumulusConfig::load(store_path).map_err(|error| BackendLoadError(error.into()))?;
-        Self::from_config(store_path, config).map_err(|error| BackendLoadError(error.into()))
+        Self::from_config(store_path, config).map_err(BackendLoadError)
     }
 
     fn from_config(store_path: &Path, config: CumulusConfig) -> Result<Self, BoxError> {
@@ -567,6 +574,7 @@ mod tests {
             repo: "test".into(),
             url: "http://127.0.0.1:1".into(),
             token_file: None,
+            auto_push: false,
             commit_id_length: ids::COMMIT_ID_LENGTH,
             change_id_length: ids::CHANGE_ID_LENGTH,
             root_commit_id: "00".repeat(ids::COMMIT_ID_LENGTH),
