@@ -1,4 +1,4 @@
-//! In-process integration tests for cumulusd (SPEC.md §10, §11 Run-1 exit
+//! In-process integration tests for cumulusd (`cumulus/docs/SPEC.md` §10, §11 Run-1 exit
 //! criteria): health, repo lifecycle, object/blob round trips, the
 //! reachability CTE, op-head semantics, auth, and the UNIMPLEMENTED
 //! surface of SPEC-ONLY RPCs.

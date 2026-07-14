@@ -1,4 +1,4 @@
-//! gRPC service implementations (SPEC.md §6.2).
+//! gRPC service implementations (`cumulus/docs/SPEC.md` §6.2).
 
 pub(crate) mod admin;
 pub(crate) mod index;

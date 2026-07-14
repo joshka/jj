@@ -358,7 +358,7 @@ impl ObjectService for ObjectApi {
     ) -> Result<Response<v1::BlobManifest>, Status> {
         // SPEC-ONLY §13.1.
         Err(Status::unimplemented(
-            "GetBlobManifest is not implemented in v1 (SPEC.md §13.1)",
+            "GetBlobManifest is not implemented in v1 (cumulus/docs/SPEC.md §13.1)",
         ))
     }
 
@@ -370,7 +370,7 @@ impl ObjectService for ObjectApi {
     ) -> Result<Response<Self::GetChunksStream>, Status> {
         // SPEC-ONLY §13.1.
         Err(Status::unimplemented(
-            "GetChunks is not implemented in v1 (SPEC.md §13.1)",
+            "GetChunks is not implemented in v1 (cumulus/docs/SPEC.md §13.1)",
         ))
     }
 }

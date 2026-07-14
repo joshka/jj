@@ -1,4 +1,4 @@
-//! Mapping from store/convert errors to gRPC status codes (SPEC.md §9).
+//! Mapping from store/convert errors to gRPC status codes (`cumulus/docs/SPEC.md` §9).
 
 use cumulus_proto::convert::ConvertError;
 use cumulus_store::StoreError;

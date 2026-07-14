@@ -16,7 +16,7 @@ impl IndexService for IndexApi {
         _request: Request<v1::GetIndexManifestRequest>,
     ) -> Result<Response<v1::IndexManifest>, Status> {
         Err(Status::unimplemented(
-            "IndexService is not implemented in v1 (SPEC.md §13.2)",
+            "IndexService is not implemented in v1 (cumulus/docs/SPEC.md §13.2)",
         ))
     }
 
@@ -27,7 +27,7 @@ impl IndexService for IndexApi {
         _request: Request<v1::GetIndexSegmentsRequest>,
     ) -> Result<Response<Self::GetIndexSegmentsStream>, Status> {
         Err(Status::unimplemented(
-            "IndexService is not implemented in v1 (SPEC.md §13.2)",
+            "IndexService is not implemented in v1 (cumulus/docs/SPEC.md §13.2)",
         ))
     }
 }

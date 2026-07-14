@@ -1,4 +1,4 @@
-//! Cumulus wire protocol and jj-lib conversions (SPEC.md §5, §6.2).
+//! Cumulus wire protocol and jj-lib conversions (`cumulus/docs/SPEC.md` §5, §6.2).
 //!
 //! The `v1` module contains the prost/tonic-generated types for the
 //! `cumulus.v1` proto package. [`convert`] maps between those and jj-lib's

@@ -1,4 +1,4 @@
-// Commit/tree object encodings for the Cumulus backend (SPEC.md §5, §6.2).
+// Commit/tree object encodings for the Cumulus backend (cumulus/docs/SPEC.md §5, §6.2).
 //
 // Field shapes and numbers mirror lib/src/protos/simple_store.proto for
 // mechanical conversion; the one addition is `TreeValue.submodule_id`,

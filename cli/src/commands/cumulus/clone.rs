@@ -109,9 +109,7 @@ pub async fn cmd_cumulus_clone(
             repo.view()
                 .heads()
                 .iter()
-                .filter(|id| {
-                    *id != repo.store().root_commit_id() && Some(*id) != local_wc_id
-                })
+                .filter(|id| *id != repo.store().root_commit_id() && Some(*id) != local_wc_id)
                 .min()
                 .cloned()
         });

@@ -1,4 +1,4 @@
-//! Bearer-token authentication (SPEC.md §6.3).
+//! Bearer-token authentication (`cumulus/docs/SPEC.md` §6.3).
 
 use std::collections::HashMap;
 use std::sync::Arc;

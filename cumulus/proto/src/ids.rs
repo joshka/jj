@@ -1,4 +1,4 @@
-//! Content-addressed id computation (SPEC.md §5).
+//! Content-addressed id computation (`cumulus/docs/SPEC.md` §5).
 //!
 //! Commit/tree/file/symlink ids are the first 32 bytes of a Blake2b-512
 //! hash: commits and trees via jj-lib's `ContentHash` canonical form (the

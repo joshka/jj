@@ -197,7 +197,7 @@ impl OpService for OpApi {
     ) -> Result<Response<v1::UpdateOpHeadsCasResponse>, Status> {
         // SPEC-ONLY §8.2 (Mode B).
         Err(Status::unimplemented(
-            "UpdateOpHeadsCas is not implemented in v1 (SPEC.md §8.2)",
+            "UpdateOpHeadsCas is not implemented in v1 (cumulus/docs/SPEC.md §8.2)",
         ))
     }
 
@@ -209,7 +209,7 @@ impl OpService for OpApi {
     ) -> Result<Response<Self::SubscribeOpHeadsStream>, Status> {
         // SPEC-ONLY §8.2 (Mode B).
         Err(Status::unimplemented(
-            "SubscribeOpHeads is not implemented in v1 (SPEC.md §8.2)",
+            "SubscribeOpHeads is not implemented in v1 (cumulus/docs/SPEC.md §8.2)",
         ))
     }
 }

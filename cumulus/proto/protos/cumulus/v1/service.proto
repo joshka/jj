@@ -1,4 +1,4 @@
-// The cumulusd gRPC surface (SPEC.md §6.2).
+// The cumulusd gRPC surface (cumulus/docs/SPEC.md §6.2).
 //
 // All RPCs carry `repo` except ListRepos/Health. Limits: metadata batches
 // are at most 10k objects / 32 MiB per message; blob frames are 1 MiB.
@@ -18,7 +18,7 @@ message RepoRef {
   string repo = 1;
 }
 
-// Op-log synchronization mode (SPEC.md §8).
+// Op-log synchronization mode (cumulus/docs/SPEC.md §8).
 enum OpMode {
   OP_MODE_UNSPECIFIED = 0;
   // Mode A: local-first with background auto-push (§8.1, v1 default).
@@ -27,7 +27,7 @@ enum OpMode {
   OP_MODE_REMOTE_FIRST = 2;
 }
 
-// Reserved node-completeness declaration (SPEC.md §13.6; unused in v1).
+// Reserved node-completeness declaration (cumulus/docs/SPEC.md §13.6; unused in v1).
 enum Completeness {
   COMPLETENESS_UNSPECIFIED = 0;
   COMPLETENESS_FULL = 1;

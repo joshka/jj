@@ -1,7 +1,8 @@
 # Fork patches
 
-Log of every touch to a pre-existing upstream file on the `cumulus` branch
-(spec §3 diff discipline, goal G8). New code lives in new files under
+Log of every touch to a pre-existing upstream file on the `cumulus` bookmark
+([spec §3](SPEC.md#3-fork--pinning-policy-critical-for-one-shot-success), goal
+G8). New code lives in new files under
 `cumulus/` and is not listed here. When rebasing onto a new upstream release,
 triage conflicts starting from this list.
 

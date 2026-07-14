@@ -2,7 +2,11 @@
 
 Cumulus is jj's native, lazy remote-storage backend. It stores local writes
 immediately, synchronizes operation history in the background, and fetches missing
-content from `cumulusd` only when jj reads it.
+content from `cumulusd` only when jj reads it. The implementation is an experiment
+on the jj v0.43.0 tree, not a production-ready backend or Git forge replacement.
+
+Run 1 and Run 2 are complete. The backend, server, Mode A synchronization, CLI,
+and all 11 acceptance behaviors in the specification are implemented.
 
 ## Quickstart
 
@@ -43,3 +47,10 @@ Use `jj cumulus sync --status` to inspect queued local work and the last
 background-push error. Use `jj cumulus sync` to push queued work and pull remote
 operation history explicitly. All ordinary jj mutations remain local-first when
 the server is unavailable.
+
+## Documentation
+
+- [Implementation status and findings](docs/IMPLEMENTATION.md)
+- [Implementation specification](docs/SPEC.md)
+- [Run 2 wire-contract handoff](docs/RUN2-HANDOFF.md)
+- [Fork patches and rebase guide](docs/FORK_PATCHES.md)

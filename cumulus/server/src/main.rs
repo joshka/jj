@@ -1,4 +1,4 @@
-//! cumulusd: the Cumulus object/op server for Jujutsu (SPEC.md §6).
+//! cumulusd: the Cumulus object/op server for Jujutsu (`cumulus/docs/SPEC.md` §6).
 
 use std::path::PathBuf;
 use std::process::ExitCode;

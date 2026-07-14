@@ -1,4 +1,4 @@
-//! Per-repo store management (SPEC.md §6.3).
+//! Per-repo store management (`cumulus/docs/SPEC.md` §6.3).
 
 use std::collections::HashMap;
 use std::path::PathBuf;

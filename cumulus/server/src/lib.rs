@@ -1,4 +1,4 @@
-//! cumulusd server library (SPEC.md §6).
+//! cumulusd server library (`cumulus/docs/SPEC.md` §6).
 //!
 //! The binary in `main.rs` is a thin wrapper; everything is exposed here so
 //! integration tests can run the server in-process on an ephemeral port.

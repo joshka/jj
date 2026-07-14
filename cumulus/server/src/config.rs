@@ -1,4 +1,4 @@
-//! TOML configuration for cumulusd (SPEC.md §6.3).
+//! TOML configuration for cumulusd (`cumulus/docs/SPEC.md` §6.3).
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

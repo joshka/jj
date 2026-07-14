@@ -1,4 +1,4 @@
-// Operation/view encodings for the Cumulus op log (SPEC.md §5, §6.2).
+// Operation/view encodings for the Cumulus op log (cumulus/docs/SPEC.md §5, §6.2).
 //
 // Shapes mirror lib/src/protos/simple_op_store.proto, native (non-legacy)
 // forms only: ref targets are always encoded as alternating positive and
