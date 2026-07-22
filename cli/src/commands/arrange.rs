@@ -371,21 +371,48 @@ impl State {
         self.swap_commits(&current_id, &parent);
     }
 
-    /// Adjust scroll position so the current selection remains visible.
-    fn clamp_scroll(&mut self, viewport_rows: u16) {
-        let max_visible = (viewport_rows / 2).max(1) as usize;
+    /// Adjust scroll position using prepared row heights so the current
+    /// selection remains visible without leaving empty space below the graph.
+    fn clamp_scroll(&mut self, viewport_rows: u16, row_heights: &[usize]) {
         let total_commits =
             self.external_children.len() + self.current_order.len() + self.external_parents.len();
+        debug_assert_eq!(row_heights.len(), total_commits);
+        if total_commits == 0 {
+            self.scroll_top = 0;
+            return;
+        }
+
+        let viewport_rows = usize::from(viewport_rows);
         let selection_pos = self.external_children.len() + self.current_selection;
+
+        // Do not scroll so far that the bottom of the graph leaves empty space.
+        // If the last row is taller than the viewport, it is still a valid
+        // starting row because its selection marker can remain visible.
+        let mut max_scroll = total_commits - 1;
+        let mut suffix_height = 0usize;
+        for (index, row_height) in row_heights.iter().copied().enumerate().rev() {
+            if suffix_height > 0 && suffix_height.saturating_add(row_height) > viewport_rows {
+                break;
+            }
+            suffix_height = suffix_height.saturating_add(row_height);
+            max_scroll = index;
+            if suffix_height >= viewport_rows {
+                break;
+            }
+        }
+        self.scroll_top = self.scroll_top.min(max_scroll);
 
         if selection_pos < self.scroll_top {
             self.scroll_top = selection_pos;
-        } else if selection_pos >= self.scroll_top.saturating_add(max_visible) {
-            self.scroll_top = selection_pos.saturating_sub(max_visible - 1);
+        } else {
+            let mut height_before_selection: usize =
+                row_heights[self.scroll_top..selection_pos].iter().sum();
+            while self.scroll_top < selection_pos && height_before_selection >= viewport_rows {
+                height_before_selection =
+                    height_before_selection.saturating_sub(row_heights[self.scroll_top]);
+                self.scroll_top += 1;
+            }
         }
-
-        let max_scroll = total_commits.saturating_sub(max_visible);
-        self.scroll_top = self.scroll_top.min(max_scroll);
     }
 
     /// Swap the selected commit with one of its children. Does nothing if there
@@ -492,13 +519,6 @@ fn run_tui<B: ratatui::backend::Backend>(
     }
     let help_line = Line::from(help_spans);
 
-    let mut viewport_rows = terminal
-        .size()
-        .map_err(|e| internal_error(format!("Failed to get terminal size: {e}")))?
-        .height
-        .saturating_sub(1);
-    state.clamp_scroll(viewport_rows);
-
     let render_commit = |commit: &Commit, is_context_node: bool| {
         let mut text_lines = vec![];
         let mut formatter = ui.new_formatter(&mut text_lines).into_labeled("arrange");
@@ -522,8 +542,7 @@ fn run_tui<B: ratatui::backend::Backend>(
                     .split(frame.area());
                 let main_area = layout[0];
                 let help_area = layout[1];
-                viewport_rows = main_area.height;
-                render(&state, render_commit, frame.buffer_mut(), main_area);
+                render(&mut state, &render_commit, frame.buffer_mut(), main_area);
                 frame.render_widget(&help_line, help_area);
             })
             .map_err(|e| internal_error(format!("Failed to draw TUI: {e}")))?;
@@ -550,7 +569,6 @@ fn run_tui<B: ratatui::backend::Backend>(
             if new_state != state && new_state.is_valid() {
                 state = new_state;
                 state.update_commit_order();
-                state.clamp_scroll(viewport_rows);
             }
         }
     }
@@ -585,25 +603,76 @@ fn handle_key_event(event: KeyEvent, mut state: State) -> State {
     state
 }
 
-fn render(
+struct RenderedCommitRow {
+    id: CommitId,
+    text: Vec<u8>,
+    graph: String,
+    height: usize,
+}
+
+/// Prepare every graph row before choosing the viewport so scrolling and
+/// drawing use the same rendered heights.
+fn prepare_rows(
     state: &State,
-    render_commit: impl Fn(&Commit, bool) -> Vec<u8>,
-    buf: &mut Buffer,
-    main_area: Rect,
-) {
+    render_commit: &impl Fn(&Commit, bool) -> Vec<u8>,
+) -> Vec<RenderedCommitRow> {
     let mut row_renderer = GraphRowRenderer::new()
         .output()
         .with_min_row_height(2)
         .build_box_drawing();
-    let mut row_area = main_area;
-    let current_selection_id = state.current_id();
-    let commits_to_render = state
+    state
         .external_children
         .iter()
         .chain(state.current_order.iter())
         .chain(state.external_parents.iter())
-        .skip(state.scroll_top);
-    for id in commits_to_render {
+        .map(|id| {
+            let commit_state = state.commits.get(id).unwrap();
+            let edges = commit_state
+                .parents
+                .iter()
+                .map(|parent| {
+                    if state.commits.contains_key(parent) {
+                        Ancestor::Parent(parent)
+                    } else {
+                        Ancestor::Anonymous
+                    }
+                })
+                .collect_vec();
+            let glyph = match commit_state.action {
+                UiAction::Abandon => "×",
+                UiAction::Keep => "○",
+            };
+            let is_context_node =
+                state.external_children.contains(id) || state.external_parents.contains(id);
+            let text = render_commit(&commit_state.commit, is_context_node);
+
+            // Make graph as tall as the text.
+            let graph_message = "\n".repeat(text.lines().count());
+            let graph = row_renderer.next_row(id, edges, glyph.to_string(), graph_message);
+            let height = Text::from(graph.as_str()).height();
+            RenderedCommitRow {
+                id: id.clone(),
+                text,
+                graph,
+                height,
+            }
+        })
+        .collect()
+}
+
+fn render(
+    state: &mut State,
+    render_commit: &impl Fn(&Commit, bool) -> Vec<u8>,
+    buf: &mut Buffer,
+    main_area: Rect,
+) {
+    let rows = prepare_rows(state, render_commit);
+    let row_heights = rows.iter().map(|row| row.height).collect_vec();
+    state.clamp_scroll(main_area.height, &row_heights);
+
+    let mut row_area = main_area;
+    let current_selection_id = state.current_id();
+    for row in rows.iter().skip(state.scroll_top) {
         // TODO: Make the graph column width depend on what's needed to render the
         // graph.
         let row_layout = Layout::horizontal([
@@ -618,34 +687,18 @@ fn render(
         let action_area = row_layout[2];
         let text_area = row_layout[3];
 
-        if id == current_selection_id {
+        if &row.id == current_selection_id {
             Text::from("▶").render(selection_area, buf);
         }
 
-        let commit_state = state.commits.get(id).unwrap();
+        let commit_state = state.commits.get(&row.id).unwrap();
         let action = &commit_state.action;
 
         // TODO: The graph can be misaligned with the text because sometimes `renderdag`
         // inserts a line of edges before the line with the node and we assume the node
         // is the first line emitted.
-        let edges = commit_state
-            .parents
-            .iter()
-            .map(|parent| {
-                if state.commits.contains_key(parent) {
-                    Ancestor::Parent(parent)
-                } else {
-                    Ancestor::Anonymous
-                }
-            })
-            .collect_vec();
-        let glyph = match action {
-            UiAction::Abandon => "×",
-            UiAction::Keep => "○",
-        };
-
         let is_context_node =
-            state.external_children.contains(id) || state.external_parents.contains(id);
+            state.external_children.contains(&row.id) || state.external_parents.contains(&row.id);
         if !is_context_node {
             let action_text = match action {
                 UiAction::Abandon => "abandon",
@@ -654,14 +707,10 @@ fn render(
             Text::from(action_text).render(action_area, buf);
         }
 
-        let text_lines = render_commit(&commit_state.commit, is_context_node);
-        let text = ansi_to_tui::IntoText::into_text(&text_lines).unwrap();
+        let text = ansi_to_tui::IntoText::into_text(&row.text).unwrap();
         text.render(text_area, buf);
 
-        // Make graph as tall as the text
-        let graph_message = "\n".repeat(text_lines.lines().count());
-        let graph_lines = row_renderer.next_row(id, edges, glyph.to_string(), graph_message);
-        let graph_text = Text::from(graph_lines);
+        let graph_text = Text::from(row.graph.as_str());
         row_area = row_area
             .offset(Offset {
                 x: 0,
@@ -1325,9 +1374,10 @@ mod tests {
 
     fn render_to_string(state: &State, width: u16, height: u16) -> String {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        let mut state = state.clone();
         render(
-            state,
-            render_commit,
+            &mut state,
+            &render_commit,
             &mut buf,
             Rect::new(0, 0, width, height),
         );
@@ -1508,7 +1558,6 @@ commit A line 5",
         )
         .block_on()?;
         state.current_selection = 5;
-        state.clamp_scroll(10);
         insta::assert_snapshot!(render_to_string(&state, 80, 10), @"
   ○         keep      commit F
   │
@@ -1562,7 +1611,6 @@ commit A line 5",
 
         // Viewport can only show 5 commits; selection starts at top.
         state.current_selection = 0;
-        state.clamp_scroll(10);
         insta::assert_snapshot!(render_to_string(&state, 80, 10), @"
 ▶ ○         keep      commit G
   │
@@ -1578,7 +1626,6 @@ commit A line 5",
 
         // Move selection to a commit that would fall below the viewport.
         state.current_selection = 6;
-        state.clamp_scroll(10);
         insta::assert_snapshot!(render_to_string(&state, 80, 10), @"
   ○         keep      commit E
   │
@@ -1595,11 +1642,11 @@ commit A line 5",
         Ok(())
     }
 
-    /// Passing characterization of known-incorrect variable-height scrolling.
-    /// The selected commit should be visible, but the fixed two-row estimate
-    /// leaves it outside the viewport.
+    /// Regression test for variable-height rows. The original scrolling
+    /// implementation treated the graph renderer's minimum row height as exact,
+    /// which left the selected commit outside the viewport.
     #[test]
-    fn test_characterize_scroll_below_multiline_description() -> TestResult {
+    fn test_scroll_keeps_selection_visible_below_multiline_description() -> TestResult {
         let test_repo = TestRepo::init();
         let store = test_repo.repo.store();
         let empty_tree = store.empty_merged_tree();
@@ -1623,18 +1670,15 @@ commit A line 5",
             "},
         );
 
-        // B consumes the entire viewport, but clamp_scroll() counts it as one
-        // of the two commits that should fit and does not scroll to A.
+        // B consumes the entire viewport, so A needs to be scrolled into view
+        // rather than counted as a second visible commit.
         let mut state = State::new(vec![commit_a, commit_b], vec![]).block_on()?;
         state.current_selection = 1;
-        state.clamp_scroll(5);
 
         insta::assert_snapshot!(render_to_string(&state, 80, 5), @"
-          ○         keep      commit B line 1
-          │                   commit B line 2
-          │                   commit B line 3
-          │                   commit B line 4
-          │                   commit B line 5
+        ▶ ○         keep      commit A
+          │
+          ○                   (context)
         ");
         Ok(())
     }
