@@ -674,6 +674,7 @@ fn render(
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
     use maplit::hashset;
     use pollster::FutureExt as _;
     use testutils::CommitBuilderExt as _;
@@ -1591,6 +1592,50 @@ commit A line 5",
   │
         ");
 
+        Ok(())
+    }
+
+    /// Passing characterization of known-incorrect variable-height scrolling.
+    /// The selected commit should be visible, but the fixed two-row estimate
+    /// leaves it outside the viewport.
+    #[test]
+    fn test_characterize_scroll_below_multiline_description() -> TestResult {
+        let test_repo = TestRepo::init();
+        let store = test_repo.repo.store();
+        let empty_tree = store.empty_merged_tree();
+
+        let mut tx = test_repo.repo.start_transaction();
+        let mut create_commit = |parents, description: &str| {
+            tx.repo_mut()
+                .new_commit(parents, empty_tree.clone())
+                .set_description(description)
+                .write_unwrap()
+        };
+        let commit_a = create_commit(vec![store.root_commit_id().clone()], "commit A");
+        let commit_b = create_commit(
+            vec![commit_a.id().clone()],
+            indoc! {"
+                commit B line 1
+                commit B line 2
+                commit B line 3
+                commit B line 4
+                commit B line 5
+            "},
+        );
+
+        // B consumes the entire viewport, but clamp_scroll() counts it as one
+        // of the two commits that should fit and does not scroll to A.
+        let mut state = State::new(vec![commit_a, commit_b], vec![]).block_on()?;
+        state.current_selection = 1;
+        state.clamp_scroll(5);
+
+        insta::assert_snapshot!(render_to_string(&state, 80, 5), @"
+          ○         keep      commit B line 1
+          │                   commit B line 2
+          │                   commit B line 3
+          │                   commit B line 4
+          │                   commit B line 5
+        ");
         Ok(())
     }
 
