@@ -674,6 +674,7 @@ fn render(
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
     use maplit::hashset;
     use pollster::FutureExt as _;
     use testutils::CommitBuilderExt as _;
@@ -1404,11 +1405,13 @@ mod tests {
         };
         let commit_a = create_commit(
             vec![store.root_commit_id().clone()],
-            "commit A line 1
-commit A line 2
-commit A line 3
-commit A line 4
-commit A line 5",
+            indoc! {"
+                commit A line 1
+                commit A line 2
+                commit A line 3
+                commit A line 4
+                commit A line 5
+            "},
         );
 
         let state = State::new(vec![commit_a.clone()], vec![]).block_on()?;
@@ -1509,16 +1512,16 @@ commit A line 5",
         state.current_selection = 5;
         state.clamp_scroll(10);
         insta::assert_snapshot!(render_to_string(&state, 80, 10), @"
-  ○         keep      commit F
-  │
-  ○         keep      commit E
-  │
-  ○         keep      commit D
-  │
-  ○         keep      commit C
-  │
-▶ ○         keep      commit B
-  │
+          ○         keep      commit F
+          │
+          ○         keep      commit E
+          │
+          ○         keep      commit D
+          │
+          ○         keep      commit C
+          │
+        ▶ ○         keep      commit B
+          │
         ");
 
         Ok(())
@@ -1563,34 +1566,70 @@ commit A line 5",
         state.current_selection = 0;
         state.clamp_scroll(10);
         insta::assert_snapshot!(render_to_string(&state, 80, 10), @"
-▶ ○         keep      commit G
-  │
-  ○         keep      commit F
-  │
-  ○         keep      commit E
-  │
-  ○         keep      commit D
-  │
-  ○         keep      commit C
-  │
+        ▶ ○         keep      commit G
+          │
+          ○         keep      commit F
+          │
+          ○         keep      commit E
+          │
+          ○         keep      commit D
+          │
+          ○         keep      commit C
+          │
         ");
 
         // Move selection to a commit that would fall below the viewport.
         state.current_selection = 6;
         state.clamp_scroll(10);
         insta::assert_snapshot!(render_to_string(&state, 80, 10), @"
-  ○         keep      commit E
-  │
-  ○         keep      commit D
-  │
-  ○         keep      commit C
-  │
-  ○         keep      commit B
-  │
-▶ ○         keep      commit A
-  │
+          ○         keep      commit E
+          │
+          ○         keep      commit D
+          │
+          ○         keep      commit C
+          │
+          ○         keep      commit B
+          │
+        ▶ ○         keep      commit A
+          │
         ");
 
+        Ok(())
+    }
+
+    /// Passing characterization of known-incorrect resize behavior. The
+    /// selected commit should be visible, but scrolling remains clamped for the
+    /// previous viewport until state-changing input arrives.
+    #[test]
+    fn test_characterize_scroll_after_viewport_shrinks() -> TestResult {
+        let test_repo = TestRepo::init();
+        let store = test_repo.repo.store();
+        let empty_tree = store.empty_merged_tree();
+
+        let mut tx = test_repo.repo.start_transaction();
+        let mut create_commit = |parents, description: &str| {
+            tx.repo_mut()
+                .new_commit(parents, empty_tree.clone())
+                .set_description(description)
+                .write_unwrap()
+        };
+        let commit_a = create_commit(vec![store.root_commit_id().clone()], "commit A");
+        let commit_b = create_commit(vec![commit_a.id().clone()], "commit B");
+        let commit_c = create_commit(vec![commit_b.id().clone()], "commit C");
+
+        // Model a resize between input events: the scroll position was computed
+        // when all three commits fit, but the next draw has only four rows. No
+        // navigation event occurs to clamp it again.
+        let mut state = State::new(vec![commit_a, commit_b, commit_c], vec![]).block_on()?;
+        state.current_selection = 2;
+        state.clamp_scroll(6);
+
+        insta::assert_snapshot!(render_to_string(&state, 80, 4), @"
+          ○         keep      commit C
+          │
+          ○         keep      commit B
+          │
+        ");
         Ok(())
     }
 
