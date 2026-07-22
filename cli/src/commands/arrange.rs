@@ -492,13 +492,6 @@ fn run_tui<B: ratatui::backend::Backend>(
     }
     let help_line = Line::from(help_spans);
 
-    let mut viewport_rows = terminal
-        .size()
-        .map_err(|e| internal_error(format!("Failed to get terminal size: {e}")))?
-        .height
-        .saturating_sub(1);
-    state.clamp_scroll(viewport_rows);
-
     let render_commit = |commit: &Commit, is_context_node: bool| {
         let mut text_lines = vec![];
         let mut formatter = ui.new_formatter(&mut text_lines).into_labeled("arrange");
@@ -522,7 +515,7 @@ fn run_tui<B: ratatui::backend::Backend>(
                     .split(frame.area());
                 let main_area = layout[0];
                 let help_area = layout[1];
-                viewport_rows = main_area.height;
+                state.clamp_scroll(main_area.height);
                 render(&state, render_commit, frame.buffer_mut(), main_area);
                 frame.render_widget(&help_line, help_area);
             })
@@ -550,7 +543,6 @@ fn run_tui<B: ratatui::backend::Backend>(
             if new_state != state && new_state.is_valid() {
                 state = new_state;
                 state.update_commit_order();
-                state.clamp_scroll(viewport_rows);
             }
         }
     }
@@ -1325,8 +1317,10 @@ mod tests {
 
     fn render_to_string(state: &State, width: u16, height: u16) -> String {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        let mut state = state.clone();
+        state.clamp_scroll(height);
         render(
-            state,
+            &state,
             render_commit,
             &mut buf,
             Rect::new(0, 0, width, height),
@@ -1597,11 +1591,11 @@ mod tests {
         Ok(())
     }
 
-    /// Passing characterization of known-incorrect resize behavior. The
-    /// selected commit should be visible, but scrolling remains clamped for the
-    /// previous viewport until state-changing input arrives.
+    /// Regression test for terminal resize. The original scrolling
+    /// implementation only reclamped after state-changing input, which left the
+    /// selected commit outside a smaller viewport.
     #[test]
-    fn test_characterize_scroll_after_viewport_shrinks() -> TestResult {
+    fn test_scroll_keeps_selection_visible_after_viewport_shrinks() -> TestResult {
         let test_repo = TestRepo::init();
         let store = test_repo.repo.store();
         let empty_tree = store.empty_merged_tree();
@@ -1625,9 +1619,9 @@ mod tests {
         state.clamp_scroll(6);
 
         insta::assert_snapshot!(render_to_string(&state, 80, 4), @"
-          ○         keep      commit C
-          │
           ○         keep      commit B
+          │
+        ▶ ○         keep      commit A
           │
         ");
         Ok(())
