@@ -75,6 +75,8 @@ since Jujutsu can't figure out how to combine these changes. Therefore, Jujutsu
 will materialize the conflict in the working copy using conflict markers, which
 would look like this:
 
+<!-- rumdl-disable merge-conflict -->
+
 ```text
 <<<<<<< conflict 1 of 1
 %%%%%%% diff from: vpxusssl 38d49363 "merge base"
@@ -89,6 +91,8 @@ GRAPE
 ORANGE
 >>>>>>> conflict 1 of 1 ends
 ```
+
+<!-- rumdl-enable merge-conflict -->
 
 The markers `<<<<<<<` and `>>>>>>>` indicate the start and end of a conflict
 respectively. The marker `+++++++` indicates the start of a snapshot, while the
@@ -124,6 +128,8 @@ If you prefer to just see the contents of each side of the conflict without the
 diff, Jujutsu also supports a "snapshot" style, which can be enabled by setting
 the `ui.conflict-marker-style` config option to "snapshot":
 
+<!-- rumdl-disable merge-conflict -->
+
 ```text
 <<<<<<< conflict 1 of 1
 +++++++ rtsqusxu 2768b0b9 "commit A"
@@ -141,10 +147,14 @@ ORANGE
 >>>>>>> conflict 1 of 1 ends
 ```
 
+<!-- rumdl-enable merge-conflict -->
+
 Some tools expect Git-style conflict markers, so Jujutsu also supports [Git's
 "diff3" style](https://git-scm.com/docs/git-merge#_how_conflicts_are_presented)
 conflict markers by setting the `ui.conflict-marker-style` config option to
 "git":
+
+<!-- rumdl-disable merge-conflict -->
 
 ```text
 <<<<<<< rtsqusxu 2768b0b9 "commit A"
@@ -162,6 +172,8 @@ ORANGE
 >>>>>>> ysrnknol 7a20f389 "commit B"
 ```
 
+<!-- rumdl-enable merge-conflict -->
+
 This conflict marker style only supports 2-sided conflicts though, so it falls
 back to the similar "snapshot" conflict markers if there are more than 2 sides
 to the conflict.
@@ -173,6 +185,8 @@ instance, a line could start with `=======`, which looks like a Git-style
 conflict marker. To ensure that it's always unambiguous which lines are conflict
 markers and which are just part of the file contents, `jj` sometimes uses
 conflict markers which are longer than normal:
+
+<!-- rumdl-disable merge-conflict -->
 
 ```text
 <<<<<<<<<<<<<<< conflict 1 of 1
@@ -186,6 +200,8 @@ New Heading
 ===========
 >>>>>>>>>>>>>>> conflict 1 of 1 ends
 ```
+
+<!-- rumdl-enable merge-conflict -->
 
 ## Conflicts with missing terminating newline
 
@@ -208,6 +224,8 @@ added the missing newline character to make `grape\n`, the resulting conflict
 would look like this (`␊` demonstrates the `\n` character explicitly; note that
 the last line doesn't have the terminating `\n` character):
 
+<!-- rumdl-disable merge-conflict -->
+
 ```text
 <<<<<<< conflict 1 of 1␊
 +++++++ tlwwkqxk d121763d "commit A" (no terminating newline)␊
@@ -218,6 +236,8 @@ grapefruit␊
 +␊
 >>>>>>> conflict 1 of 1 ends
 ```
+
+<!-- rumdl-enable merge-conflict -->
 
 Therefore, a resolution of this conflict could be `grapefruit\n`, with the
 terminating newline character added.

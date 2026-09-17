@@ -316,6 +316,8 @@ Now let's resolve the conflict in B2. We'll do that by creating a new commit on
 top of B2. Once we've resolved the conflict, we'll squash the conflict
 resolution into the conflicted B2. That might look like this:
 
+<!-- rumdl-disable merge-conflict -->
+
 ```shell
 $ jj new puqltutt  # Replace the ID by what you have for B2
 Working copy  (@) now at: zxoosnnp c7068d1c (conflict) (empty) (no description set)
@@ -378,6 +380,8 @@ $ jj log
 │  (empty) Merge pull request #6 from Spaceghost/patch-1
 ~
 ```
+
+<!-- rumdl-enable merge-conflict -->
 
 Note that commit C automatically got rebased on top of the resolved B2, and that
 C is also resolved (since it modified only a different file).
