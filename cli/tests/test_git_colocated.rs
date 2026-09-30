@@ -1139,14 +1139,16 @@ fn test_git_colocated_concurrent_checkout() -> TestResult {
         "commit",
         "--config=ui.editor=['sh', '-c', 'git checkout -q HEAD^']",
     ]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
     Warning: Failed to update Git HEAD ref
-    Caused by: The reference "HEAD" should have content dc0b92dfa0af129b2929fa1789fc896b075782b2, actual content was 091e39feb0aba632ab9a9503ceb1dddeac4dd496
+    Caused by:
+    1: reference transaction preparation failed
+    2: reference value did not match the expected value (found 091e39feb0aba632ab9a9503ceb1dddeac4dd496)
     Working copy  (@) now at: mzvwutvl cf0ddbb4 (empty) (no description set)
     Parent commit (@-)      : zsuskuln b6786455 (empty) commit3
     [EOF]
-    "#);
+    ");
 
     // git_head() isn't updated because the export failed
     insta::assert_snapshot!(work_dir.run_jj(["log", "--summary", "--ignore-working-copy"]), @"

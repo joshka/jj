@@ -1668,12 +1668,11 @@ to the current parents may contain changes from multiple commits.
     #[cfg(feature = "git")]
     #[instrument(skip_all)]
     pub fn base_ignores(&self) -> Result<Arc<GitIgnoreFile>, GitIgnoreError> {
-        let get_excludes_file_path = |config: &gix::config::File| -> Option<PathBuf> {
-            // TODO: maybe use path() and interpolate(), which can process non-utf-8
-            // path on Unix.
-            if let Some(value) = config.string("core.excludesFile") {
+        let get_excludes_file_path = |config: &girt::Config| -> Option<PathBuf> {
+            // TODO: process non-utf-8 path on Unix.
+            if let Some(value) = config.string("core", None, "excludesFile") {
                 let home_dir = self.env.command.config_env().home_dir();
-                let path = str::from_utf8(&value)
+                let path = str::from_utf8(value)
                     .ok()
                     .map(|value| jj_lib::file_util::expand_home_path(value, home_dir))?;
                 // The configured path is usually absolute, but if it's relative,
@@ -1696,14 +1695,14 @@ to the current parents may contain changes from multiple commits.
         let mut git_ignores = GitIgnoreFile::empty();
         if let Ok(git_backend) = jj_lib::git::get_git_backend(self.repo().store()) {
             let git_repo = git_backend.git_repo();
-            if let Some(excludes_file_path) = get_excludes_file_path(&git_repo.config_snapshot()) {
+            if let Some(excludes_file_path) = get_excludes_file_path(git_repo.config()) {
                 git_ignores = git_ignores.chain_with_file(RepoPath::root(), excludes_file_path)?;
             }
             git_ignores = git_ignores.chain_with_file(
                 RepoPath::root(),
                 git_backend.git_repo_path().join("info").join("exclude"),
             )?;
-        } else if let Ok(git_config) = gix::config::File::from_globals()
+        } else if let Some(git_config) = jj_lib::git::global_git_config()
             && let Some(excludes_file_path) = get_excludes_file_path(&git_config)
         {
             git_ignores = git_ignores.chain_with_file(RepoPath::root(), excludes_file_path)?;

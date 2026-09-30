@@ -235,7 +235,7 @@ pub async fn cmd_git_fetch(
     let import_options = load_git_import_options(ui, &git_settings, &remote_settings)?;
     let mut git_fetch = GitFetch::new(
         tx.repo_mut(),
-        git_settings.to_subprocess_options(),
+        git_settings.to_transport_options(),
         &import_options,
     )?;
 

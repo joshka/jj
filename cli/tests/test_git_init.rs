@@ -429,16 +429,15 @@ fn test_git_init_external_non_existent_git_directory() {
     test_env.add_config("git.colocate = true");
     let work_dir = test_env.work_dir("repo");
     let output = test_env.run_jj_in(".", ["git", "init", "repo", "--git-repo", "repo"]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
     Error: Failed to access the repository
     Caused by:
     1: Failed to open git repository
-    2: "$TEST_ENV/repo" does not appear to be a git repository
-    3: Missing HEAD at '.git/HEAD'
+    2: no repository at $TEST_ENV/repo
     [EOF]
     [exit status: 1]
-    "#);
+    ");
     let jj_path = work_dir.root().join(".jj");
     assert!(!jj_path.exists());
 }
@@ -1225,28 +1224,26 @@ fn test_git_init_with_invalid_gitlink() {
     // `jj git init --colocate` first checks for a worktree, make it fail
     // subsequent errors are not specific to colocation
     let output = work_dir.run_jj(["git", "init", "--colocate"]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
     Error: Failed to access the repository
     Caused by:
     1: Failed to open git repository
-    2: "$TEST_ENV/repo/.git" does not appear to be a git repository
-    3: Format should be 'gitdir: <path>', but got: "invalid"
+    2: malformed repository metadata at $TEST_ENV/repo/.git: expected gitdir: indirection
     [EOF]
     [exit status: 1]
-    "#);
+    ");
 
     let output = work_dir.run_jj(["git", "init", "--git-repo", "."]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
     Error: Failed to access the repository
     Caused by:
     1: Failed to open git repository
-    2: "$TEST_ENV/repo/.git" does not appear to be a git repository
-    3: Format should be 'gitdir: <path>', but got: "invalid"
+    2: malformed repository metadata at $TEST_ENV/repo/.git: expected gitdir: indirection
     [EOF]
     [exit status: 1]
-    "#);
+    ");
 }
 
 #[test]

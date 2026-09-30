@@ -69,7 +69,7 @@ async fn run_custom_command(
                 let backend: Box<dyn Backend> = Box::new(GitBackend::init_internal(
                     settings,
                     store_path,
-                    gix::hash::Kind::default(),
+                    jj_lib::git_backend::ObjectFormat::Sha1,
                 )?);
                 Ok(backend)
             };

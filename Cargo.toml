@@ -67,7 +67,8 @@ gix = { version = "0.87.1", default-features = false, features = [
     "sha1",
     "sha256",
 ] }
-gix-ignore = { version = "0.22.1" }
+# Local path until girt publishes the jj-backend API; see docs/technical/girt.md.
+girt = "0.3.1"
 globset = "0.4.18"
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more"] }
 indexmap = { version = "2.14.0", features = ["serde"] }

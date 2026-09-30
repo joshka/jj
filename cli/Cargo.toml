@@ -78,7 +78,7 @@ dunce = { workspace = true }
 erased-serde = { workspace = true }
 etcetera = { workspace = true }
 futures = { workspace = true }
-gix = { workspace = true, optional = true }
+girt = { workspace = true, optional = true }
 globset = { workspace = true }
 indexmap = { workspace = true }
 indoc = { workspace = true }
@@ -121,6 +121,7 @@ libc = { workspace = true }
 nix = { workspace = true, features = [ "signal" ] }
 
 [dev-dependencies]
+gix = { workspace = true }
 anstream = { workspace = true }
 assert_cmd = { workspace = true }
 async-trait = { workspace = true }
@@ -137,7 +138,7 @@ jj-cli = { path = ".", features = ["test-fakes"], default-features = false }
 [features]
 default = ["watchman", "git"]
 bench = ["dep:criterion"]
-git = ["jj-lib/git", "dep:gix"]
+git = ["jj-lib/git", "dep:girt"]
 test-fakes = ["jj-lib/testing"]
 watchman = ["jj-lib/watchman"]
 

@@ -362,8 +362,14 @@ fn test_git_colocation_enable_disable_with_pack_files() {
     // (memory-mapped) for as long as the Git repository is open, and Windows
     // refuses to rename a directory that contains an open file. Moving the Git
     // repository between .git and .jj/repo/store/git used to fail with "Access
-    // is denied" once a pack existed.
-    work_dir.run_jj(["util", "gc"]).success();
+    // is denied" once a pack existed. `jj util gc` doesn't repack, so Git
+    // builds the pack.
+    let output = std::process::Command::new("git")
+        .current_dir(workspace_root)
+        .args(["repack", "-adq"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
     assert!(has_pack_files(&workspace_root.join(".git")));
 
     let output = work_dir.run_jj(["git", "colocation", "disable"]);

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use gix::Url;
-use gix::remote::Direction;
 use jj_lib::git;
 use jj_lib::ref_name::RemoteName;
 use jj_lib::ref_name::RemoteNameBuf;
@@ -83,27 +81,29 @@ fn warn_if_remote_url_matches(
     // Git uses the fetch URL for push when no push URL is configured.
     let new_push_url = new_push_url.unwrap_or(new_fetch_url);
     let mut warned = false;
-    for remote_name in git_repo.remote_names() {
+    for remote_name in git::configured_remote_names(&git_repo) {
         // Ignore the remote that was just added.
-        if remote_name == new_remote.as_str() {
+        if *remote_name == *new_remote {
             continue;
         }
         // Ignore empty or unloadable remote sections for this advisory warning.
-        let Some(Ok(remote)) = git_repo.try_find_remote_without_url_rewrite(&**remote_name) else {
+        let Ok(Some(remote)) = git::try_find_remote_without_url_rewrite(&git_repo, &remote_name)
+        else {
             continue;
         };
-        let remote_fetch_url = remote.url(Direction::Fetch).map(Url::to_bstring);
-        let remote_push_url = remote.url(Direction::Push).map(Url::to_bstring);
+        let remote_fetch_url = remote.fetch_url();
+        let remote_push_url = remote.push_url();
         let remote_url_matches = [remote_fetch_url, remote_push_url]
             .iter()
             .flatten()
-            .any(|remote_url| remote_url == new_fetch_url || remote_url == new_push_url);
+            .any(|remote_url| **remote_url == *new_fetch_url || **remote_url == *new_push_url);
         // Don't print the URL itself because remote URLs can contain credentials,
         // such as user:password or token path segments.
         if remote_url_matches {
             writeln!(
                 ui.warning_default(),
-                "Remote {remote_name} already uses the same URL."
+                "Remote {remote_name} already uses the same URL.",
+                remote_name = remote_name.as_str()
             )?;
             warned = true;
         }

@@ -587,7 +587,7 @@ jj currently does not support partial clones. To use jj with this repository, tr
                 GitFetchError::RemoteName(_) => {
                     user_error(err).hinted("Run `jj git remote rename` to give a different name.")
                 }
-                GitFetchError::RejectedUpdates(_) | GitFetchError::Subprocess(_) => user_error(err),
+                GitFetchError::RejectedUpdates(_) | GitFetchError::Transport(_) => user_error(err),
             }
         }
     }
@@ -618,7 +618,7 @@ jj currently does not support partial clones. To use jj with this repository, tr
                 GitPushError::RemoteName(_) => {
                     user_error(err).hinted("Run `jj git remote rename` to give a different name.")
                 }
-                GitPushError::Subprocess(_) => user_error(err),
+                GitPushError::Transport(_) => user_error(err),
                 GitPushError::UnexpectedBackend(_) => user_error(err),
             }
         }

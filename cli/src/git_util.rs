@@ -18,19 +18,18 @@ use std::error;
 use std::io;
 use std::io::Write as _;
 use std::iter;
-use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use bstr::ByteSlice as _;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
 use indoc::writedoc;
 use itertools::Itertools as _;
 use jj_lib::git;
 use jj_lib::git::FailedRefExportReason;
+use jj_lib::git::GitCredentialPrompt;
 use jj_lib::git::GitExportStats;
 use jj_lib::git::GitImportOptions;
 use jj_lib::git::GitImportRefUpdate;
@@ -41,7 +40,6 @@ use jj_lib::git::GitRefKind;
 use jj_lib::git::GitSettings;
 use jj_lib::git::GitSidebandLineTerminator;
 use jj_lib::git::GitSubprocessCallback;
-use jj_lib::git::GitSubprocessOptions;
 use jj_lib::git_backend::GitRepoAtWorkdirError;
 use jj_lib::op_store::RemoteRefState;
 use jj_lib::repo::ReadonlyRepo;
@@ -78,31 +76,31 @@ pub fn is_colocated_git_workspace(workspace: &Workspace) -> Result<bool, Command
 
 /// Parses user-specified remote URL or path to absolute form.
 pub fn absolute_git_url(cwd: &Path, source: &str) -> Result<String, CommandError> {
-    // Git appears to turn URL-like source to absolute path if local git directory
-    // exits, and fails because '$PWD/https' is unsupported protocol. Since it would
-    // be tedious to copy the exact git (or libgit2) behavior, we simply let gix
-    // parse the input as URL, rcp-like, or local path.
-    let mut url = gix::url::parse(source).map_err(cli_error)?;
-    url.canonicalize(cwd).map_err(user_error)?;
-    // As of gix 0.68.0, the canonicalized path uses platform-native directory
-    // separator, which isn't compatible with libgit2 on Windows.
-    if url.scheme == gix::url::Scheme::File {
-        url.path = gix::path::to_unix_separators_on_windows(mem::take(&mut url.path)).into_owned();
-    }
+    // The input is parsed as URL, rcp-like, or local path. Local paths are made
+    // absolute relative to cwd.
+    let url =
+        girt::remote::canonicalize_user_url(source.as_bytes(), cwd).map_err(|err| match err {
+            girt::remote::UserUrlError::Parse(_) => cli_error(err),
+            err => user_error(err),
+        })?;
     // It's less likely that cwd isn't utf-8, so just fall back to original source.
-    Ok(String::from_utf8(url.to_bstring().into()).unwrap_or_else(|_| source.to_owned()))
+    Ok(String::from_utf8(url).unwrap_or_else(|_| source.to_owned()))
 }
 
 /// Converts a git remote URL to a normalized HTTPS URL for web browsing.
 ///
 /// Returns `None` if the URL cannot be converted.
-fn git_remote_url_to_web(url: &gix::Url) -> Option<String> {
-    if url.scheme == gix::url::Scheme::File || url.host().is_none() {
+fn git_remote_url_to_web(url: &[u8]) -> Option<String> {
+    let url = girt::remote::ParsedUrl::parse(url).ok()?;
+    if matches!(
+        url.protocol(),
+        girt::remote::Protocol::File | girt::remote::Protocol::Local
+    ) {
         return None;
     }
 
-    let host = url.host()?;
-    let path = url.path.to_str().ok()?;
+    let host = str::from_utf8(url.host()?).ok()?;
+    let path = str::from_utf8(url.path()).ok()?;
     let path = path.trim_matches('/');
     let path = path.strip_suffix(".git").unwrap_or(path);
 
@@ -115,10 +113,8 @@ fn git_remote_url_to_web(url: &gix::Url) -> Option<String> {
 /// Returns `None` if the remote doesn't exist or its URL cannot be converted.
 pub fn get_remote_web_url(repo: &ReadonlyRepo, remote_name: &str) -> Option<String> {
     let git_repo = git::get_git_repo(repo.store()).ok()?;
-    let remote = git_repo.try_find_remote(remote_name)?.ok()?;
-    let url = remote
-        .url(gix::remote::Direction::Fetch)
-        .or_else(|| remote.url(gix::remote::Direction::Push))?;
+    let remote = git::try_find_active_remote(&git_repo, remote_name.as_ref()).ok()??;
+    let url = remote.fetch_url().or_else(|| remote.push_url())?;
     git_remote_url_to_web(url)
 }
 
@@ -198,6 +194,16 @@ impl GitSubprocessCallback for GitSubprocessUi<'_> {
         term: Option<GitSidebandLineTerminator>,
     ) -> io::Result<()> {
         self.write_sideband(b"remote: ", message, term)
+    }
+
+    fn credential(&mut self, url: &str, prompt: GitCredentialPrompt) -> Option<String> {
+        let result = match prompt {
+            GitCredentialPrompt::Username => self.ui.prompt(&format!("Username for '{url}'")),
+            GitCredentialPrompt::Password => {
+                self.ui.prompt_password(&format!("Password for '{url}': "))
+            }
+        };
+        result.ok()
     }
 }
 
@@ -572,10 +578,9 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
 pub fn unlink_git_worktree(
     ui: &Ui,
     store: &Arc<Store>,
-    subprocess_options: GitSubprocessOptions,
     worktree_path: &Path,
 ) -> Result<(), CommandError> {
-    match git::unlink_worktree(store, subprocess_options, worktree_path) {
+    match git::unlink_worktree(store, worktree_path) {
         Ok(false) => {}
         Ok(true) => writeln!(
             ui.status(),
@@ -604,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_absolute_git_url() {
-        // gix::Url::canonicalize() works even if the path doesn't exist.
+        // Canonicalization works even if the path doesn't exist.
         // However, we need to ensure that no symlinks exist at the test paths.
         let temp_dir = testutils::new_temp_dir();
         let cwd = dunce::canonicalize(temp_dir.path()).unwrap();
@@ -643,7 +648,7 @@ mod tests {
             absolute_git_url(&cwd, "custom://example.org/foo.git").unwrap(),
             "custom://example.org/foo.git"
         );
-        // Password shouldn't be redacted (gix::Url::to_string() would do)
+        // Password shouldn't be redacted
         assert_eq!(
             absolute_git_url(&cwd, "https://user:pass@example.org/").unwrap(),
             "https://user:pass@example.org/"
@@ -664,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_git_remote_url_to_web() {
-        let to_web = |s| git_remote_url_to_web(&gix::Url::try_from(s).unwrap());
+        let to_web = |s: &str| git_remote_url_to_web(s.as_bytes());
 
         // SSH URL
         assert_eq!(

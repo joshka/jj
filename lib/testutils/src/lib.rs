@@ -123,6 +123,15 @@ pub fn hermetic_git() {
     }
 }
 
+/// Object format for Git repositories created by tests: SHA-1 unless the
+/// `JJ_TEST_OBJECT_FORMAT` environment variable is `sha256`.
+pub fn test_object_format() -> jj_lib::git_backend::ObjectFormat {
+    match std::env::var("JJ_TEST_OBJECT_FORMAT").as_deref() {
+        Ok("sha256") => jj_lib::git_backend::ObjectFormat::Sha256,
+        _ => jj_lib::git_backend::ObjectFormat::Sha1,
+    }
+}
+
 pub fn new_temp_dir() -> TempDir {
     hermetic_git();
     tempfile::Builder::new()
@@ -257,7 +266,7 @@ impl TestRepoBackend {
             Self::Git => Ok(Box::new(GitBackend::init_internal(
                 settings,
                 store_path,
-                gix::hash::Kind::default(),
+                test_object_format(),
             )?)),
             Self::Simple => Ok(Box::new(SimpleBackend::init(store_path))),
             Self::Test => Ok(Box::new(env.test_backend_factory.init(store_path))),
@@ -370,13 +379,10 @@ impl TestWorkspace {
         let env = TestEnvironment::init();
         let workspace_root = env.root().join("repo");
         fs::create_dir(&workspace_root).unwrap();
-        let (workspace, repo) = Workspace::init_colocated_git(
-            &user_settings(),
-            &workspace_root,
-            gix::hash::Kind::default(),
-        )
-        .block_on()
-        .unwrap();
+        let (workspace, repo) =
+            Workspace::init_colocated_git(&user_settings(), &workspace_root, test_object_format())
+                .block_on()
+                .unwrap();
         Self {
             env,
             workspace,

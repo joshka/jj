@@ -17,14 +17,13 @@ use std::fmt::Debug;
 use std::io::Write as _;
 use std::sync::Arc;
 
-use bstr::BStr;
 use futures::TryStreamExt as _;
 use jj_lib::backend::CommitId;
 use jj_lib::commit::Commit;
 use jj_lib::git;
 use jj_lib::git::GitPushOptions;
 use jj_lib::git::GitRefUpdate;
-use jj_lib::git::GitSubprocessOptions;
+use jj_lib::git::GitTransportOptions;
 use jj_lib::merge::Diff;
 use jj_lib::object_id::ObjectId as _;
 use jj_lib::repo::Repo as _;
@@ -274,11 +273,12 @@ fn calculate_push_remote(
     remote: Option<&str>,
 ) -> Result<String, CommandError> {
     let git_repo = git::get_git_repo(store)?; // will fail if not a git repo
-    let remotes = git_repo.remote_names();
+    let remotes = git::configured_remote_names(&git_repo);
+    let has_remote = |name: &str| remotes.iter().any(|remote| remote.as_str() == name);
 
     // If --remote was provided, use that
     if let Some(remote) = remote {
-        if remotes.contains(BStr::new(&remote)) {
+        if has_remote(remote) {
             return Ok(remote.to_string());
         }
         return Err(user_error(format!(
@@ -288,7 +288,7 @@ fn calculate_push_remote(
 
     // If the Gerrit-specific config was set, use that
     if let Ok(remote) = settings.get_string("gerrit.default-remote") {
-        if remotes.contains(BStr::new(&remote)) {
+        if has_remote(&remote) {
             return Ok(remote);
         }
         return Err(user_error(format!(
@@ -297,12 +297,12 @@ fn calculate_push_remote(
     }
 
     // If a general push remote was configured, use that
-    if let Some(remote) = git_repo.remote_default_name(gix::remote::Direction::Push) {
-        return Ok(remote.to_string());
+    if let Some(remote) = git::default_push_remote_name(&git_repo) {
+        return Ok(remote.as_str().to_owned());
     }
 
     // If there is a Git remote called "gerrit", use that
-    if remotes.iter().any(|r| r == "gerrit") {
+    if has_remote("gerrit") {
         return Ok("gerrit".to_owned());
     }
 
@@ -530,7 +530,7 @@ pub async fn cmd_gerrit_upload(
         .await
         .map_err(internal_error)?;
 
-    let subprocess_options = GitSubprocessOptions::from_settings(command.settings())?;
+    let transport_options = GitTransportOptions::from_settings(command.settings())?;
     let remote = calculate_push_remote(&store, command.settings(), args.remote.as_deref())?;
     let remote_branch = calculate_push_ref(command.settings(), args.remote_branch.clone())?;
 
@@ -688,21 +688,23 @@ pub async fn cmd_gerrit_upload(
         }
 
         let new_commit = old_to_new.get(head).unwrap();
+        let object_format = git::get_git_backend(tx.repo().store())?.object_format();
 
         // how do we get better errors from the remote? 'git push' tells us
         // about rejected refs AND ALSO '(nothing changed)' when there are no
         // changes to push, but we don't get that here.
         let push_stats = git::push_updates(
             tx.repo_mut(),
-            subprocess_options.clone(),
+            transport_options.clone(),
             remote.as_ref(),
             &[GitRefUpdate {
                 qualified_name: remote_ref.clone().into(),
                 targets: Diff::new(
                     None,
-                    Some(gix::ObjectId::from_bytes_or_panic(
-                        new_commit.id().as_bytes(),
-                    )),
+                    Some(
+                        girt::ObjectId::from_bytes(object_format, new_commit.id().as_bytes())
+                            .expect("commit id of repository length"),
+                    ),
                 ),
             }],
             &mut GitSubprocessUi::new(ui),
@@ -717,7 +719,7 @@ pub async fn cmd_gerrit_upload(
             git::GitPushError::NoSuchRemote(_)
             | git::GitPushError::RemoteName(_)
             | git::GitPushError::UnexpectedBackend(_) => user_error(err),
-            git::GitPushError::Subprocess(_) => {
+            git::GitPushError::Transport(_) => {
                 user_error_with_message("Internal git error while pushing to gerrit", err)
             }
         })?;

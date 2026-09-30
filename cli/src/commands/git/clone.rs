@@ -327,7 +327,7 @@ async fn init_workspace(
     command: &CommandHelper,
     wc_path: &Path,
     colocate: bool,
-    object_hash: gix::hash::Kind,
+    object_hash: girt::ObjectFormat,
 ) -> Result<(WorkspaceCommandHelper, ConfigEnv), CommandError> {
     let (settings, config_env) = command.settings_for_new_workspace(ui, wc_path)?;
     let (workspace, repo) = if colocate {
@@ -352,7 +352,7 @@ async fn configure_remote(
     tx.finish(ui, format!("add git remote {}", remote_name.as_symbol()))
         .await?;
     // Reload workspace to apply new remote configuration to
-    // gix::ThreadSafeRepository behind the store.
+    // the Git repository behind the store.
     let workspace = command.load_workspace_at(
         workspace_command.workspace_root(),
         workspace_command.settings(),
@@ -380,7 +380,7 @@ async fn fetch_new_remote(
     let settings = workspace_command.settings();
     let git_settings = GitSettings::from_settings(settings)?;
     let remote_settings = settings.remote_settings()?;
-    let subprocess_options = git_settings.to_subprocess_options();
+    let subprocess_options = git_settings.to_transport_options();
     let import_options = GitImportOptions {
         // There may be a large number of new commits. Don't record synthetic
         // predecessors.

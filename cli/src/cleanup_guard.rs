@@ -26,9 +26,6 @@ pub fn init() {
             }
         }
 
-        #[cfg(feature = "git")]
-        gix::tempfile::registry::cleanup_tempfiles();
-
         std::process::exit(1);
     }) {
         eprintln!("couldn't register signal handler: {e}");

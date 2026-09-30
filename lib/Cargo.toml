@@ -34,8 +34,7 @@ digest = { workspace = true }
 dunce = { workspace = true }
 either = { workspace = true }
 futures = { workspace = true }
-gix = { workspace = true, optional = true }
-gix-ignore = { workspace = true }
+girt = { workspace = true }
 globset = { workspace = true }
 indexmap = { workspace = true }
 interim = { workspace = true }
@@ -64,12 +63,13 @@ tracing = { workspace = true }
 watchman_client = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
-rustix = { workspace = true }
+rustix = { workspace = true, features = ["process", "system"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true }
 
 [dev-dependencies]
+gix = { workspace = true }
 eyre = { workspace = true }
 indoc = { workspace = true }
 insta = { workspace = true }
@@ -86,7 +86,7 @@ nix = { workspace = true, features = [ "fs" ] }
 
 [features]
 default = ["git"]
-git = ["dep:gix"]
+git = ["girt/http", "girt/ssh", "dep:tokio"]
 watchman = ["dep:watchman_client", "dep:tokio"]
 testing = ["git"]
 
