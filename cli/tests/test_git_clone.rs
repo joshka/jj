@@ -195,22 +195,21 @@ fn test_git_clone_bad_source() {
     let root_dir = test_env.work_dir("");
 
     let output = root_dir.run_jj(["git", "clone", "", "dest"]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
-    Error: local path "" does not specify a path to a repository
+    Error: local path does not specify a repository
     [EOF]
     [exit status: 2]
-    "#);
+    ");
 
     // Invalid URL unparsable by gitoxide
     let output = root_dir.run_jj(["git", "clone", "https://", "dest"]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
-    Error: URL "https://" can not be parsed as valid URL
-    Caused by: Scheme requires host
+    Error: repository URL has no host
     [EOF]
     [exit status: 2]
-    "#);
+    ");
 }
 
 #[test]
@@ -1178,9 +1177,11 @@ fn test_git_clone_no_git_executable() {
     insta::assert_snapshot!(output.strip_stderr_last_line(), @r#"
     ------- stderr -------
     Fetching into new repo in "$TEST_ENV/clone"
-    Error: Could not execute the git process, found in the OS path 'jj-test-missing-program'
+    bookmark: main@origin [new] tracked
+    Setting the revset alias `trunk()` to `main@origin`.
+    Working copy  (@) now at: sqpuoqvx 1ca44815 (empty) (no description set)
+    Parent commit (@-)      : qomsplrm ebeb70d8 main | message
     [EOF]
-    [exit status: 1]
     "#);
 }
 
@@ -1201,9 +1202,11 @@ fn test_git_clone_no_git_executable_with_path() {
     insta::assert_snapshot!(output.strip_stderr_last_line(), @r#"
     ------- stderr -------
     Fetching into new repo in "$TEST_ENV/clone"
-    Error: Could not execute git process at specified path '$TEST_ENV/invalid/path'
+    bookmark: main@origin [new] tracked
+    Setting the revset alias `trunk()` to `main@origin`.
+    Working copy  (@) now at: sqpuoqvx 1ca44815 (empty) (no description set)
+    Parent commit (@-)      : qomsplrm ebeb70d8 main | message
     [EOF]
-    [exit status: 1]
     "#);
 }
 

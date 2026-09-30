@@ -601,7 +601,7 @@ pub async fn cmd_git_push(
 
         let push_stats = git::push_refs(
             tx.repo_mut(),
-            git_settings.to_subprocess_options(),
+            git_settings.to_transport_options(),
             remote,
             ref_updates,
             &mut GitSubprocessUi::new(ui),

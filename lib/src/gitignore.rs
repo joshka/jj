@@ -30,13 +30,19 @@ use crate::repo_path::RepoPathBuf;
 pub enum GitIgnoreError {
     #[error("Failed to read ignore patterns from file {path}")]
     ReadFile { path: PathBuf, source: io::Error },
+    #[error("Failed to parse ignore patterns from file {path}")]
+    Parse {
+        path: PathBuf,
+        source: girt::ignore::Error,
+    },
 }
 
 /// Models the effective contents of multiple .gitignore files.
 #[derive(Debug)]
 pub struct GitIgnoreFile {
     parent: Option<Arc<Self>>,
-    matcher: gix_ignore::Search,
+    /// Patterns of this file only, or `None` if it has no patterns.
+    matcher: Option<girt::ignore::Ignore>,
     prefix: RepoPathBuf,
 }
 
@@ -44,7 +50,7 @@ impl GitIgnoreFile {
     pub fn empty() -> Arc<Self> {
         Arc::new(Self {
             parent: None,
-            matcher: gix_ignore::Search::default(),
+            matcher: None,
             prefix: RepoPathBuf::root(),
         })
     }
@@ -56,29 +62,25 @@ impl GitIgnoreFile {
         ignore_path: &Path,
         input: &[u8],
     ) -> Result<Arc<Self>, GitIgnoreError> {
-        // Construct the gix search object.
-        let mut matcher = gix_ignore::Search::default();
-        // Since we strip the path prefix manually in matches(), the root path
-        // shouldn't be set. add_patterns_buffer() expects filesystem path pairs
-        // e.g. ignore_path = "/repo/bar/.gitignore" and root = "/repo".
-        let root = None;
-        matcher.add_patterns_buffer(
-            input,
-            ignore_path,
-            root,
-            gix_ignore::search::Ignore {
-                support_precious: false,
-            },
+        let mut matcher = girt::ignore::Ignore::new(
+            girt::ignore::Case::Sensitive,
+            girt::ignore::Limits::trusted(),
         );
+        matcher
+            .add(girt::ignore::Source::Directory(b""), input)
+            .map_err(|source| GitIgnoreError::Parse {
+                path: ignore_path.to_owned(),
+                source,
+            })?;
 
-        let parent = if self.matcher.patterns.is_empty() {
+        let parent = if self.matcher.is_none() {
             self.parent.clone() // omit the empty root
         } else {
             Some(self.clone())
         };
         Ok(Arc::new(Self {
             parent,
-            matcher,
+            matcher: Some(matcher),
             prefix: prefix.to_owned(),
         }))
     }
@@ -123,16 +125,19 @@ impl GitIgnoreFile {
 
     fn matches(&self, path: &RepoPath, is_dir: bool) -> bool {
         for file in iter::successors(Some(self), |file| file.parent.as_deref()) {
-            if let Some(relative_path) = path.strip_prefix(&file.prefix)
+            if let Some(matcher) = &file.matcher
+                && let Some(relative_path) = path.strip_prefix(&file.prefix)
                 && !relative_path.is_root()
             {
-                let m = file.matcher.pattern_matching_relative_path(
-                    relative_path.as_internal_file_string().as_ref(),
-                    Some(is_dir),
-                    gix_ignore::glob::pattern::Case::Sensitive,
-                );
+                // Callers handle parent directories themselves, so only the
+                // path itself is matched here. Paths exceeding the (generous)
+                // limits are treated as not ignored.
+                let m = matcher
+                    .check_direct(relative_path.as_internal_file_string().as_bytes(), is_dir)
+                    .ok()
+                    .flatten();
                 if let Some(m) = m {
-                    return !m.pattern.is_negative();
+                    return m.ignored;
                 }
             }
         }

@@ -20,11 +20,9 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::default::Default;
 use std::ffi::OsString;
-use std::fs::File;
 use std::iter;
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use bstr::BStr;
@@ -32,7 +30,6 @@ use bstr::BString;
 use futures::StreamExt as _;
 use futures::TryStreamExt as _;
 use futures::stream;
-use gix::refspec::Instruction;
 use itertools::Itertools as _;
 use tempfile::TempDir;
 use thiserror::Error;
@@ -47,12 +44,13 @@ use crate::file_util::IoResultExt as _;
 use crate::file_util::PathError;
 use crate::file_util::is_empty_dir;
 use crate::git_backend::GitBackend;
-use crate::git_subprocess::GitFetchStatus;
-pub use crate::git_subprocess::GitProgress;
-pub use crate::git_subprocess::GitSidebandLineTerminator;
-pub use crate::git_subprocess::GitSubprocessCallback;
-use crate::git_subprocess::GitSubprocessContext;
-use crate::git_subprocess::GitSubprocessError;
+use crate::git_backend::to_git_object_id;
+pub use crate::git_transport::GitCredentialPrompt;
+pub use crate::git_transport::GitProgress;
+pub use crate::git_transport::GitSidebandLineTerminator;
+pub use crate::git_transport::GitSubprocessCallback;
+use crate::git_transport::GitTransport;
+pub use crate::git_transport::GitTransportError;
 use crate::index::IndexError;
 use crate::matchers::EverythingMatcher;
 use crate::merge::Diff;
@@ -109,7 +107,6 @@ const INDEX_DUMMY_CONFLICT_FILE: &str = ".jj-do-not-resolve-this-conflict";
 #[derive(Clone, Debug)]
 pub struct GitSettings {
     pub abandon_unreachable_commits: bool,
-    pub executable_path: PathBuf,
     pub record_synthetic_predecessors: bool,
     pub write_change_id_header: bool,
 }
@@ -118,38 +115,29 @@ impl GitSettings {
     pub fn from_settings(settings: &UserSettings) -> Result<Self, ConfigGetError> {
         Ok(Self {
             abandon_unreachable_commits: settings.get_bool("git.abandon-unreachable-commits")?,
-            executable_path: settings.get("git.executable-path")?,
             record_synthetic_predecessors: settings
                 .get_bool("git.record-synthetic-predecessors")?,
             write_change_id_header: settings.get("git.write-change-id-header")?,
         })
     }
 
-    pub fn to_subprocess_options(&self) -> GitSubprocessOptions {
-        GitSubprocessOptions {
-            executable_path: self.executable_path.clone(),
-            environment: HashMap::new(),
-        }
+    pub fn to_transport_options(&self) -> GitTransportOptions {
+        GitTransportOptions::default()
     }
 }
 
-/// Configuration for a Git subprocess
-#[derive(Clone, Debug)]
-pub struct GitSubprocessOptions {
-    pub executable_path: PathBuf,
-    /// Used by consumers of jj-lib to set environment variables like
-    /// GIT_ASKPASS (for authentication callbacks) or GIT_TRACE (for debugging).
-    /// Setting per-subcommand environment variables avoids the need for unsafe
-    /// code and process-wide state.
+/// Options for communicating with Git remotes.
+#[derive(Clone, Debug, Default)]
+pub struct GitTransportOptions {
+    /// Environment variables to set (or override) for transports and the
+    /// programs they run, such as `GIT_SSH_COMMAND` or `GIT_ASKPASS`. Setting
+    /// these per operation avoids the need for process-wide state.
     pub environment: HashMap<OsString, OsString>,
 }
 
-impl GitSubprocessOptions {
-    pub fn from_settings(settings: &UserSettings) -> Result<Self, ConfigGetError> {
-        Ok(Self {
-            executable_path: settings.get("git.executable-path")?,
-            environment: HashMap::new(),
-        })
+impl GitTransportOptions {
+    pub fn from_settings(_settings: &UserSettings) -> Result<Self, ConfigGetError> {
+        Ok(Self::default())
     }
 }
 
@@ -163,11 +151,11 @@ pub enum GitRemoteNameError {
     #[error("Git remotes with slashes are incompatible with jj: {}", .0.as_symbol())]
     WithSlash(RemoteNameBuf),
     #[error("Invalid Git remote name")]
-    InvalidName(#[from] gix::remote::name::Error),
+    InvalidName(#[from] girt::remote::InvalidRemoteName),
 }
 
 fn validate_remote_name(name: &RemoteName) -> Result<(), GitRemoteNameError> {
-    gix::remote::name::validated(name.as_str())?;
+    girt::remote::validate_name(name.as_str().as_bytes())?;
     if name == REMOTE_NAME_FOR_LOCAL_GIT_REPO {
         Err(GitRemoteNameError::ReservedForLocalGitRepo)
     } else if name.as_str().contains('/') {
@@ -177,14 +165,120 @@ fn validate_remote_name(name: &RemoteName) -> Result<(), GitRemoteNameError> {
     }
 }
 
-/// Converts [`CommitId`] of valid length to [`gix::oid`].
-fn oid_from_commit_id(id: &CommitId) -> &gix::oid {
-    gix::oid::from_bytes_unchecked(id.as_bytes())
+/// Parses a full Git reference name.
+fn git_ref_name(name: &str) -> Result<girt::refs::RefName, girt::refs::InvalidRefName> {
+    girt::refs::RefName::new(name)
 }
 
-/// Converts [`CommitId`] of valid length to [`gix::ObjectId`].
-fn owned_oid_from_commit_id(id: &CommitId) -> gix::ObjectId {
-    gix::ObjectId::from_bytes_or_panic(id.as_bytes())
+/// Returns the committed object id format of `git_repo` for the given id.
+fn oid_from_commit_id(git_repo: &girt::Repository, id: &CommitId) -> girt::ObjectId {
+    to_git_object_id(git_repo.object_format(), id)
+}
+
+/// Reference access bundled with an object snapshot for peeling.
+pub(crate) struct GitRefs<'a> {
+    repo: &'a girt::Repository,
+    refs: girt::refs::References<'a>,
+    objects: girt::Objects,
+}
+
+impl<'a> GitRefs<'a> {
+    pub(crate) fn new(repo: &'a girt::Repository) -> Result<Self, BoxedError> {
+        Ok(Self {
+            repo,
+            refs: repo.references()?,
+            objects: repo.objects(girt::PackLimits::trusted())?,
+        })
+    }
+
+    pub(crate) fn refs(&self) -> &girt::refs::References<'a> {
+        &self.refs
+    }
+
+    /// Lists references (with peeled hints) under `prefix`, which must end in `/`.
+    fn list_prefixed(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<girt::refs::ReferenceObservation>, BoxedError> {
+        let namespace = girt::refs::RefName::new(prefix.trim_end_matches('/'))?;
+        Ok(self.refs.list_namespace_observations(&namespace)?)
+    }
+
+    fn find(&self, name: &str) -> Result<Option<girt::refs::ReferenceObservation>, BoxedError> {
+        let Ok(name) = git_ref_name(name) else {
+            return Ok(None);
+        };
+        Ok(self.refs.read_observation(&name)?)
+    }
+
+    /// Peels `id` through annotated tags and returns it if it's a commit.
+    fn peel_to_commit(&self, id: girt::ObjectId) -> Option<girt::ObjectId> {
+        let peeled = self
+            .objects
+            .peel(
+                id,
+                girt::PeelLimits::trusted(),
+                &std::sync::atomic::AtomicBool::new(false),
+            )
+            .ok()?;
+        (peeled.kind == girt::ObjectKind::Commit).then_some(peeled.target)
+    }
+
+    /// Resolves a reference's target (following symbolic refs) to a commit id.
+    ///
+    /// If the ref points to the previously `known_commit_oid` (i.e. unchanged),
+    /// this avoids reading objects.
+    fn resolve_to_commit_id(
+        &self,
+        observation: &girt::refs::ReferenceObservation,
+        known_commit_oid: Option<girt::ObjectId>,
+    ) -> Option<girt::ObjectId> {
+        let id = match &observation.target {
+            girt::refs::Target::Direct(id) => *id,
+            girt::refs::Target::Symbolic(name) => self.refs.resolve(name, 5).ok()?.id?,
+        };
+        if let Some(known) = known_commit_oid
+            && (id == known || observation.peeled_hint == Some(known))
+        {
+            return Some(known);
+        }
+        self.peel_to_commit(id)
+    }
+
+    fn transaction(&self, edits: &[girt::refs::RefEdit]) -> Result<(), BoxedError> {
+        if !edits.is_empty() {
+            self.refs.transaction(edits)?;
+        }
+        Ok(())
+    }
+}
+
+type BoxedError = Box<dyn std::error::Error + Send + Sync>;
+
+/// Returns the commit HEAD resolves to, or `None` if HEAD is unborn,
+/// unreadable, or doesn't point to an existing commit.
+fn head_id(git_repo: &girt::Repository) -> Option<girt::ObjectId> {
+    let git_refs = GitRefs::new(git_repo).ok()?;
+    let head = git_refs.find("HEAD").ok()??;
+    git_refs.resolve_to_commit_id(&head, None)
+}
+
+/// Reflog policy for a ref update made on behalf of the user, following
+/// `core.logAllRefUpdates`.
+fn reflog_for(
+    git_repo: &girt::Repository,
+    name: &girt::refs::RefName,
+    committer: &girt::Signature,
+    message: &str,
+) -> Result<girt::refs::Reflog, girt::ReflogPolicyError> {
+    Ok(if git_repo.logs_updates_to(name)? {
+        girt::refs::Reflog::Append {
+            committer: committer.clone(),
+            message: message.as_bytes().to_vec(),
+        }
+    } else {
+        girt::refs::Reflog::Preserve
+    })
 }
 
 /// Type of Git ref to be imported or exported.
@@ -243,8 +337,8 @@ pub(crate) struct RefSpec {
     forced: bool,
     // Source and destination may be fully-qualified ref name, glob pattern, or
     // object ID. The GitRefNameBuf type shouldn't be used.
-    source: Option<String>,
-    destination: String,
+    pub(crate) source: Option<String>,
+    pub(crate) destination: String,
 }
 
 impl RefSpec {
@@ -310,13 +404,13 @@ impl NegativeRefSpec {
 /// remote it's being pushed to
 pub(crate) struct RefToPush<'a> {
     pub(crate) refspec: &'a RefSpec,
-    pub(crate) expected_location: Option<&'a gix::oid>,
+    pub(crate) expected_location: Option<&'a girt::ObjectId>,
 }
 
 impl<'a> RefToPush<'a> {
     fn new(
         refspec: &'a RefSpec,
-        expected_locations: &'a HashMap<&GitRefName, Option<&gix::oid>>,
+        expected_locations: &'a HashMap<&GitRefName, Option<&girt::ObjectId>>,
     ) -> Self {
         let expected_location = *expected_locations
             .get(GitRefName::new(&refspec.destination))
@@ -329,17 +423,6 @@ impl<'a> RefToPush<'a> {
             refspec,
             expected_location,
         }
-    }
-
-    pub(crate) fn to_git_lease(&self) -> String {
-        format!(
-            "{}:{}",
-            self.refspec.destination,
-            self.expected_location
-                .map(|x| x.to_string())
-                .as_deref()
-                .unwrap_or("")
-        )
     }
 }
 
@@ -431,65 +514,15 @@ pub fn get_git_backend(store: &Store) -> Result<&GitBackend, UnexpectedGitBacken
     store.backend_impl().ok_or(UnexpectedGitBackendError)
 }
 
-/// Returns new thread-local instance to access to the underlying Git repo.
-pub fn get_git_repo(store: &Store) -> Result<gix::Repository, UnexpectedGitBackendError> {
-    get_git_backend(store).map(|backend| backend.git_repo())
+/// Returns the user's Git configuration (system, global and environment),
+/// without any repository configuration.
+pub fn global_git_config() -> Option<girt::Config> {
+    girt::Config::resolve(&crate::git_backend::git_config_inputs()).ok()
 }
 
-/// Checks if `git_ref` points to a Git commit object, and returns its id.
-///
-/// If the ref points to the previously `known_commit_oid` (i.e. unchanged),
-/// this should be faster than `git_ref.into_fully_peeled_id()`.
-fn resolve_git_ref_to_commit_id(
-    git_ref: &gix::Reference,
-    known_commit_oid: Option<&gix::oid>,
-) -> Option<gix::ObjectId> {
-    let mut peeling_ref = Cow::Borrowed(git_ref);
-
-    // Try fast path if we have a candidate id which is known to be a commit object.
-    if let Some(known_oid) = known_commit_oid {
-        let raw_ref = &git_ref.inner;
-        if let Some(oid) = raw_ref.target.try_id()
-            && oid == known_oid
-        {
-            return Some(oid.to_owned());
-        }
-        if let Some(oid) = raw_ref.peeled
-            && oid == known_oid
-        {
-            // Perhaps an annotated tag stored in packed-refs file, and pointing to the
-            // already known target commit.
-            return Some(oid);
-        }
-        // A tag (according to ref name.) Try to peel one more level. This is slightly
-        // faster than recurse into into_fully_peeled_id(). If we recorded a tag oid, we
-        // could skip this at all.
-        if raw_ref.peeled.is_none() && git_ref.name().as_bstr().starts_with(b"refs/tags/") {
-            let maybe_tag = git_ref
-                .try_id()
-                .and_then(|id| id.object().ok())
-                .and_then(|object| object.try_into_tag().ok());
-            if let Some(oid) = maybe_tag.as_ref().and_then(|tag| tag.target_id().ok()) {
-                let oid = oid.detach();
-                if oid == known_oid {
-                    // An annotated tag pointing to the already known target commit.
-                    return Some(oid);
-                }
-                // Unknown id. Recurse from the current state. A tag may point to
-                // non-commit object.
-                peeling_ref.to_mut().inner.target = gix::refs::Target::Object(oid);
-            }
-        }
-    }
-
-    // Alternatively, we might want to inline the first half of the peeling
-    // loop. into_fully_peeled_id() looks up the target object to see if it's
-    // a tag or not, and we need to check if it's a commit object.
-    let peeled_id = peeling_ref.into_owned().into_fully_peeled_id().ok()?;
-    let is_commit = peeled_id
-        .object()
-        .is_ok_and(|object| object.kind.is_commit());
-    is_commit.then_some(peeled_id.detach())
+/// Returns a freshly opened handle to the underlying Git repo.
+pub fn get_git_repo(store: &Store) -> Result<girt::Repository, UnexpectedGitBackendError> {
+    get_git_backend(store).map(|backend| backend.git_repo())
 }
 
 #[derive(Error, Debug)]
@@ -903,7 +936,7 @@ async fn record_synthetic_predecessors(
 /// Calculates diff of git refs to be imported.
 fn diff_refs_to_import(
     view: &View,
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
     all_remote_tags: bool,
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<RefsToImport, GitImportError> {
@@ -944,9 +977,12 @@ fn diff_refs_to_import(
     let mut changed_remote_bookmarks = Vec::new();
     let mut changed_remote_tags = Vec::new();
     let mut failed_ref_names = Vec::new();
-    let actual = git_repo.references().map_err(GitImportError::from_git)?;
+    let actual = GitRefs::new(git_repo).map_err(GitImportError::Git)?;
     collect_changed_refs_to_import(
-        actual.local_branches().map_err(GitImportError::from_git)?,
+        &actual,
+        actual
+            .list_prefixed("refs/heads/")
+            .map_err(GitImportError::Git)?,
         &mut known_git_refs,
         &mut known_remote_bookmarks,
         &mut changed_git_refs,
@@ -955,7 +991,10 @@ fn diff_refs_to_import(
         &git_ref_filter,
     )?;
     collect_changed_refs_to_import(
-        actual.remote_branches().map_err(GitImportError::from_git)?,
+        &actual,
+        actual
+            .list_prefixed("refs/remotes/")
+            .map_err(GitImportError::Git)?,
         &mut known_git_refs,
         &mut known_remote_bookmarks,
         &mut changed_git_refs,
@@ -964,7 +1003,10 @@ fn diff_refs_to_import(
         &git_ref_filter,
     )?;
     collect_changed_refs_to_import(
-        actual.tags().map_err(GitImportError::from_git)?,
+        &actual,
+        actual
+            .list_prefixed("refs/tags/")
+            .map_err(GitImportError::Git)?,
         &mut known_git_refs,
         &mut known_remote_tags,
         &mut changed_git_refs,
@@ -974,9 +1016,10 @@ fn diff_refs_to_import(
     )?;
     if all_remote_tags {
         collect_changed_remote_tags_to_import(
+            &actual,
             actual
-                .prefixed(REMOTE_TAG_REF_NAMESPACE)
-                .map_err(GitImportError::from_git)?,
+                .list_prefixed(REMOTE_TAG_REF_NAMESPACE)
+                .map_err(GitImportError::Git)?,
             &mut known_remote_tags,
             &mut changed_remote_tags,
             &mut failed_ref_names,
@@ -1019,8 +1062,10 @@ fn diff_refs_to_import(
     })
 }
 
+#[expect(clippy::too_many_arguments)]
 fn collect_changed_refs_to_import(
-    actual_git_refs: gix::reference::iter::Iter,
+    git_refs: &GitRefs,
+    actual_git_refs: Vec<girt::refs::ReferenceObservation>,
     known_git_refs: &mut HashMap<&GitRefName, &RefTarget>,
     known_remote_refs: &mut HashMap<RemoteRefKey<'_>, &RemoteRef>,
     changed_git_refs: &mut Vec<(GitRefNameBuf, RefTarget)>,
@@ -1029,15 +1074,14 @@ fn collect_changed_refs_to_import(
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<(), GitImportError> {
     for git_ref in actual_git_refs {
-        let git_ref = git_ref.map_err(GitImportError::from_git)?;
-        let full_name_bytes = git_ref.name().as_bstr();
+        let full_name_bytes = git_ref.name.as_bytes();
         let Ok(full_name) = str::from_utf8(full_name_bytes) else {
             // Non-utf8 refs cannot be imported.
-            failed_ref_names.push(full_name_bytes.to_owned());
+            failed_ref_names.push(full_name_bytes.into());
             continue;
         };
         if full_name.starts_with(RESERVED_REMOTE_REF_NAMESPACE) {
-            failed_ref_names.push(full_name_bytes.to_owned());
+            failed_ref_names.push(full_name_bytes.into());
             continue;
         }
         let full_name = GitRefName::new(full_name);
@@ -1049,8 +1093,10 @@ fn collect_changed_refs_to_import(
             continue;
         }
         let old_git_target = known_git_refs.get(full_name).copied().flatten();
-        let old_git_oid = old_git_target.as_normal().map(oid_from_commit_id);
-        let Some(oid) = resolve_git_ref_to_commit_id(&git_ref, old_git_oid) else {
+        let old_git_oid = old_git_target
+            .as_normal()
+            .map(|id| oid_from_commit_id(git_refs.repo, id));
+        let Some(oid) = git_refs.resolve_to_commit_id(&git_ref, old_git_oid) else {
             // Skip (or remove existing) invalid refs.
             continue;
         };
@@ -1078,18 +1124,18 @@ fn collect_changed_refs_to_import(
 /// Similar to [`collect_changed_refs_to_import()`], but doesn't track Git ref
 /// changes. Remote tags should be managed solely by jj.
 fn collect_changed_remote_tags_to_import(
-    actual_git_refs: gix::reference::iter::Iter,
+    git_refs: &GitRefs,
+    actual_git_refs: Vec<girt::refs::ReferenceObservation>,
     known_remote_refs: &mut HashMap<RemoteRefKey<'_>, &RemoteRef>,
     changed_remote_refs: &mut Vec<GitImportRefUpdate>,
     failed_ref_names: &mut Vec<BString>,
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<(), GitImportError> {
     for git_ref in actual_git_refs {
-        let git_ref = git_ref.map_err(GitImportError::from_git)?;
-        let full_name_bytes = git_ref.name().as_bstr();
+        let full_name_bytes = git_ref.name.as_bytes();
         let Ok(full_name) = str::from_utf8(full_name_bytes) else {
             // Non-utf8 refs cannot be imported.
-            failed_ref_names.push(full_name_bytes.to_owned());
+            failed_ref_names.push(full_name_bytes.into());
             continue;
         };
         let full_name = GitRefName::new(full_name);
@@ -1104,8 +1150,11 @@ fn collect_changed_remote_tags_to_import(
             .get(&symbol)
             .copied()
             .unwrap_or(&ABSENT_REMOTE_REF);
-        let old_git_oid = old_remote_ref.target.as_normal().map(oid_from_commit_id);
-        let Some(oid) = resolve_git_ref_to_commit_id(&git_ref, old_git_oid) else {
+        let old_git_oid = old_remote_ref
+            .target
+            .as_normal()
+            .map(|id| oid_from_commit_id(git_refs.repo, id));
+        let Some(oid) = git_refs.resolve_to_commit_id(&git_ref, old_git_oid) else {
             // Skip (or remove existing) invalid refs.
             continue;
         };
@@ -1191,11 +1240,7 @@ pub async fn import_head(
         .map_err(GitImportError::from_git)?;
 
     let old_git_head = mut_repo.view().git_head(workspace_name);
-    let new_git_head_id = if let Ok(oid) = git_repo.head_id() {
-        Some(CommitId::from_bytes(oid.as_bytes()))
-    } else {
-        None
-    };
+    let new_git_head_id = head_id(&git_repo).map(|oid| CommitId::from_bytes(oid.as_bytes()));
     if old_git_head.as_resolved() == Some(&new_git_head_id) {
         return Ok(());
     }
@@ -1229,7 +1274,7 @@ pub async fn import_head_commit(
     let git_backend = get_git_backend(store)?;
     let git_repo = git_backend.git_repo();
 
-    let Ok(oid) = git_repo.head_id() else {
+    let Some(oid) = head_id(&git_repo) else {
         return Ok(None);
     };
     let head_id = CommitId::from_bytes(oid.as_bytes());
@@ -1314,12 +1359,12 @@ struct AllRefsToExport {
 #[derive(Debug)]
 struct RefsToExport {
     /// Remote `(symbol, (old_oid, new_oid))`s to update, sorted by `symbol`.
-    to_update: Vec<(RemoteRefSymbolBuf, (Option<gix::ObjectId>, gix::ObjectId))>,
+    to_update: Vec<(RemoteRefSymbolBuf, (Option<CommitId>, CommitId))>,
     /// Remote `(symbol, old_oid)`s to delete, sorted by `symbol`.
     ///
     /// Deletion has to be exported first to avoid conflict with new refs on
     /// file-system.
-    to_delete: Vec<(RemoteRefSymbolBuf, gix::ObjectId)>,
+    to_delete: Vec<(RemoteRefSymbolBuf, CommitId)>,
     /// Remote refs that couldn't be exported, sorted by `symbol`.
     failed: Vec<(RemoteRefSymbolBuf, FailedRefExportReason)>,
 }
@@ -1353,46 +1398,45 @@ pub fn export_some_refs(
         &git_ref_filter,
     );
 
-    let check_and_detach_head = |git_repo: &gix::Repository| -> Result<(), GitExportError> {
-        let Ok(head_ref) = git_repo.find_reference("HEAD") else {
+    let git_backend = get_git_backend(mut_repo.store())?;
+    let committer = git_backend.committer_signature();
+    let check_and_detach_head = |git_repo: &girt::Repository| -> Result<(), GitExportError> {
+        let git_refs = GitRefs::new(git_repo).map_err(GitExportError::Git)?;
+        let Some(head_ref) = git_refs.find("HEAD").map_err(GitExportError::Git)? else {
             return Ok(());
         };
-        let target_name = head_ref.target().try_name().map(|name| name.to_owned());
-        if let Some((kind, symbol)) = target_name
-            .as_ref()
-            .and_then(|name| str::from_utf8(name.as_bstr()).ok())
+        let girt::refs::Target::Symbolic(target_name) = &head_ref.target else {
+            return Ok(());
+        };
+        if let Some((kind, symbol)) = str::from_utf8(target_name.as_bytes())
+            .ok()
             .and_then(|name| parse_git_ref(name.as_ref()))
         {
-            let old_target = head_ref.inner.target.clone();
-            let current_oid = match head_ref.into_fully_peeled_id() {
-                Ok(id) => Some(id.detach()),
-                Err(gix::reference::peel::Error::ToId(
-                    gix::refs::peel::to_id::Error::FollowToObject(
-                        gix::refs::peel::to_object::Error::Follow(
-                            gix::refs::file::find::existing::Error::NotFound { .. },
-                        ),
-                    ),
-                )) => None, // Unborn ref should be considered absent
-                Err(err) => return Err(GitExportError::from_git(err)),
-            };
+            // Unborn ref should be considered absent
+            let current_oid = git_refs
+                .refs()
+                .resolve(target_name, 5)
+                .map_err(GitExportError::from_git)?
+                .id;
             let refs = match kind {
                 GitRefKind::Bookmark => &bookmarks,
                 GitRefKind::Tag => &tags,
             };
             let new_oid = if let Some((_old_oid, new_oid)) = get(&refs.to_update, symbol) {
-                Some(new_oid)
+                Some(oid_from_commit_id(git_repo, new_oid))
             } else if get(&refs.to_delete, symbol).is_some() {
                 None
             } else {
-                current_oid.as_ref()
+                current_oid
             };
-            if new_oid != current_oid.as_ref() {
+            if new_oid != current_oid {
                 update_git_head(
                     git_repo,
-                    gix::refs::transaction::PreviousValue::MustExistAndMatch(old_target),
+                    girt::refs::Expected::Value(head_ref.target.clone()),
                     current_oid,
+                    &committer,
                 )
-                .map_err(GitExportError::from_git)?;
+                .map_err(GitExportError::Git)?;
             }
         }
         Ok(())
@@ -1401,8 +1445,12 @@ pub fn export_some_refs(
     let git_repo = get_git_repo(mut_repo.store())?;
 
     check_and_detach_head(&git_repo)?;
-    for worktree in git_repo.worktrees().map_err(GitExportError::from_git)? {
-        if let Ok(worktree_repo) = worktree.into_repo_with_possibly_inaccessible_worktree() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    for worktree in git_repo
+        .worktrees(usize::MAX, &cancel)
+        .map_err(GitExportError::from_git)?
+    {
+        if let Ok(worktree_repo) = crate::git_backend::open_git_repository(&worktree.git_dir) {
             check_and_detach_head(&worktree_repo)?;
         }
     }
@@ -1431,17 +1479,41 @@ pub fn export_some_refs(
 
 fn export_refs_to_git(
     mut_repo: &mut MutableRepo,
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
     kind: GitRefKind,
     refs: RefsToExport,
 ) -> Vec<(RemoteRefSymbolBuf, FailedRefExportReason)> {
     let mut failed = refs.failed;
+    let git_refs = match GitRefs::new(git_repo) {
+        Ok(git_refs) => git_refs,
+        Err(err) => {
+            let err: Arc<BoxedError> = Arc::new(err);
+            failed.extend(
+                itertools::chain(
+                    refs.to_delete.into_iter().map(|(symbol, _)| symbol),
+                    refs.to_update.into_iter().map(|(symbol, _)| symbol),
+                )
+                .map(|symbol| {
+                    (
+                        symbol,
+                        FailedRefExportReason::FailedToSet(err.to_string().into()),
+                    )
+                }),
+            );
+            failed.sort_unstable_by(|(name1, _), (name2, _)| name1.cmp(name2));
+            return failed;
+        }
+    };
+    let committer = get_git_backend(mut_repo.store())
+        .expect("backend type should have been tested")
+        .committer_signature();
     for (symbol, old_oid) in refs.to_delete {
         let Some(git_ref_name) = to_git_ref_name(kind, symbol.as_ref()) else {
             failed.push((symbol, FailedRefExportReason::InvalidGitName));
             continue;
         };
-        if let Err(reason) = delete_git_ref(git_repo, &git_ref_name, &old_oid) {
+        let old_oid = oid_from_commit_id(git_repo, &old_oid);
+        if let Err(reason) = delete_git_ref(&git_refs, &git_ref_name, old_oid) {
             failed.push((symbol, reason));
         } else {
             let new_target = RefTarget::absent();
@@ -1460,23 +1532,26 @@ fn export_refs_to_git(
                 let remote_matcher = StringMatcher::all();
                 find_git_tag_oid_to_copy(
                     mut_repo.view(),
-                    git_repo,
+                    &git_refs,
                     &symbol.name,
                     &remote_matcher,
-                    &new_commit_oid,
+                    oid_from_commit_id(git_repo, &new_commit_oid),
                 )
             }
         };
         if let Err(reason) = update_git_ref(
-            git_repo,
+            &git_refs,
             &git_ref_name,
-            old_commit_oid,
-            new_commit_oid,
+            old_commit_oid
+                .as_ref()
+                .map(|id| oid_from_commit_id(git_repo, id)),
+            oid_from_commit_id(git_repo, &new_commit_oid),
             new_ref_oid,
+            &committer,
         ) {
             failed.push((symbol, reason));
         } else {
-            let new_target = RefTarget::normal(CommitId::from_bytes(new_commit_oid.as_bytes()));
+            let new_target = RefTarget::normal(new_commit_oid);
             mut_repo.set_git_ref_target(&git_ref_name, new_target);
         }
     }
@@ -1616,7 +1691,7 @@ fn collect_changed_refs_to_export(
             continue;
         }
         let old_oid = if let Some(id) = old_target.as_normal() {
-            Some(owned_oid_from_commit_id(id))
+            Some(id.clone())
         } else if !old_target.is_resolved() {
             // The old git ref should only be a conflict if there were concurrent import
             // operations while the value changed. Don't overwrite these values.
@@ -1627,7 +1702,7 @@ fn collect_changed_refs_to_export(
             None
         };
         if let Some(id) = new_target.as_normal() {
-            let new_oid = owned_oid_from_commit_id(id);
+            let new_oid = id.clone();
             to_update.push((symbol.to_owned(), (old_oid, new_oid)));
         } else if !new_target.is_resolved() {
             // Skip conflicts and leave the old value in git_refs
@@ -1653,11 +1728,11 @@ fn collect_changed_refs_to_export(
 /// peeled to the given commit ID.
 fn find_git_tag_oid_to_copy(
     view: &View,
-    git_repo: &gix::Repository,
+    git_refs: &GitRefs,
     name: &RefName,
     remote_matcher: &StringMatcher,
-    commit_oid: &gix::oid,
-) -> Option<gix::ObjectId> {
+    commit_oid: girt::ObjectId,
+) -> Option<girt::ObjectId> {
     // Filter candidates by tag name and known commit id first
     view.remote_tags_matching(&StringMatcher::exact(name), remote_matcher)
         .filter(|(_, remote_ref)| {
@@ -1667,63 +1742,101 @@ fn find_git_tag_oid_to_copy(
         // Query existing Git ref and tag object
         .filter_map(|(symbol, _)| {
             let git_ref_name = to_git_or_remote_tag_ref_name(symbol);
-            git_repo.find_reference(git_ref_name.as_str()).ok()
+            git_refs.find(git_ref_name.as_str()).ok().flatten()
         })
         // This usually holds because remote tags are managed by jj, but jj's
         // view may be updated independently by undo/redo commands.
         .filter(|git_ref| {
-            resolve_git_ref_to_commit_id(git_ref, Some(commit_oid)).as_deref() == Some(commit_oid)
+            git_refs.resolve_to_commit_id(git_ref, Some(commit_oid)) == Some(commit_oid)
         })
-        .find_map(|git_ref| git_ref.inner.target.try_into_id().ok())
+        .find_map(|git_ref| match git_ref.target {
+            girt::refs::Target::Direct(id) => Some(id),
+            girt::refs::Target::Symbolic(_) => None,
+        })
 }
 
 fn delete_git_ref(
-    git_repo: &gix::Repository,
+    git_refs: &GitRefs,
     git_ref_name: &GitRefName,
-    old_oid: &gix::oid,
+    old_oid: girt::ObjectId,
 ) -> Result<(), FailedRefExportReason> {
-    let Some(git_ref) = git_repo
-        .try_find_reference(git_ref_name.as_str())
-        .map_err(|err| FailedRefExportReason::FailedToDelete(err.into()))?
+    let Some(git_ref) = git_refs
+        .find(git_ref_name.as_str())
+        .map_err(FailedRefExportReason::FailedToDelete)?
     else {
         // The ref is already deleted
         return Ok(());
     };
-    if resolve_git_ref_to_commit_id(&git_ref, Some(old_oid)).as_deref() == Some(old_oid) {
+    if git_refs.resolve_to_commit_id(&git_ref, Some(old_oid)) == Some(old_oid) {
         // The ref has not been updated by git, so go ahead and delete it
-        git_ref
-            .delete()
-            .map_err(|err| FailedRefExportReason::FailedToDelete(err.into()))
+        let edit = girt::refs::RefEdit {
+            name: git_ref.name,
+            dereference: false,
+            target: None,
+            expected: girt::refs::Expected::Value(git_ref.target),
+            reflog: girt::refs::Reflog::Delete,
+        };
+        git_refs
+            .transaction(&[edit])
+            .map_err(FailedRefExportReason::FailedToDelete)
     } else {
         // The ref was updated by git
         Err(FailedRefExportReason::DeletedInJjModifiedInGit)
     }
 }
 
+/// Writes `target` to the named ref if its stored value matches `expected`.
+fn set_git_ref(
+    git_refs: &GitRefs,
+    git_ref_name: &GitRefName,
+    target: girt::ObjectId,
+    expected: girt::refs::Expected,
+    committer: &girt::Signature,
+) -> Result<(), BoxedError> {
+    let name = git_ref_name_or_err(git_ref_name.as_str())?;
+    let reflog = reflog_for(git_refs.repo, &name, committer, "export from jj")?;
+    let edit = girt::refs::RefEdit {
+        name,
+        dereference: false,
+        target: Some(girt::refs::Target::Direct(target)),
+        expected,
+        reflog,
+    };
+    git_refs.transaction(&[edit])
+}
+
+fn git_ref_name_or_err(name: &str) -> Result<girt::refs::RefName, BoxedError> {
+    git_ref_name(name).map_err(|_| format!("Invalid Git ref name: {name}").into())
+}
+
 /// Creates new ref pointing to `new_ref_oid` or (peeled) `new_commit_oid`.
 fn create_git_ref(
-    git_repo: &gix::Repository,
+    git_refs: &GitRefs,
     git_ref_name: &GitRefName,
-    new_commit_oid: gix::ObjectId,
-    new_ref_oid: Option<gix::ObjectId>,
+    new_commit_oid: girt::ObjectId,
+    new_ref_oid: Option<girt::ObjectId>,
+    committer: &girt::Signature,
 ) -> Result<(), FailedRefExportReason> {
     let new_oid = new_ref_oid.unwrap_or(new_commit_oid);
-    let constraint = gix::refs::transaction::PreviousValue::MustNotExist;
-    let Err(set_err) =
-        git_repo.reference(git_ref_name.as_str(), new_oid, constraint, "export from jj")
-    else {
+    let Err(set_err) = set_git_ref(
+        git_refs,
+        git_ref_name,
+        new_oid,
+        girt::refs::Expected::Absent,
+        committer,
+    ) else {
         // The ref was added in jj but still doesn't exist in git
         return Ok(());
     };
-    let Some(git_ref) = git_repo
-        .try_find_reference(git_ref_name.as_str())
-        .map_err(|err| FailedRefExportReason::FailedToSet(err.into()))?
+    let Some(git_ref) = git_refs
+        .find(git_ref_name.as_str())
+        .map_err(FailedRefExportReason::FailedToSet)?
     else {
-        return Err(FailedRefExportReason::FailedToSet(set_err.into()));
+        return Err(FailedRefExportReason::FailedToSet(set_err));
     };
     // The ref was added in jj and in git. We're good if and only if git
     // pointed it to our desired target.
-    if resolve_git_ref_to_commit_id(&git_ref, None) == Some(new_commit_oid) {
+    if git_refs.resolve_to_commit_id(&git_ref, None) == Some(new_commit_oid) {
         Ok(())
     } else {
         Err(FailedRefExportReason::AddedInJjAddedInGit)
@@ -1732,104 +1845,114 @@ fn create_git_ref(
 
 /// Updates existing ref to point to `new_ref_oid` or (peeled) `new_commit_oid`.
 fn move_git_ref(
-    git_repo: &gix::Repository,
+    git_refs: &GitRefs,
     git_ref_name: &GitRefName,
-    old_commit_oid: gix::ObjectId,
-    new_commit_oid: gix::ObjectId,
-    new_ref_oid: Option<gix::ObjectId>,
+    old_commit_oid: girt::ObjectId,
+    new_commit_oid: girt::ObjectId,
+    new_ref_oid: Option<girt::ObjectId>,
+    committer: &girt::Signature,
 ) -> Result<(), FailedRefExportReason> {
     let new_oid = new_ref_oid.unwrap_or(new_commit_oid);
-    let constraint =
-        gix::refs::transaction::PreviousValue::MustExistAndMatch(old_commit_oid.into());
-    let Err(set_err) =
-        git_repo.reference(git_ref_name.as_str(), new_oid, constraint, "export from jj")
-    else {
+    let expected = girt::refs::Expected::Value(girt::refs::Target::Direct(old_commit_oid));
+    let Err(set_err) = set_git_ref(git_refs, git_ref_name, new_oid, expected, committer) else {
         // Successfully updated from old_oid to new_oid (unchanged in git)
         return Ok(());
     };
     // The reference was probably updated in git
-    let Some(git_ref) = git_repo
-        .try_find_reference(git_ref_name.as_str())
-        .map_err(|err| FailedRefExportReason::FailedToSet(err.into()))?
+    let Some(git_ref) = git_refs
+        .find(git_ref_name.as_str())
+        .map_err(FailedRefExportReason::FailedToSet)?
     else {
         // The reference was deleted in git and moved in jj
         return Err(FailedRefExportReason::ModifiedInJjDeletedInGit);
     };
     // We still consider this a success if it was updated to our desired target
-    let git_commit_oid = resolve_git_ref_to_commit_id(&git_ref, Some(&old_commit_oid));
+    let git_commit_oid = git_refs.resolve_to_commit_id(&git_ref, Some(old_commit_oid));
     if git_commit_oid == Some(new_commit_oid) {
         Ok(())
     } else if git_commit_oid == Some(old_commit_oid) {
         // The reference would point to annotated tag, try again
-        let constraint =
-            gix::refs::transaction::PreviousValue::MustExistAndMatch(git_ref.inner.target);
-        git_repo
-            .reference(git_ref_name.as_str(), new_oid, constraint, "export from jj")
-            .map_err(|err| FailedRefExportReason::FailedToSet(err.into()))?;
+        let expected = girt::refs::Expected::Value(git_ref.target);
+        set_git_ref(git_refs, git_ref_name, new_oid, expected, committer)
+            .map_err(FailedRefExportReason::FailedToSet)?;
         Ok(())
     } else {
-        Err(FailedRefExportReason::FailedToSet(set_err.into()))
+        Err(FailedRefExportReason::FailedToSet(set_err))
     }
 }
 
 fn update_git_ref(
-    git_repo: &gix::Repository,
+    git_refs: &GitRefs,
     git_ref_name: &GitRefName,
-    old_commit_oid: Option<gix::ObjectId>,
-    new_commit_oid: gix::ObjectId,
-    new_ref_oid: Option<gix::ObjectId>,
+    old_commit_oid: Option<girt::ObjectId>,
+    new_commit_oid: girt::ObjectId,
+    new_ref_oid: Option<girt::ObjectId>,
+    committer: &girt::Signature,
 ) -> Result<(), FailedRefExportReason> {
     match old_commit_oid {
-        None => create_git_ref(git_repo, git_ref_name, new_commit_oid, new_ref_oid),
-        Some(old_oid) => move_git_ref(git_repo, git_ref_name, old_oid, new_commit_oid, new_ref_oid),
+        None => create_git_ref(
+            git_refs,
+            git_ref_name,
+            new_commit_oid,
+            new_ref_oid,
+            committer,
+        ),
+        Some(old_oid) => move_git_ref(
+            git_refs,
+            git_ref_name,
+            old_oid,
+            new_commit_oid,
+            new_ref_oid,
+            committer,
+        ),
     }
 }
 
 /// Ensures Git HEAD is detached and pointing to the `new_oid`. If `new_oid`
 /// is `None` (meaning absent), dummy placeholder ref will be set.
 fn update_git_head(
-    git_repo: &gix::Repository,
-    expected_ref: gix::refs::transaction::PreviousValue,
-    new_oid: Option<gix::ObjectId>,
-) -> Result<(), gix::reference::edit::Error> {
-    let mut ref_edits = Vec::new();
+    git_repo: &girt::Repository,
+    expected_ref: girt::refs::Expected,
+    new_oid: Option<girt::ObjectId>,
+    committer: &girt::Signature,
+) -> Result<(), BoxedError> {
+    let refs = git_repo.references()?;
+    let head = git_ref_name("HEAD").unwrap();
     let new_target = if let Some(oid) = new_oid {
-        gix::refs::Target::Object(oid)
+        girt::refs::Target::Direct(oid)
     } else {
         // Can't detach HEAD without a commit. Use placeholder ref to nullify
         // the HEAD. The placeholder ref isn't a normal branch ref. Git CLI
         // appears to deal with that, and can move the placeholder ref. So we
-        // need to ensure that the ref doesn't exist.
-        ref_edits.push(gix::refs::transaction::RefEdit {
-            change: gix::refs::transaction::Change::Delete {
-                expected: gix::refs::transaction::PreviousValue::Any,
-                log: gix::refs::transaction::RefLog::AndReference,
-            },
-            name: UNBORN_ROOT_REF_NAME.try_into().unwrap(),
-            deref: false,
-        });
-        gix::refs::Target::Symbolic(UNBORN_ROOT_REF_NAME.try_into().unwrap())
+        // need to ensure that the ref doesn't exist. (A transaction can't both
+        // delete a ref and make HEAD point to it.)
+        let unborn = git_ref_name(UNBORN_ROOT_REF_NAME).unwrap();
+        refs.transaction(&[girt::refs::RefEdit {
+            name: unborn.clone(),
+            dereference: false,
+            target: None,
+            expected: girt::refs::Expected::Any,
+            reflog: girt::refs::Reflog::Delete,
+        }])?;
+        girt::refs::Target::Symbolic(unborn)
     };
-    ref_edits.push(gix::refs::transaction::RefEdit {
-        change: gix::refs::transaction::Change::Update {
-            log: gix::refs::transaction::LogChange {
-                message: "export from jj".into(),
-                ..Default::default()
-            },
-            expected: expected_ref,
-            new: new_target,
-        },
-        name: "HEAD".try_into().unwrap(),
-        deref: false,
-    });
-    git_repo.edit_references(ref_edits)?;
+    let reflog = reflog_for(git_repo, &head, committer, "export from jj")?;
+    refs.transaction(&[girt::refs::RefEdit {
+        name: head,
+        dereference: false,
+        target: Some(new_target),
+        expected: expected_ref,
+        reflog,
+    }])?;
     Ok(())
 }
 
 #[derive(Debug, Error)]
 pub enum GitCreateWorktreeError {
-    #[error(transparent)]
-    Subprocess(#[from] GitSubprocessError),
+    #[error("Failed to create Git worktree")]
+    Create(#[source] girt::CreateWorktreeError),
+    #[error("Failed to repair Git worktree links")]
+    Repair(#[source] girt::WorktreeAdminError),
     #[error("Failed to inspect the Git worktree destination")]
     Destination(#[source] PathError),
     #[error("Failed to create temporary directory for Git worktree")]
@@ -1850,6 +1973,10 @@ impl GitCreateWorktreeError {
     }
 }
 
+/// Maximum number of registration names tried when the destination's name is
+/// already used by another worktree.
+const MAX_WORKTREE_NAMES: usize = 1000;
+
 /// Creates a Git worktree at `destination` to back a jj workspace.
 ///
 /// Nothing is checked out: the worktree is created with HEAD unborn, so jj
@@ -1861,85 +1988,105 @@ impl GitCreateWorktreeError {
 /// points HEAD at the parent of the new working-copy commit. Git is only
 /// responsible for the `.git` gitlink and the worktree bookkeeping under
 /// `.git/worktrees/`.
-pub fn create_worktree(
-    store: &Store,
-    subprocess_options: GitSubprocessOptions,
-    destination: &Path,
-) -> Result<(), GitCreateWorktreeError> {
+pub fn create_worktree(store: &Store, destination: &Path) -> Result<(), GitCreateWorktreeError> {
     let git_backend = get_git_backend(store)?;
+    let git_repo = git_backend.git_repo();
 
-    // The unborn branch `git worktree add --orphan` insists on naming gets a
-    // random name: any name we could derive from the destination may already
-    // be taken by an exported bookmark.
-    let branch_name = format!("jj-worktree-{:016x}", rand::random::<u64>());
-    let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
+    // Worktree registration requires an unborn branch name. It gets a random
+    // name: any name we could derive from the destination may already be
+    // taken by an exported bookmark.
+    let branch_name = format!("refs/heads/jj-worktree-{:016x}", rand::random::<u64>());
+    let branch = git_ref_name(&branch_name).expect("valid ref name");
 
-    let destination_is_populated = destination.exists()
+    let destination_exists = destination.exists();
+    let destination_is_populated = destination_exists
         && !is_empty_dir(destination).map_err(GitCreateWorktreeError::Destination)?;
-    if destination_is_populated {
-        add_worktree_to_populated_dir(&git_ctx, destination, &branch_name)?;
+    let worktree_repo = if destination_is_populated {
+        add_worktree_to_populated_dir(&git_repo, destination, &branch)?
     } else {
-        git_ctx.spawn_worktree_add(destination, &branch_name)?;
-    }
+        if destination_exists {
+            // Creation requires an absent destination.
+            std::fs::remove_dir(destination)
+                .context(destination)
+                .map_err(GitCreateWorktreeError::Destination)?;
+        }
+        create_orphan_worktree(&git_repo, destination, &branch)?
+    };
 
-    // Must run after the gitlink at `destination` resolves, i.e. after any
-    // `git worktree repair` above.
-    //
     // Nullifying HEAD puts the worktree in the same "HEAD has no commit yet"
     // state jj uses everywhere else, so that a `git commit` in the new
     // worktree can't materialize the branch nobody asked for. If the
     // working-copy commit turns out to have a real parent, the HEAD export
     // replaces this with a detached HEAD.
-    let git_repo = git_backend
-        .open_git_repo_at_workdir(destination)
-        .map_err(GitCreateWorktreeError::from_git)?;
-    let unborn_branch = gix::refs::Target::Symbolic(
-        format!("refs/heads/{branch_name}")
-            .try_into()
-            .expect("valid ref name"),
-    );
     update_git_head(
-        &git_repo,
-        gix::refs::transaction::PreviousValue::MustExistAndMatch(unborn_branch),
+        &worktree_repo,
+        girt::refs::Expected::Value(girt::refs::Target::Symbolic(branch)),
         None,
+        &git_backend.committer_signature(),
     )
-    .map_err(GitCreateWorktreeError::from_git)
+    .map_err(GitCreateWorktreeError::Git)
+}
+
+fn create_orphan_worktree(
+    git_repo: &girt::Repository,
+    destination: &Path,
+    branch: &girt::refs::RefName,
+) -> Result<girt::Repository, GitCreateWorktreeError> {
+    // Use relative paths to match jj's convention for portable repositories.
+    git_repo
+        .create_orphan_worktree_with_link_style(
+            destination,
+            branch,
+            MAX_WORKTREE_NAMES,
+            girt::WorktreeLinkStyle::Relative,
+        )
+        .map_err(GitCreateWorktreeError::Create)
 }
 
 /// Adds a worktree for a directory that already has contents.
 ///
-/// `git worktree add` refuses to use a non-empty directory, so the worktree is
-/// created in a temporary directory inside `destination`, its gitlink moved
-/// into place, and the recorded paths repaired.
+/// Worktree creation requires an absent directory, so the worktree is created
+/// in a temporary directory inside `destination`, its gitlink moved into
+/// place, and the recorded paths repaired.
 fn add_worktree_to_populated_dir(
-    git_ctx: &GitSubprocessContext,
+    git_repo: &girt::Repository,
     destination: &Path,
-    branch_name: &str,
-) -> Result<(), GitCreateWorktreeError> {
+    branch: &girt::refs::RefName,
+) -> Result<girt::Repository, GitCreateWorktreeError> {
     let dot_git = destination.join(".git");
     if dot_git.exists() {
         return Err(GitCreateWorktreeError::ExistingGitLink);
     }
     let tmp_dir = TempDir::new_in(destination).map_err(GitCreateWorktreeError::TempDir)?;
-    let tmp_path = tmp_dir.path();
-    git_ctx.spawn_worktree_add(tmp_path, branch_name)?;
+    // The temporary directory's own name becomes the registration name.
+    let tmp_path = tmp_dir.path().join(
+        destination
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("worktree")),
+    );
+    let tmp_repo = create_orphan_worktree(git_repo, &tmp_path, branch)?;
+    let registration = tmp_repo.git_dir().to_owned();
 
     std::fs::rename(tmp_path.join(".git"), &dot_git)
         .context(&dot_git)
         .map_err(GitCreateWorktreeError::MoveGitLink)?;
-    if let Err(err) = git_ctx.spawn_worktree_repair(destination) {
+    if let Err(err) = git_repo.repair_worktree_with_link_style(
+        &registration,
+        destination,
+        girt::WorktreeLinkStyle::Relative,
+    ) {
         std::fs::remove_file(&dot_git).ok();
-        return Err(err.into());
+        return Err(GitCreateWorktreeError::Repair(err));
     }
-    Ok(())
+    crate::git_backend::open_git_repository(destination).map_err(GitCreateWorktreeError::from_git)
 }
 
 #[derive(Debug, Error)]
 pub enum GitUnlinkWorktreeError {
     #[error("Failed to remove .git gitlink file")]
     RemoveGitLink(#[source] PathError),
-    #[error(transparent)]
-    Subprocess(#[from] GitSubprocessError),
+    #[error("Failed to remove Git worktree metadata")]
+    Prune(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     UnexpectedBackend(#[from] UnexpectedGitBackendError),
 }
@@ -1958,7 +2105,6 @@ pub enum GitUnlinkWorktreeError {
 /// so callers may treat all errors as non-fatal.
 pub fn unlink_worktree(
     store: &Store,
-    subprocess_options: GitSubprocessOptions,
     worktree_path: &Path,
 ) -> Result<bool, GitUnlinkWorktreeError> {
     let dot_git = worktree_path.join(".git");
@@ -1966,16 +2112,28 @@ pub fn unlink_worktree(
         return Ok(false);
     }
     let git_backend = get_git_backend(store)?;
-    // `git worktree remove` isn't used because it deletes the directory
-    // contents, and forgetting a workspace should preserve its files.
+    let git_repo = git_backend.git_repo();
+    // Identify this worktree's registration before removing its gitlink.
+    let registration = girt::RepositoryLocation::at_git_dir(&dot_git)
+        .ok()
+        .map(|location| location.git_dir().to_owned())
+        .filter(|path| path.starts_with(git_repo.common_dir().join("worktrees")));
+    // `git worktree remove` semantics aren't used because they delete the
+    // directory contents, and forgetting a workspace should preserve its files.
     std::fs::remove_file(&dot_git)
         .context(&dot_git)
         .map_err(GitUnlinkWorktreeError::RemoveGitLink)?;
-    // TODO: `git worktree prune` removes metadata for all worktrees whose
-    // working directories are missing, not just the one we removed. Ideally
-    // we'd target only the specific worktree.
-    let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
-    git_ctx.spawn_worktree_prune()?;
+    // Unlike `git worktree prune`, only this worktree's registration is
+    // removed. Its gitlink is gone, so Git would consider it stale anyway.
+    if let Some(registration) = registration {
+        git_repo
+            .prune_worktree(
+                &registration,
+                std::time::SystemTime::now() + std::time::Duration::from_secs(1),
+                girt::WorktreeRetirement::Confirmed,
+            )
+            .map_err(|err| GitUnlinkWorktreeError::Prune(err.into()))?;
+    }
     Ok(true)
 }
 
@@ -1986,7 +2144,7 @@ pub enum GitResetHeadError {
     #[error(transparent)]
     Git(Box<dyn std::error::Error + Send + Sync>),
     #[error("Failed to update Git HEAD ref")]
-    UpdateHeadRef(#[source] Box<gix::reference::edit::Error>),
+    UpdateHeadRef(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     UnexpectedBackend(#[from] UnexpectedGitBackendError),
 }
@@ -2023,36 +2181,44 @@ pub async fn reset_head(
         let expected_ref = if let Some(id) = old_head_target.as_normal() {
             // We have to check the actual HEAD state because we don't record a
             // symbolic ref as such.
-            let actual_head = git_repo.head().map_err(GitResetHeadError::from_git)?;
-            if actual_head.is_detached() {
-                let id = owned_oid_from_commit_id(id);
-                gix::refs::transaction::PreviousValue::MustExistAndMatch(id.into())
+            let head = git_ref_name("HEAD").unwrap();
+            let actual_head = git_repo
+                .references()
+                .and_then(|refs| refs.read(&head))
+                .map_err(GitResetHeadError::from_git)?;
+            if let Some(girt::refs::Target::Direct(_)) = actual_head {
+                let id = oid_from_commit_id(&git_repo, id);
+                girt::refs::Expected::Value(girt::refs::Target::Direct(id))
             } else {
                 // Just overwrite symbolic ref, which is unusual. Alternatively,
                 // maybe we can test the target ref by issuing noop edit.
-                gix::refs::transaction::PreviousValue::MustExist
+                girt::refs::Expected::Exists
             }
         } else {
             // Just overwrite if unborn (or conflict), which is also unusual.
-            gix::refs::transaction::PreviousValue::MustExist
+            girt::refs::Expected::Exists
         };
-        let new_oid = new_head_target.as_normal().map(owned_oid_from_commit_id);
-        update_git_head(&git_repo, expected_ref, new_oid)
-            .map_err(|err| GitResetHeadError::UpdateHeadRef(err.into()))?;
+        let new_oid = new_head_target
+            .as_normal()
+            .map(|id| oid_from_commit_id(&git_repo, id));
+        update_git_head(
+            &git_repo,
+            expected_ref,
+            new_oid,
+            &git_backend.committer_signature(),
+        )
+        .map_err(GitResetHeadError::UpdateHeadRef)?;
         mut_repo.set_git_head_target(workspace_name, new_head_target);
     }
 
     // If there is an ongoing operation (merge, rebase, etc.), we need to clean it
     // up.
-    if git_repo.state().is_some() {
-        clear_operation_state(&git_repo)?;
-    }
+    clear_operation_state(&git_repo)?;
 
     reset_index(mut_repo, &git_repo, wc_commit).await
 }
 
-// TODO: Polish and upstream this to `gix`.
-fn clear_operation_state(git_repo: &gix::Repository) -> Result<(), GitResetHeadError> {
+fn clear_operation_state(git_repo: &girt::Repository) -> Result<(), GitResetHeadError> {
     // Based on the files `git2::Repository::cleanup_state` deletes; when
     // upstreaming this logic should probably become more elaborate to match
     // `git(1)` behavior.
@@ -2070,13 +2236,13 @@ fn clear_operation_state(git_repo: &gix::Repository) -> Result<(), GitResetHeadE
         _ => Err(GitResetHeadError::from_git(err)),
     };
     for file_name in STATE_FILE_NAMES {
-        let path = git_repo.path().join(file_name);
+        let path = git_repo.git_dir().join(file_name);
         std::fs::remove_file(&path)
             .context(&path)
             .or_else(handle_err)?;
     }
     for dir_name in STATE_DIR_NAMES {
-        let path = git_repo.path().join(dir_name);
+        let path = git_repo.git_dir().join(dir_name);
         std::fs::remove_dir_all(&path)
             .context(&path)
             .or_else(handle_err)?;
@@ -2084,109 +2250,89 @@ fn clear_operation_state(git_repo: &gix::Repository) -> Result<(), GitResetHeadE
     Ok(())
 }
 
+/// Git index entry for a tree value, or `None` for values that aren't
+/// represented in the index.
+fn to_index_entry(
+    format: girt::ObjectFormat,
+    path: &RepoPath,
+    value: &TreeValue,
+    stage: girt::index::Stage,
+) -> Option<girt::index::Entry> {
+    let (id, mode) = match value {
+        TreeValue::File {
+            id,
+            executable,
+            copy_id: _,
+        } => {
+            if *executable {
+                (id.as_bytes(), girt::index::Mode::Executable)
+            } else {
+                (id.as_bytes(), girt::index::Mode::Regular)
+            }
+        }
+        TreeValue::Symlink(id) => (id.as_bytes(), girt::index::Mode::Symlink),
+        TreeValue::Tree(_) => {
+            // This case is only possible if there is a file-directory conflict, since
+            // `MergedTree::entries` handles the recursion otherwise. We only materialize a
+            // file in the working copy for file-directory conflicts, so we don't add the
+            // tree to the index here either.
+            return None;
+        }
+        TreeValue::GitSubmodule(id) => (id.as_bytes(), girt::index::Mode::Gitlink),
+    };
+    let id = girt::ObjectId::from_bytes(format, id).expect("valid object id");
+    let mut entry =
+        girt::index::Entry::new(path.as_internal_file_string().as_bytes().to_vec(), mode, id);
+    entry.stage = stage;
+    Some(entry)
+}
+
+fn sort_index_entries(entries: &mut [girt::index::Entry]) {
+    entries.sort_by(|a, b| a.path.cmp(&b.path).then(a.stage.cmp(&b.stage)));
+}
+
 async fn reset_index(
     repo: &dyn Repo,
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
     wc_commit: &Commit,
 ) -> Result<(), GitResetHeadError> {
     let parent_tree = wc_commit.parent_tree(repo).await?;
     // Use the merged parent tree as the Git index, allowing `git diff` to show the
     // same changes as `jj diff`. If the merged parent tree has conflicts, then the
     // Git index will also be conflicted.
-    let mut index = if let Some(tree_id) = parent_tree.tree_ids().as_resolved() {
-        if tree_id == repo.store().empty_tree_id() {
-            // If the tree is empty, gix can fail to load the object (since Git doesn't
-            // require the empty tree to actually be present in the object database), so we
-            // just use an empty index directly.
-            gix::index::File::from_state(
-                gix::index::State::new(git_repo.object_hash()),
-                git_repo.index_path(),
-            )
-        } else {
-            // If the parent tree is resolved, we can use gix's `index_from_tree` method.
-            // This is more efficient than iterating over the tree and adding each entry.
-            git_repo
-                .index_from_tree(&gix::ObjectId::from_bytes_or_panic(tree_id.as_bytes()))
-                .map_err(GitResetHeadError::from_git)?
-        }
-    } else {
-        build_index_from_merged_tree(git_repo, &parent_tree)?
-    };
+    let mut entries = build_index_from_merged_tree(git_repo, &parent_tree)?;
 
     let wc_tree = wc_commit.tree();
-    update_intent_to_add_impl(git_repo, &mut index, &parent_tree, &wc_tree).await?;
+    update_intent_to_add_impl(git_repo, &mut entries, &parent_tree, &wc_tree).await?;
 
-    // Match entries in the new index with entries in the old index, and copy stat
-    // information if the entry didn't change.
-    if let Some(old_index) = git_repo.try_index().map_err(GitResetHeadError::from_git)? {
-        index
-            .entries_mut_with_paths()
-            .merge_join_by(old_index.entries(), |(entry, path), old_entry| {
-                gix::index::Entry::cmp_filepaths(path, old_entry.path(&old_index))
-                    .then_with(|| entry.stage().cmp(&old_entry.stage()))
-            })
-            .filter_map(|merged| merged.both())
-            .map(|((entry, _), old_entry)| (entry, old_entry))
-            .filter(|(entry, old_entry)| entry.id == old_entry.id && entry.mode == old_entry.mode)
-            .for_each(|(entry, old_entry)| entry.stat = old_entry.stat);
-    }
-
-    debug_assert!(index.verify_entries().is_ok());
-
-    index
-        .write(gix::index::write::Options::default())
-        .map_err(GitResetHeadError::from_git)
+    // Entries in the new index that match entries in the old index keep their
+    // cached stat information, so Git doesn't need to rehash unchanged files.
+    let mut edit = git_repo
+        .edit_index(girt::index::Limits::trusted())
+        .map_err(GitResetHeadError::from_git)?;
+    // Optional extensions (e.g. resolve-undo, untracked cache) describe the
+    // old index contents.
+    edit.make_standalone()
+        .map_err(GitResetHeadError::from_git)?;
+    edit.replace_entries_reusing_stat(entries)
+        .map_err(GitResetHeadError::from_git)?;
+    edit.commit().map_err(GitResetHeadError::from_git)
 }
 
 fn build_index_from_merged_tree(
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
     merged_tree: &MergedTree,
-) -> Result<gix::index::File, GitResetHeadError> {
-    let mut index = gix::index::File::from_state(
-        gix::index::State::new(git_repo.object_hash()),
-        git_repo.index_path(),
-    );
-
+) -> Result<Vec<girt::index::Entry>, GitResetHeadError> {
+    let format = git_repo.object_format();
+    let mut entries = Vec::new();
     let mut push_index_entry =
-        |path: &RepoPath, maybe_entry: &Option<TreeValue>, stage: gix::index::entry::Stage| {
-            let Some(entry) = maybe_entry else {
-                return;
-            };
-
-            let (id, mode) = match entry {
-                TreeValue::File {
-                    id,
-                    executable,
-                    copy_id: _,
-                } => {
-                    if *executable {
-                        (id.as_bytes(), gix::index::entry::Mode::FILE_EXECUTABLE)
-                    } else {
-                        (id.as_bytes(), gix::index::entry::Mode::FILE)
-                    }
-                }
-                TreeValue::Symlink(id) => (id.as_bytes(), gix::index::entry::Mode::SYMLINK),
-                TreeValue::Tree(_) => {
-                    // This case is only possible if there is a file-directory conflict, since
-                    // `MergedTree::entries` handles the recursion otherwise. We only materialize a
-                    // file in the working copy for file-directory conflicts, so we don't add the
-                    // tree to the index here either.
-                    return;
-                }
-                TreeValue::GitSubmodule(id) => (id.as_bytes(), gix::index::entry::Mode::COMMIT),
-            };
-
-            let path = BStr::new(path.as_internal_file_string());
-
-            // It is safe to push the entry because we ensure that we only add each path to
-            // a stage once, and we sort the entries after we finish adding them.
-            index.dangerously_push_entry(
-                gix::index::entry::Stat::default(),
-                gix::ObjectId::from_bytes_or_panic(id),
-                gix::index::entry::Flags::from_stage(stage),
-                mode,
-                path,
-            );
+        |path: &RepoPath, maybe_entry: &Option<TreeValue>, stage: girt::index::Stage| {
+            if let Some(entry) = maybe_entry
+                .as_ref()
+                .and_then(|value| to_index_entry(format, path, value, stage))
+            {
+                entries.push(entry);
+            }
         };
 
     let mut has_many_sided_conflict = false;
@@ -2194,16 +2340,16 @@ fn build_index_from_merged_tree(
     for (path, entry) in merged_tree.entries() {
         let entry = entry?;
         if let Some(resolved) = entry.as_resolved() {
-            push_index_entry(&path, resolved, gix::index::entry::Stage::Unconflicted);
+            push_index_entry(&path, resolved, girt::index::Stage::Normal);
             continue;
         }
 
         let conflict = entry.simplify();
         if let [left, base, right] = conflict.as_slice() {
             // 2-sided conflicts can be represented in the Git index
-            push_index_entry(&path, left, gix::index::entry::Stage::Ours);
-            push_index_entry(&path, base, gix::index::entry::Stage::Base);
-            push_index_entry(&path, right, gix::index::entry::Stage::Theirs);
+            push_index_entry(&path, left, girt::index::Stage::Ours);
+            push_index_entry(&path, base, girt::index::Stage::Base);
+            push_index_entry(&path, right, girt::index::Stage::Theirs);
         } else {
             // We can't represent many-sided conflicts in the Git index, so just add the
             // first side as staged. This is preferable to adding the first 2 sides as a
@@ -2213,43 +2359,34 @@ fn build_index_from_merged_tree(
             // a file named ".jj-do-not-resolve-this-conflict" to prevent the user from
             // accidentally committing the conflict markers.
             has_many_sided_conflict = true;
-            push_index_entry(
-                &path,
-                conflict.first(),
-                gix::index::entry::Stage::Unconflicted,
-            );
+            push_index_entry(&path, conflict.first(), girt::index::Stage::Normal);
         }
     }
-
-    // Required after `dangerously_push_entry` for correctness. We use do a lookup
-    // in the index after this, so it must be sorted before we do the lookup.
-    index.sort_entries();
 
     // If the conflict had an unrepresentable conflict and the dummy file path isn't
     // already added in the index, add a dummy file as a conflict.
     if has_many_sided_conflict
-        && index
-            .entry_index_by_path(INDEX_DUMMY_CONFLICT_FILE.into())
-            .is_err()
+        && !entries
+            .iter()
+            .any(|entry| entry.path == INDEX_DUMMY_CONFLICT_FILE.as_bytes())
     {
         let file_blob = git_repo
+            .loose_objects()
             .write_blob(
                 b"The working copy commit contains conflicts which cannot be resolved using Git.\n",
             )
             .map_err(GitResetHeadError::from_git)?;
-        index.dangerously_push_entry(
-            gix::index::entry::Stat::default(),
-            file_blob.detach(),
-            gix::index::entry::Flags::from_stage(gix::index::entry::Stage::Ours),
-            gix::index::entry::Mode::FILE,
+        let mut entry = girt::index::Entry::new(
             INDEX_DUMMY_CONFLICT_FILE.into(),
+            girt::index::Mode::Regular,
+            file_blob,
         );
-        // We need to sort again for correctness before writing the index file since we
-        // added a new entry.
-        index.sort_entries();
+        entry.stage = girt::index::Stage::Ours;
+        entries.push(entry);
     }
 
-    Ok(index)
+    sort_index_entries(&mut entries);
+    Ok(entries)
 }
 
 /// Diff `old_tree` to `new_tree` and mark added files as intent-to-add in the
@@ -2268,25 +2405,29 @@ pub async fn update_intent_to_add(
     let git_repo = git_backend
         .open_git_repo_at_workdir(workspace_root)
         .map_err(GitResetHeadError::from_git)?;
-    let mut index = git_repo
-        .index_or_empty()
+    let mut edit = git_repo
+        .edit_index(girt::index::Limits::trusted())
         .map_err(GitResetHeadError::from_git)?;
-    let mut_index = Arc::make_mut(&mut index);
-    update_intent_to_add_impl(&git_repo, mut_index, old_tree, new_tree).await?;
-    debug_assert!(mut_index.verify_entries().is_ok());
-    mut_index
-        .write(gix::index::write::Options::default())
+    let mut entries = edit.index().entries().to_vec();
+    let changed = update_intent_to_add_impl(&git_repo, &mut entries, old_tree, new_tree).await?;
+    if !changed {
+        return edit.abort().map_err(GitResetHeadError::from_git);
+    }
+    // Replacing entries invalidates the cache-tree (TREE) extension, which
+    // would otherwise describe stale entry counts.
+    edit.replace_entries(entries)
         .map_err(GitResetHeadError::from_git)?;
-
-    Ok(())
+    edit.commit().map_err(GitResetHeadError::from_git)
 }
 
+/// Returns whether `entries` changed.
 async fn update_intent_to_add_impl(
-    git_repo: &gix::Repository,
-    index: &mut gix::index::File,
+    git_repo: &girt::Repository,
+    entries: &mut Vec<girt::index::Entry>,
     old_tree: &MergedTree,
     new_tree: &MergedTree,
-) -> Result<(), GitResetHeadError> {
+) -> Result<bool, GitResetHeadError> {
+    let existing_paths: HashSet<Vec<u8>> = entries.iter().map(|entry| entry.path.clone()).collect();
     let mut diff_stream = old_tree.diff_stream(new_tree, &EverythingMatcher);
     let mut added_paths = vec![];
     let mut removed_paths = HashSet::new();
@@ -2304,65 +2445,43 @@ async fn update_intent_to_add_impl(
                     continue;
                 }
             };
-            if index
-                .entry_index_by_path(BStr::new(path.as_internal_file_string()))
-                .is_err()
-            {
-                added_paths.push((BString::from(path.into_internal_string()), executable));
+            let path = path.into_internal_string().into_bytes();
+            if !existing_paths.contains(&path) {
+                added_paths.push((path, executable));
             }
         } else if values.after.is_absent() {
-            removed_paths.insert(BString::from(path.into_internal_string()));
+            removed_paths.insert(path.into_internal_string().into_bytes());
         }
     }
 
     if added_paths.is_empty() && removed_paths.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
 
     if !added_paths.is_empty() {
         // We need to write the empty blob, otherwise `jj util gc` will report an error.
         let empty_blob = git_repo
+            .loose_objects()
             .write_blob(b"")
-            .map_err(GitResetHeadError::from_git)?
-            .detach();
+            .map_err(GitResetHeadError::from_git)?;
         for (path, executable) in added_paths {
             // We have checked that the index doesn't have this entry
-            index.dangerously_push_entry(
-                gix::index::entry::Stat::default(),
-                empty_blob,
-                gix::index::entry::Flags::INTENT_TO_ADD | gix::index::entry::Flags::EXTENDED,
-                if executable {
-                    gix::index::entry::Mode::FILE_EXECUTABLE
-                } else {
-                    gix::index::entry::Mode::FILE
-                },
-                path.as_ref(),
-            );
+            let mode = if executable {
+                girt::index::Mode::Executable
+            } else {
+                girt::index::Mode::Regular
+            };
+            let mut entry = girt::index::Entry::new(path, mode, empty_blob);
+            entry.intent_to_add = true;
+            entries.push(entry);
         }
     }
     if !removed_paths.is_empty() {
-        index.remove_entries(|_size, path, entry| {
-            entry
-                .flags
-                .contains(gix::index::entry::Flags::INTENT_TO_ADD)
-                && removed_paths.contains(path)
-        });
+        entries.retain(|entry| !(entry.intent_to_add && removed_paths.contains(&entry.path)));
     }
 
-    index.sort_entries();
-
-    // The entry mutations above (`dangerously_push_entry`, `remove_entries`,
-    // `sort_entries`) do not invalidate the cache-tree (TREE) extension loaded
-    // from disk, and `gix::index::File::write()` re-emits it as-is. Its own
-    // docs prescribe this discard: "Until the tree-cache is updated on write
-    // (see gitoxide#2421), remove it with `State::remove_tree()` before writing
-    // whenever entries were changed." Otherwise the written index carries a
-    // stale, under-counted cache-tree; an external `git add` that later
-    // rebuilds it trusts those child counts and emits a doubled subtree entry,
-    // which `git fsck` reports as duplicateEntries.
-    index.remove_tree();
-
-    Ok(())
+    sort_index_entries(entries);
+    Ok(true)
 }
 
 #[derive(Debug, Error)]
@@ -2375,6 +2494,12 @@ pub enum GitRemoteManagementError {
     RemoteName(#[from] GitRemoteNameError),
     #[error("Git remote named '{}' has nonstandard configuration", .0.as_symbol())]
     NonstandardConfiguration(RemoteNameBuf),
+    #[error("Git remote named '{}' has invalid configuration", name.as_symbol())]
+    InvalidRemote {
+        name: RemoteNameBuf,
+        #[source]
+        source: girt::remote::ConfiguredRemoteError,
+    },
     #[error("Error saving Git configuration")]
     GitConfigSaveError(#[source] std::io::Error),
     #[error("Unexpected Git error when managing remotes")]
@@ -2398,169 +2523,218 @@ fn default_fetch_refspec(remote: &RemoteName) -> String {
     )
 }
 
-fn add_ref(
-    name: gix::refs::FullName,
-    target: gix::refs::Target,
-    message: BString,
-) -> gix::refs::transaction::RefEdit {
-    gix::refs::transaction::RefEdit {
-        change: gix::refs::transaction::Change::Update {
-            log: gix::refs::transaction::LogChange {
-                mode: gix::refs::transaction::RefLog::AndReference,
-                force_create_reflog: false,
-                message,
-            },
-            expected: gix::refs::transaction::PreviousValue::MustNotExist,
-            new: target,
-        },
-        name,
-        deref: false,
+/// Maximum size of a Git config file edited by jj.
+const MAX_CONFIG_BYTES: usize = 64 * 1024 * 1024;
+
+/// A configured Git remote.
+#[derive(Clone, Debug)]
+pub struct GitRemote {
+    fetch_url: Option<BString>,
+    push_url: Option<BString>,
+    fetch_refspecs: Vec<girt::remote::ConfiguredRefspec>,
+    push_refspecs: Vec<girt::remote::ConfiguredRefspec>,
+}
+
+impl GitRemote {
+    /// First fetch URL.
+    pub fn fetch_url(&self) -> Option<&BStr> {
+        self.fetch_url.as_ref().map(|url| url.as_ref())
+    }
+
+    /// First push URL, falling back to the fetch URL.
+    pub fn push_url(&self) -> Option<&BStr> {
+        self.push_url.as_ref().map(|url| url.as_ref())
+    }
+
+    /// Configured fetch refspecs, in order.
+    pub fn fetch_refspecs(&self) -> &[girt::remote::ConfiguredRefspec] {
+        &self.fetch_refspecs
+    }
+
+    /// Configured push refspecs, in order.
+    pub fn push_refspecs(&self) -> &[girt::remote::ConfiguredRefspec] {
+        &self.push_refspecs
     }
 }
 
-fn remove_ref(reference: gix::Reference) -> gix::refs::transaction::RefEdit {
-    gix::refs::transaction::RefEdit {
-        change: gix::refs::transaction::Change::Delete {
-            expected: gix::refs::transaction::PreviousValue::MustExistAndMatch(
-                reference.target().into_owned(),
-            ),
-            log: gix::refs::transaction::RefLog::AndReference,
-        },
-        name: reference.name().to_owned(),
-        deref: false,
+/// Opens the repository's local config file for editing.
+fn edit_local_config(
+    git_repo: &girt::Repository,
+) -> Result<girt::config::ConfigEdit, GitRemoteManagementError> {
+    git_repo
+        .edit_config(MAX_CONFIG_BYTES)
+        .map_err(GitRemoteManagementError::from_git)
+}
+
+fn commit_config(edit: girt::config::ConfigEdit) -> Result<(), GitRemoteManagementError> {
+    edit.commit()
+        .map_err(|err| GitRemoteManagementError::GitConfigSaveError(std::io::Error::other(err)))
+}
+
+/// Sets `section.name` (without subsection) in the Git config file at `path`,
+/// replacing the last existing value or appending a new one.
+pub fn set_git_config_value(
+    path: &Path,
+    section: &str,
+    name: &str,
+    value: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut edit = girt::config::ConfigEdit::open(path, MAX_CONFIG_BYTES)?;
+    let document = edit.document_mut();
+    let last = document.config().entries().iter().rposition(|entry| {
+        entry.section.eq_ignore_ascii_case(section.as_bytes())
+            && entry.subsection.is_none()
+            && entry.name.eq_ignore_ascii_case(name.as_bytes())
+    });
+    match last {
+        Some(index) => document.set_value(index, value.as_bytes())?,
+        None => document.append(section, None, name, value.as_bytes())?,
     }
-}
-
-/// Save an edited [`gix::config::File`] to its original location on disk.
-///
-/// Note that the resulting configuration changes are *not* persisted to the
-/// originating [`gix::Repository`]! The repository must be reloaded with the
-/// new configuration if necessary.
-pub fn save_git_config(config: &gix::config::File) -> std::io::Result<()> {
-    let mut config_file = File::create(
-        config
-            .meta()
-            .path
-            .as_ref()
-            .expect("Git repository to have a config file"),
-    )?;
-    config.write_to_filter(&mut config_file, |section| section.meta() == config.meta())
-}
-
-fn save_remote(
-    config: &mut gix::config::File,
-    remote_name: &RemoteName,
-    remote: &mut gix::Remote,
-) -> Result<(), GitRemoteManagementError> {
-    // Work around the gitoxide remote management bug
-    // <https://github.com/GitoxideLabs/gitoxide/issues/1951> by adding
-    // an empty section.
-    //
-    // Note that this will produce useless empty sections if we ever
-    // support remote configuration keys other than `fetch` and `url`.
-    config
-        .new_section("remote", remote_name.as_str())
-        .map_err(GitRemoteManagementError::from_git)?;
-    remote
-        .save_as_to(remote_name.as_str(), config)
-        .map_err(GitRemoteManagementError::from_git)?;
+    edit.commit()?;
     Ok(())
 }
 
-fn git_config_branch_section_ids_by_remote(
-    config: &gix::config::File,
+/// Returns physical `[branch]` section ordinals referring to the given remote.
+fn git_config_branch_section_ordinals_by_remote(
+    document: &girt::config::Document,
     remote_name: &RemoteName,
-) -> Result<Vec<gix::config::file::SectionId>, GitRemoteManagementError> {
-    config
-        .sections_by_name("branch")
-        .into_iter()
-        .flatten()
+) -> Result<Vec<usize>, GitRemoteManagementError> {
+    let entries = document.config().entries();
+    document
+        .sections()
+        .filter(|section| section.name().eq_ignore_ascii_case(b"branch"))
         .filter_map(|section| {
-            let remote_values = section.values("remote");
-            let push_remote_values = section.values("pushRemote");
+            let section_entries = &entries[section.entry_range()];
+            let values = |key: &str| {
+                section_entries
+                    .iter()
+                    .filter(|entry| entry.name.eq_ignore_ascii_case(key.as_bytes()))
+                    .map(|entry| entry.value.as_deref().unwrap_or_default())
+                    .collect_vec()
+            };
+            let remote_values = values("remote");
+            let push_remote_values = values("pushRemote");
             if !remote_values
                 .iter()
                 .chain(push_remote_values.iter())
-                .any(|branch_remote_name| branch_remote_name == remote_name.as_str())
+                .any(|branch_remote_name| *branch_remote_name == remote_name.as_str().as_bytes())
             {
                 return None;
             }
             // https://github.com/jj-vcs/jj/issues/6984#issuecomment-3073761797
-            let is_supported_key = |name: &str| -> bool {
-                name.eq_ignore_ascii_case("remote")
-                    || name.eq_ignore_ascii_case("merge")
-                    || name.eq_ignore_ascii_case("rebase")
+            let is_supported_key = |name: &[u8]| -> bool {
+                name.eq_ignore_ascii_case(b"remote")
+                    || name.eq_ignore_ascii_case(b"merge")
+                    || name.eq_ignore_ascii_case(b"rebase")
             };
             if remote_values.len() > 1
                 || push_remote_values.len() > 1
-                || !section.value_names().all(|name| is_supported_key(&name))
+                || !section_entries
+                    .iter()
+                    .all(|entry| is_supported_key(&entry.name))
             {
                 return Some(Err(GitRemoteManagementError::NonstandardConfiguration(
                     remote_name.to_owned(),
                 )));
             }
-            Some(Ok(section.id()))
+            Some(Ok(section.ordinal()))
         })
         .collect()
 }
 
 fn rename_remote_in_git_branch_config_sections(
-    config: &mut gix::config::File,
+    document: &mut girt::config::Document,
     old_remote_name: &RemoteName,
     new_remote_name: &RemoteName,
 ) -> Result<(), GitRemoteManagementError> {
-    for id in git_config_branch_section_ids_by_remote(config, old_remote_name)? {
-        config
-            .section_mut_by_id(id)
-            .expect("found section to exist")
-            .set("remote", new_remote_name.as_str())
-            .expect("'remote' to be a valid value name");
+    let ordinals = git_config_branch_section_ordinals_by_remote(document, old_remote_name)?;
+    let indices = document
+        .sections()
+        .filter(|section| ordinals.contains(&section.ordinal()))
+        .flat_map(|section| section.entry_range())
+        .filter(|&index| {
+            let entry = &document.config().entries()[index];
+            entry.name.eq_ignore_ascii_case(b"remote")
+                && entry.value.as_deref() == Some(old_remote_name.as_str().as_bytes())
+        })
+        .collect_vec();
+    for index in indices {
+        document
+            .set_value(index, new_remote_name.as_str().as_bytes())
+            .map_err(GitRemoteManagementError::from_git)?;
     }
     Ok(())
 }
 
 fn remove_remote_git_branch_config_sections(
-    config: &mut gix::config::File,
+    document: &mut girt::config::Document,
     remote_name: &RemoteName,
 ) -> Result<(), GitRemoteManagementError> {
-    for id in git_config_branch_section_ids_by_remote(config, remote_name)? {
-        config
-            .remove_section_by_id(id)
-            .expect("removed section to exist");
-    }
-    Ok(())
+    let ordinals = git_config_branch_section_ordinals_by_remote(document, remote_name)?;
+    document
+        .remove_sections(&ordinals)
+        .map_err(GitRemoteManagementError::from_git)
 }
 
 fn remove_remote_git_config_sections(
-    config: &mut gix::config::File,
+    document: &mut girt::config::Document,
     remote_name: &RemoteName,
 ) -> Result<(), GitRemoteManagementError> {
-    let section_ids_to_remove: Vec<_> = config
-        .sections_by_name("remote")
-        .into_iter()
-        .flatten()
+    let entries = document.config().entries();
+    let ordinals: Vec<_> = document
+        .sections()
         .filter(|section| {
-            section.header().subsection_name() == Some(BStr::new(remote_name.as_str()))
+            section.name().eq_ignore_ascii_case(b"remote")
+                && section.subsection() == Some(remote_name.as_str().as_bytes())
         })
         .map(|section| {
-            if section.value_names().any(|name| {
-                !name.eq_ignore_ascii_case("url")
-                    && !name.eq_ignore_ascii_case("fetch")
-                    && !name.eq_ignore_ascii_case("tagOpt")
+            if entries[section.entry_range()].iter().any(|entry| {
+                !entry.name.eq_ignore_ascii_case(b"url")
+                    && !entry.name.eq_ignore_ascii_case(b"fetch")
+                    && !entry.name.eq_ignore_ascii_case(b"tagOpt")
             }) {
                 return Err(GitRemoteManagementError::NonstandardConfiguration(
                     remote_name.to_owned(),
                 ));
             }
-            Ok(section.id())
+            Ok(section.ordinal())
         })
         .try_collect()?;
-    for id in section_ids_to_remove {
-        config
-            .remove_section_by_id(id)
-            .expect("removed section to exist");
-    }
-    Ok(())
+    document
+        .remove_sections(&ordinals)
+        .map_err(GitRemoteManagementError::from_git)
+}
+
+/// Returns effective values of `remote.<name>.<key>`, including values from
+/// global configuration.
+fn remote_values(config: &girt::Config, remote_name: &RemoteName, key: &str) -> Vec<Vec<u8>> {
+    config
+        .values("remote", Some(remote_name.as_str().as_bytes()), key)
+        .map(|value| value.unwrap_or_default().to_vec())
+        .collect()
+}
+
+/// Writes a new `[remote "<name>"]` section at the end of the document.
+fn append_remote_section(
+    document: &mut girt::config::Document,
+    remote_name: &RemoteName,
+    urls: &[Vec<u8>],
+    push_urls: &[Vec<u8>],
+    fetch_refspecs: &[Vec<u8>],
+    tag_opts: &[Vec<u8>],
+) -> Result<(), GitRemoteManagementError> {
+    let entries = itertools::chain!(
+        urls.iter().map(|value| ("url", value.as_slice())),
+        push_urls.iter().map(|value| ("pushurl", value.as_slice())),
+        fetch_refspecs
+            .iter()
+            .map(|value| ("fetch", value.as_slice())),
+        tag_opts.iter().map(|value| ("tagOpt", value.as_slice())),
+    )
+    .collect_vec();
+    document
+        .append_section("remote", Some(remote_name.as_str().as_bytes()), &entries)
+        .map_err(GitRemoteManagementError::from_git)
 }
 
 /// Returns a sorted list of configured remote names.
@@ -2571,43 +2745,102 @@ pub fn get_all_remote_names(
     Ok(iter_remote_names(&git_repo).collect())
 }
 
-fn iter_remote_names(git_repo: &gix::Repository) -> impl Iterator<Item = RemoteNameBuf> {
-    git_repo
-        .remote_names()
+/// Returns all configured remote names, including those without URLs, in
+/// sorted order.
+pub fn configured_remote_names(git_repo: &girt::Repository) -> Vec<RemoteNameBuf> {
+    girt::remote::Remote::names(git_repo.config())
         .into_iter()
         // ignore non-UTF-8 remote names which we don't support
-        .filter_map(|name| String::from_utf8(name.into()).ok())
+        .filter_map(|name| String::from_utf8(name.to_vec()).ok())
         .map(RemoteNameBuf::from)
+        .sorted()
+        .dedup()
+        .collect()
+}
+
+fn iter_remote_names(git_repo: &girt::Repository) -> impl Iterator<Item = RemoteNameBuf> {
+    configured_remote_names(git_repo)
+        .into_iter()
         // exclude empty [remote "<name>"] section
         .filter(|name| try_find_active_remote_inner(git_repo, name).is_some())
 }
 
 /// Finds a configured remote with the given `name`. Returns `None` if it
 /// doesn't exist or has no fetch or push URLs.
-pub fn try_find_active_remote<'a>(
-    git_repo: &'a gix::Repository,
+pub fn try_find_active_remote(
+    git_repo: &girt::Repository,
     name: &RemoteName,
-) -> Result<Option<gix::Remote<'a>>, GitRemoteManagementError> {
+) -> Result<Option<GitRemote>, GitRemoteManagementError> {
     try_find_active_remote_inner(git_repo, name)
         .transpose()
-        .map_err(GitRemoteManagementError::from_git)
+        .map_err(|source| GitRemoteManagementError::InvalidRemote {
+            name: name.to_owned(),
+            source,
+        })
 }
 
-fn try_find_active_remote_inner<'a>(
-    git_repo: &'a gix::Repository,
+fn try_find_active_remote_inner(
+    git_repo: &girt::Repository,
     name: &RemoteName,
-) -> Option<Result<gix::Remote<'a>, gix::remote::find::Error>> {
-    // Since gix v0.86.0, try_find_remote() no longer filters out remotes
-    // without configured URLs.
-    git_repo
-        .try_find_remote(name.as_str())
-        .filter(|result| match result {
-            Ok(remote) => {
-                remote.url(gix::remote::Direction::Fetch).is_some()
-                    || remote.url(gix::remote::Direction::Push).is_some()
-            }
-            Err(_) => true,
-        })
+) -> Option<Result<GitRemote, girt::remote::ConfiguredRemoteError>> {
+    let config = git_repo.config();
+    let name_bytes = name.as_str().as_bytes();
+    let record = match girt::remote::ConfiguredRemoteRecord::find(config, name_bytes) {
+        Ok(Some(record)) => record,
+        Ok(None) => return None,
+        Err(err) => return Some(Err(err)),
+    };
+    if record.fetch_urls().len() == 0 && record.push_urls().len() == 0 {
+        return None;
+    }
+    let remote = match girt::remote::ConfiguredRemote::find(config, name_bytes) {
+        Ok(Some(remote)) => remote,
+        Ok(None) => return None,
+        Err(err) => return Some(Err(err)),
+    };
+    Some(Ok(GitRemote {
+        fetch_url: remote.fetch_url().map(BString::from),
+        push_url: remote.push_url().map(BString::from),
+        fetch_refspecs: remote.fetch_refspecs().to_vec(),
+        push_refspecs: remote.push_refspecs().to_vec(),
+    }))
+}
+
+/// Finds a configured remote without applying `url.<base>.insteadOf` rewrites.
+pub fn try_find_remote_without_url_rewrite(
+    git_repo: &girt::Repository,
+    name: &RemoteName,
+) -> Result<Option<GitRemote>, GitRemoteManagementError> {
+    let record =
+        girt::remote::ConfiguredRemoteRecord::find(git_repo.config(), name.as_str().as_bytes())
+            .map_err(|source| GitRemoteManagementError::InvalidRemote {
+                name: name.to_owned(),
+                source,
+            })?;
+    Ok(record.map(|record| {
+        let fetch_url = record.fetch_urls().next().map(BString::from);
+        let push_url = record
+            .push_urls()
+            .next()
+            .map(BString::from)
+            .or_else(|| fetch_url.clone());
+        GitRemote {
+            fetch_url,
+            push_url,
+            fetch_refspecs: record.fetch_refspecs().to_vec(),
+            push_refspecs: record.push_refspecs().to_vec(),
+        }
+    }))
+}
+
+/// Returns the default push remote: `remote.pushDefault` if configured, else
+/// `origin` if it exists, as with `git push`.
+pub fn default_push_remote_name(git_repo: &girt::Repository) -> Option<RemoteNameBuf> {
+    if let Some(name) = git_repo.config().string("remote", None, "pushdefault") {
+        return str::from_utf8(name).ok().map(RemoteNameBuf::from);
+    }
+    let origin = RemoteName::new("origin");
+    try_find_active_remote_inner(git_repo, origin).map(|_| origin.to_owned())
 }
 
 pub fn add_remote(
@@ -2626,24 +2859,21 @@ pub fn add_remote(
         ));
     }
 
-    let mut remote = git_repo
-        .remote_at(url)
-        .map_err(GitRemoteManagementError::from_git)?
-        .with_refspecs(
-            [default_fetch_refspec(remote_name).as_bytes()],
-            gix::remote::Direction::Fetch,
-        )
-        .expect("default refspec to be valid");
-
-    if let Some(push_url) = push_url {
-        remote = remote
-            .with_push_url(push_url)
-            .map_err(GitRemoteManagementError::from_git)?;
-    }
-
-    let mut config = git_repo.config_snapshot().clone();
-    save_remote(&mut config, remote_name, &mut remote)?;
-    save_git_config(&config).map_err(GitRemoteManagementError::GitConfigSaveError)?;
+    let mut edit = edit_local_config(&git_repo)?;
+    let document = edit.document_mut();
+    let push_urls = push_url
+        .map(|url| url.as_bytes().to_vec())
+        .into_iter()
+        .collect_vec();
+    append_remote_section(
+        document,
+        remote_name,
+        &[url.as_bytes().to_vec()],
+        &push_urls,
+        &[default_fetch_refspec(remote_name).into_bytes()],
+        &[],
+    )?;
+    commit_config(edit)?;
 
     mut_repo.ensure_remote(remote_name);
 
@@ -2654,7 +2884,7 @@ pub fn remove_remote(
     mut_repo: &mut MutableRepo,
     remote_name: &RemoteName,
 ) -> Result<(), GitRemoteManagementError> {
-    let mut git_repo = get_git_repo(mut_repo.store())?;
+    let git_repo = get_git_repo(mut_repo.store())?;
 
     if try_find_active_remote_inner(&git_repo, remote_name).is_none() {
         return Err(GitRemoteManagementError::NoSuchRemote(
@@ -2662,13 +2892,13 @@ pub fn remove_remote(
         ));
     }
 
-    let mut config = git_repo.config_snapshot().clone();
-    remove_remote_git_branch_config_sections(&mut config, remote_name)?;
-    remove_remote_git_config_sections(&mut config, remote_name)?;
-    save_git_config(&config).map_err(GitRemoteManagementError::GitConfigSaveError)?;
+    let mut edit = edit_local_config(&git_repo)?;
+    let document = edit.document_mut();
+    remove_remote_git_branch_config_sections(document, remote_name)?;
+    remove_remote_git_config_sections(document, remote_name)?;
+    commit_config(edit)?;
 
-    remove_remote_git_refs(&mut git_repo, remote_name)
-        .map_err(GitRemoteManagementError::from_git)?;
+    remove_remote_git_refs(&git_repo, remote_name).map_err(GitRemoteManagementError::from_git)?;
 
     if remote_name != REMOTE_NAME_FOR_LOCAL_GIT_REPO {
         remove_remote_refs(mut_repo, remote_name);
@@ -2678,9 +2908,9 @@ pub fn remove_remote(
 }
 
 fn remove_remote_git_refs(
-    git_repo: &mut gix::Repository,
+    git_repo: &girt::Repository,
     remote: &RemoteName,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+) -> Result<(), BoxedError> {
     let bookmark_prefix = format!(
         "{REMOTE_BOOKMARK_REF_NAMESPACE}{remote}/",
         remote = remote.as_str()
@@ -2689,19 +2919,20 @@ fn remove_remote_git_refs(
         "{REMOTE_TAG_REF_NAMESPACE}{remote}/",
         remote = remote.as_str()
     );
-    let edits: Vec<_> = itertools::chain(
-        git_repo
-            .references()?
-            .prefixed(bookmark_prefix.as_str())?
-            .map_ok(remove_ref),
-        git_repo
-            .references()?
-            .prefixed(tag_prefix.as_str())?
-            .map_ok(remove_ref),
+    let git_refs = GitRefs::new(git_repo)?;
+    let edits = itertools::chain(
+        git_refs.list_prefixed(&bookmark_prefix)?,
+        git_refs.list_prefixed(&tag_prefix)?,
     )
-    .try_collect()?;
-    git_repo.edit_references(edits)?;
-    Ok(())
+    .map(|reference| girt::refs::RefEdit {
+        name: reference.name,
+        dereference: false,
+        target: None,
+        expected: girt::refs::Expected::Value(reference.target),
+        reflog: girt::refs::Reflog::Delete,
+    })
+    .collect_vec();
+    git_refs.transaction(&edits)
 }
 
 fn remove_remote_refs(mut_repo: &mut MutableRepo, remote: &RemoteName) {
@@ -2727,11 +2958,11 @@ pub fn rename_remote(
     old_remote_name: &RemoteName,
     new_remote_name: &RemoteName,
 ) -> Result<(), GitRemoteManagementError> {
-    let mut git_repo = get_git_repo(mut_repo.store())?;
+    let git_repo = get_git_repo(mut_repo.store())?;
 
     validate_remote_name(new_remote_name)?;
 
-    let mut remote = try_find_active_remote(&git_repo, old_remote_name)?
+    let remote = try_find_active_remote(&git_repo, old_remote_name)?
         .ok_or_else(|| GitRemoteManagementError::NoSuchRemote(old_remote_name.to_owned()))?;
 
     if try_find_active_remote_inner(&git_repo, new_remote_name).is_some() {
@@ -2740,13 +2971,9 @@ pub fn rename_remote(
         ));
     }
 
-    match (
-        remote.refspecs(gix::remote::Direction::Fetch),
-        remote.refspecs(gix::remote::Direction::Push),
-    ) {
+    match (remote.fetch_refspecs(), remote.push_refspecs()) {
         ([refspec], [])
-            if refspec.to_ref().to_bstring()
-                == default_fetch_refspec(old_remote_name).as_bytes() => {}
+            if refspec.to_bytes() == default_fetch_refspec(old_remote_name).as_bytes() => {}
         _ => {
             return Err(GitRemoteManagementError::NonstandardConfiguration(
                 old_remote_name.to_owned(),
@@ -2754,21 +2981,32 @@ pub fn rename_remote(
         }
     }
 
-    remote
-        .replace_refspecs(
-            [default_fetch_refspec(new_remote_name).as_bytes()],
-            gix::remote::Direction::Fetch,
-        )
-        .expect("default refspec to be valid");
+    let mut edit = edit_local_config(&git_repo)?;
+    let document = edit.document_mut();
+    // Values from global configuration are copied to the local file, as jj has
+    // always done when renaming a remote.
+    let urls = remote_values(git_repo.config(), old_remote_name, "url");
+    let push_urls = remote_values(git_repo.config(), old_remote_name, "pushurl");
+    let tag_opts = remote_values(git_repo.config(), old_remote_name, "tagOpt");
+    append_remote_section(
+        document,
+        new_remote_name,
+        &urls,
+        &push_urls,
+        &[default_fetch_refspec(new_remote_name).into_bytes()],
+        &tag_opts,
+    )?;
+    rename_remote_in_git_branch_config_sections(document, old_remote_name, new_remote_name)?;
+    remove_remote_git_config_sections(document, old_remote_name)?;
+    commit_config(edit)?;
 
-    let mut config = git_repo.config_snapshot().clone();
-    save_remote(&mut config, new_remote_name, &mut remote)?;
-    rename_remote_in_git_branch_config_sections(&mut config, old_remote_name, new_remote_name)?;
-    remove_remote_git_config_sections(&mut config, old_remote_name)?;
-    save_git_config(&config).map_err(GitRemoteManagementError::GitConfigSaveError)?;
-
-    rename_remote_git_refs(&mut git_repo, old_remote_name, new_remote_name)
-        .map_err(GitRemoteManagementError::from_git)?;
+    rename_remote_git_refs(
+        &git_repo,
+        old_remote_name,
+        new_remote_name,
+        &get_git_backend(mut_repo.store())?.committer_signature(),
+    )
+    .map_err(GitRemoteManagementError::from_git)?;
 
     if old_remote_name != REMOTE_NAME_FOR_LOCAL_GIT_REPO {
         rename_remote_refs(mut_repo, old_remote_name, new_remote_name);
@@ -2778,57 +3016,53 @@ pub fn rename_remote(
 }
 
 fn rename_remote_git_refs(
-    git_repo: &mut gix::Repository,
+    git_repo: &girt::Repository,
     old_remote_name: &RemoteName,
     new_remote_name: &RemoteName,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    committer: &girt::Signature,
+) -> Result<(), BoxedError> {
     let to_prefixes = |namespace: &str| {
         (
             format!("{namespace}{remote}/", remote = old_remote_name.as_str()),
             format!("{namespace}{remote}/", remote = new_remote_name.as_str()),
         )
     };
-    let to_rename_edits = {
-        let ref_log_message = BString::from(format!(
-            "renamed remote {old_remote_name} to {new_remote_name}",
-            old_remote_name = old_remote_name.as_symbol(),
-            new_remote_name = new_remote_name.as_symbol(),
-        ));
-        move |old_prefix: &str, new_prefix: &str, old_ref: gix::Reference| {
-            let new_name = BString::new(
+    let ref_log_message = format!(
+        "renamed remote {old_remote_name} to {new_remote_name}",
+        old_remote_name = old_remote_name.as_symbol(),
+        new_remote_name = new_remote_name.as_symbol(),
+    );
+    let git_refs = GitRefs::new(git_repo)?;
+    let mut edits = Vec::new();
+    for namespace in [REMOTE_BOOKMARK_REF_NAMESPACE, REMOTE_TAG_REF_NAMESPACE] {
+        let (old_prefix, new_prefix) = to_prefixes(namespace);
+        for old_ref in git_refs.list_prefixed(&old_prefix)? {
+            let new_name = girt::refs::RefName::new(
                 [
                     new_prefix.as_bytes(),
-                    &old_ref.name().as_bstr()[old_prefix.len()..],
+                    &old_ref.name.as_bytes()[old_prefix.len()..],
                 ]
                 .concat(),
-            );
-            [
-                add_ref(
-                    new_name.try_into().expect("new ref name to be valid"),
-                    old_ref.target().into_owned(),
-                    ref_log_message.clone(),
-                ),
-                remove_ref(old_ref),
-            ]
+            )
+            .map_err(|_| "new ref name to be valid")?;
+            let reflog = reflog_for(git_repo, &new_name, committer, &ref_log_message)?;
+            edits.push(girt::refs::RefEdit {
+                name: new_name,
+                dereference: false,
+                target: Some(old_ref.target.clone()),
+                expected: girt::refs::Expected::Absent,
+                reflog,
+            });
+            edits.push(girt::refs::RefEdit {
+                name: old_ref.name,
+                dereference: false,
+                target: None,
+                expected: girt::refs::Expected::Value(old_ref.target),
+                reflog: girt::refs::Reflog::Delete,
+            });
         }
-    };
-
-    let (old_bookmark_prefix, new_bookmark_prefix) = to_prefixes(REMOTE_BOOKMARK_REF_NAMESPACE);
-    let (old_tag_prefix, new_tag_prefix) = to_prefixes(REMOTE_TAG_REF_NAMESPACE);
-    let edits: Vec<_> = itertools::chain(
-        git_repo
-            .references()?
-            .prefixed(old_bookmark_prefix.as_str())?
-            .map_ok(|old_ref| to_rename_edits(&old_bookmark_prefix, &new_bookmark_prefix, old_ref)),
-        git_repo
-            .references()?
-            .prefixed(old_tag_prefix.as_str())?
-            .map_ok(|old_ref| to_rename_edits(&old_tag_prefix, &new_tag_prefix, old_ref)),
-    )
-    .flatten_ok()
-    .try_collect()?;
-    git_repo.edit_references(edits)?;
-    Ok(())
+    }
+    git_refs.transaction(&edits)
 }
 
 /// Sets the new URLs on the remote. If a URL of given kind is not provided, it
@@ -2849,29 +3083,101 @@ pub fn set_remote_urls(
 
     validate_remote_name(remote_name)?;
 
-    let Some(result) = git_repo.try_find_remote_without_url_rewrite(remote_name.as_str()) else {
+    if try_find_remote_without_url_rewrite(&git_repo, remote_name)?.is_none() {
         return Err(GitRemoteManagementError::NoSuchRemote(
             remote_name.to_owned(),
         ));
+    }
+
+    let mut edit = edit_local_config(&git_repo)?;
+    let document = edit.document_mut();
+    for (key, new_value) in [("url", new_url), ("pushurl", new_push_url)] {
+        let Some(new_value) = new_value else {
+            continue;
+        };
+        // Replace the first value (the one in effect) and drop the rest, as
+        // there's only one URL of each kind.
+        let occurrences = document
+            .config()
+            .entries()
+            .iter()
+            .positions(|entry| {
+                entry.section.eq_ignore_ascii_case(b"remote")
+                    && entry.subsection.as_deref() == Some(remote_name.as_str().as_bytes())
+                    && entry.name.eq_ignore_ascii_case(key.as_bytes())
+            })
+            .collect_vec();
+        if let Some(&first) = occurrences.first() {
+            document
+                .set_value(first, new_value.as_bytes())
+                .map_err(GitRemoteManagementError::from_git)?;
+            for &index in occurrences[1..].iter().rev() {
+                document
+                    .remove(index)
+                    .map_err(GitRemoteManagementError::from_git)?;
+            }
+        } else {
+            append_after_remote_urls(document, remote_name, key, new_value.as_bytes())?;
+        }
+    }
+    commit_config(edit)?;
+
+    Ok(())
+}
+
+/// Appends a URL-kind value to the remote's section, keeping `url`/`pushurl`
+/// before other keys such as `fetch`, as Git does when writing a new remote.
+fn append_after_remote_urls(
+    document: &mut girt::config::Document,
+    remote_name: &RemoteName,
+    key: &str,
+    value: &[u8],
+) -> Result<(), GitRemoteManagementError> {
+    let name = remote_name.as_str().as_bytes();
+    let section = document
+        .sections()
+        .filter(|section| {
+            section.name().eq_ignore_ascii_case(b"remote") && section.subsection() == Some(name)
+        })
+        .last()
+        .map(|section| section.entry_range());
+    // Rebuild the section's entries with the new value inserted after URLs.
+    let Some(range) = section else {
+        return document
+            .append("remote", Some(name), key, value)
+            .map_err(GitRemoteManagementError::from_git);
     };
-    let mut remote = result.map_err(GitRemoteManagementError::from_git)?;
-
-    if let Some(url) = new_url {
-        remote = remote
-            .with_url(url)
+    let entries = document.config().entries()[range.clone()]
+        .iter()
+        .map(|entry| (entry.name.clone(), entry.value.clone().unwrap_or_default()))
+        .collect_vec();
+    let split = entries
+        .iter()
+        .rposition(|(name, _)| {
+            name.eq_ignore_ascii_case(b"url") || name.eq_ignore_ascii_case(b"pushurl")
+        })
+        .map_or(0, |i| i + 1);
+    for index in range.rev() {
+        document
+            .remove(index)
             .map_err(GitRemoteManagementError::from_git)?;
     }
-
-    if let Some(url) = new_push_url {
-        remote = remote
-            .with_push_url(url)
+    let rebuilt = itertools::chain!(
+        entries[..split]
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
+        [(key.as_bytes().to_vec(), value.to_vec())],
+        entries[split..]
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
+    )
+    .collect_vec();
+    for (entry_name, entry_value) in rebuilt {
+        let entry_name = String::from_utf8(entry_name).expect("config names are ASCII");
+        document
+            .append("remote", Some(name), &entry_name, &entry_value)
             .map_err(GitRemoteManagementError::from_git)?;
     }
-
-    let mut config = git_repo.config_snapshot().clone();
-    save_remote(&mut config, remote_name, &mut remote)?;
-    save_git_config(&config).map_err(GitRemoteManagementError::GitConfigSaveError)?;
-
     Ok(())
 }
 
@@ -2917,7 +3223,7 @@ pub enum GitFetchError {
     #[error("Failed to update refs: {}", .0.iter().map(|n| n.as_symbol()).join(", "))]
     RejectedUpdates(Vec<GitRefNameBuf>),
     #[error(transparent)]
-    Subprocess(#[from] GitSubprocessError),
+    Transport(#[from] GitTransportError),
 }
 
 #[derive(Error, Debug)]
@@ -2925,7 +3231,10 @@ pub enum GitDefaultRefspecError {
     #[error("No git remote named '{}'", .0.as_symbol())]
     NoSuchRemote(RemoteNameBuf),
     #[error("Invalid configuration for remote `{}`", .0.as_symbol())]
-    InvalidRemoteConfiguration(RemoteNameBuf, #[source] Box<gix::remote::find::Error>),
+    InvalidRemoteConfiguration(
+        RemoteNameBuf,
+        #[source] Box<girt::remote::ConfiguredRemoteError>,
+    ),
 }
 
 struct FetchedRefs {
@@ -3170,7 +3479,7 @@ enum FetchRefSpecKind {
 /// Loads the remote's fetch branch or bookmark patterns from Git config.
 pub fn load_default_fetch_bookmarks(
     remote_name: &RemoteName,
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
 ) -> Result<(IgnoredRefspecs, StringExpression), GitDefaultRefspecError> {
     let remote = try_find_active_remote_inner(git_repo, remote_name)
         .ok_or_else(|| GitDefaultRefspecError::NoSuchRemote(remote_name.to_owned()))?
@@ -3178,12 +3487,11 @@ pub fn load_default_fetch_bookmarks(
             GitDefaultRefspecError::InvalidRemoteConfiguration(remote_name.to_owned(), Box::new(e))
         })?;
 
-    let remote_refspecs = remote.refspecs(gix::remote::Direction::Fetch);
+    let remote_refspecs = remote.fetch_refspecs();
     let mut ignored_refspecs = Vec::with_capacity(remote_refspecs.len());
     let mut positive_bookmarks = Vec::with_capacity(remote_refspecs.len());
     let mut negative_bookmarks = Vec::new();
     for refspec in remote_refspecs {
-        let refspec = refspec.to_ref();
         match parse_fetch_refspec(remote_name, refspec) {
             Ok((FetchRefSpecKind::Positive, bookmark)) => {
                 positive_bookmarks.push(StringExpression::pattern(bookmark));
@@ -3192,7 +3500,7 @@ pub fn load_default_fetch_bookmarks(
                 negative_bookmarks.push(StringExpression::pattern(bookmark));
             }
             Err(reason) => {
-                let refspec = refspec.to_bstring();
+                let refspec = refspec.to_bytes().into();
                 ignored_refspecs.push(IgnoredRefspec { refspec, reason });
             }
         }
@@ -3210,28 +3518,30 @@ pub fn load_default_fetch_bookmarks(
 
 fn parse_fetch_refspec(
     remote_name: &RemoteName,
-    refspec: gix::refspec::RefSpecRef<'_>,
+    refspec: &girt::remote::ConfiguredRefspec,
 ) -> Result<(FetchRefSpecKind, StringPattern), &'static str> {
     let ensure_utf8 = |s| str::from_utf8(s).map_err(|_| "invalid UTF-8");
 
-    let (src, positive_dst) = match refspec.instruction() {
-        Instruction::Push(_) => panic!("push refspec should be filtered out by caller"),
-        Instruction::Fetch(fetch) => match fetch {
-            gix::refspec::instruction::Fetch::Only { src: _ } => {
-                return Err("fetch-only refspecs are not supported");
+    let (src, positive_dst) = match refspec.kind() {
+        girt::remote::ConfiguredRefspecKind::Selection => {
+            return Err("fetch-only refspecs are not supported");
+        }
+        girt::remote::ConfiguredRefspecKind::Mapping => {
+            if !refspec.force() {
+                return Err("non-forced refspecs are not supported");
             }
-            gix::refspec::instruction::Fetch::AndUpdate {
-                src,
-                dst,
-                allow_non_fast_forward,
-            } => {
-                if !allow_non_fast_forward {
-                    return Err("non-forced refspecs are not supported");
-                }
-                (ensure_utf8(src)?, Some(ensure_utf8(dst)?))
-            }
-            gix::refspec::instruction::Fetch::Exclude { src } => (ensure_utf8(src)?, None),
-        },
+            (
+                ensure_utf8(refspec.source().unwrap_or_default())?,
+                Some(ensure_utf8(refspec.destination().unwrap_or_default())?),
+            )
+        }
+        girt::remote::ConfiguredRefspecKind::Exclusion => {
+            (ensure_utf8(refspec.source().unwrap_or_default())?, None)
+        }
+        girt::remote::ConfiguredRefspecKind::AllMatching
+        | girt::remote::ConfiguredRefspecKind::Deletion => {
+            return Err("push refspecs are not supported");
+        }
     };
 
     let src_branch = src
@@ -3259,8 +3569,8 @@ fn parse_fetch_refspec(
 /// Helper struct to execute multiple `git fetch` operations
 pub struct GitFetch<'a> {
     mut_repo: &'a mut MutableRepo,
-    git_repo: Box<gix::Repository>,
-    git_ctx: GitSubprocessContext,
+    git_repo: Box<girt::Repository>,
+    transport: GitTransport,
     import_options: &'a GitImportOptions,
     fetched: Vec<FetchedRefs>,
 }
@@ -3268,16 +3578,16 @@ pub struct GitFetch<'a> {
 impl<'a> GitFetch<'a> {
     pub fn new(
         mut_repo: &'a mut MutableRepo,
-        subprocess_options: GitSubprocessOptions,
+        transport_options: GitTransportOptions,
         import_options: &'a GitImportOptions,
     ) -> Result<Self, UnexpectedGitBackendError> {
         let git_backend = get_git_backend(mut_repo.store())?;
         let git_repo = Box::new(git_backend.git_repo());
-        let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
+        let transport = GitTransport::from_git_backend(git_backend, transport_options);
         Ok(GitFetch {
             mut_repo,
             git_repo,
-            git_ctx,
+            transport,
             import_options,
             fetched: vec![],
         })
@@ -3294,7 +3604,7 @@ impl<'a> GitFetch<'a> {
         remote_name: &RemoteName,
         ExpandedFetchRefSpecs {
             expr,
-            refspecs: mut remaining_refspecs,
+            refspecs,
             negative_refspecs,
         }: ExpandedFetchRefSpecs,
         callback: &mut dyn GitSubprocessCallback,
@@ -3307,52 +3617,37 @@ impl<'a> GitFetch<'a> {
             return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
         }
 
-        if remaining_refspecs.is_empty() {
+        if refspecs.is_empty() {
             // Don't fall back to the base refspecs.
             return Ok(());
         }
 
-        let mut branches_to_prune = Vec::new();
-        // git unfortunately errors out if one of the many refspecs is not found
-        //
-        // our approach is to filter out failures and retry,
-        // until either all have failed or an attempt has succeeded
-        //
-        // even more unfortunately, git errors out one refspec at a time,
-        // meaning that the below cycle runs in O(#failed refspecs)
-        let updates = loop {
-            let status = self.git_ctx.spawn_fetch(
-                remote_name,
-                &remaining_refspecs,
-                &negative_refspecs,
-                callback,
-                depth,
-            )?;
-            let failing_refspec = match status {
-                GitFetchStatus::Updates(updates) => break updates,
-                GitFetchStatus::NoRemoteRef(failing_refspec) => failing_refspec,
-            };
-            tracing::debug!(failing_refspec, "failed to fetch ref");
-            remaining_refspecs.retain(|r| r.source.as_ref() != Some(&failing_refspec));
-
-            if let Some(branch_name) = failing_refspec.strip_prefix("refs/heads/") {
-                branches_to_prune.push(format!(
-                    "{remote_name}/{branch_name}",
-                    remote_name = remote_name.as_str()
-                ));
-            }
-        };
-
-        // Since remote refs are "force" updated, there should usually be no
-        // rejected refs. One exception is implicit tag updates.
-        if !updates.rejected.is_empty() {
-            let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
-            return Err(GitFetchError::RejectedUpdates(names));
+        // Destinations of exact refspecs whose source is missing on the remote
+        // are pruned along with the other stale remote-tracking refs.
+        let tag_namespace = format!(
+            "{REMOTE_TAG_REF_NAMESPACE}{remote}/",
+            remote = remote_name.as_str()
+        );
+        let outcome = self.transport.fetch(
+            remote_name,
+            &refspecs,
+            &negative_refspecs,
+            callback,
+            depth,
+            &tag_namespace,
+        )?;
+        for source in &outcome.missing_sources {
+            tracing::debug!(source, "failed to fetch ref");
         }
-
-        // Even if git fetch has --prune, if a branch is not found it will not be
-        // pruned on fetch
-        self.git_ctx.spawn_branch_prune(&branches_to_prune)?;
+        // The fetch installed new objects and moved refs.
+        let git_backend =
+            get_git_backend(self.mut_repo.store()).expect("backend type should have been tested");
+        *self.git_repo = git_backend.git_repo();
+        git_backend.refresh_objects().map_err(|err| {
+            GitFetchError::Transport(GitTransportError::Transfer(
+                girt::transfer::TransferError::Local(err.into()),
+            ))
+        })?;
 
         self.fetched.push(FetchedRefs {
             remote: remote_name.to_owned(),
@@ -3371,7 +3666,7 @@ impl<'a> GitFetch<'a> {
         if try_find_active_remote_inner(&self.git_repo, remote_name).is_none() {
             return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
         }
-        let default_branch = self.git_ctx.spawn_remote_show(remote_name)?;
+        let default_branch = self.transport.default_branch(remote_name)?;
         tracing::debug!(?default_branch);
         Ok(default_branch)
     }
@@ -3419,7 +3714,7 @@ pub enum GitPushError {
     #[error(transparent)]
     RemoteName(#[from] GitRemoteNameError),
     #[error(transparent)]
-    Subprocess(#[from] GitSubprocessError),
+    Transport(#[from] GitTransportError),
     #[error(transparent)]
     UnexpectedBackend(#[from] UnexpectedGitBackendError),
 }
@@ -3438,7 +3733,7 @@ pub struct GitRefUpdate {
     ///
     /// The expected position is sourced from the local remote-tracking branch.
     /// This should be `None` if we expect the ref to not exist on the remote.
-    pub targets: Diff<Option<gix::ObjectId>>,
+    pub targets: Diff<Option<girt::ObjectId>>,
 }
 
 /// Miscellaneous options for Git push command.
@@ -3451,7 +3746,7 @@ pub struct GitPushOptions {
 /// Pushes the specified refs and updates the repo view accordingly.
 pub fn push_refs(
     mut_repo: &mut MutableRepo,
-    subprocess_options: GitSubprocessOptions,
+    transport_options: GitTransportOptions,
     remote: &RemoteName,
     targets: &GitPushRefTargets,
     callback: &mut dyn GitSubprocessCallback,
@@ -3460,18 +3755,22 @@ pub fn push_refs(
     validate_remote_name(remote)?;
 
     let git_repo = get_git_repo(mut_repo.store())?;
+    let git_refs = GitRefs::new(&git_repo).map_err(|err| {
+        GitPushError::Transport(GitTransportError::Transfer(
+            girt::transfer::TransferError::Local(err),
+        ))
+    })?;
+    let to_oid = |id: &CommitId| oid_from_commit_id(&git_repo, id);
     let to_tag_target = |name: &RefName, remote: &RemoteName, id: &CommitId| {
         let remote_matcher = StringMatcher::exact(remote);
-        let oid = owned_oid_from_commit_id(id);
-        find_git_tag_oid_to_copy(mut_repo.view(), &git_repo, name, &remote_matcher, &oid)
+        let oid = to_oid(id);
+        find_git_tag_oid_to_copy(mut_repo.view(), &git_refs, name, &remote_matcher, oid)
             .unwrap_or(oid)
     };
     let ref_updates = itertools::chain(
         targets.bookmarks.iter().map(|(name, update)| GitRefUpdate {
             qualified_name: format!("refs/heads/{name}", name = name.as_str()).into(),
-            targets: update
-                .as_ref()
-                .map(|id| id.as_ref().map(owned_oid_from_commit_id)),
+            targets: update.as_ref().map(|id| id.as_ref().map(to_oid)),
         }),
         targets.tags.iter().map(|(name, update)| GitRefUpdate {
             qualified_name: format!("refs/tags/{name}", name = name.as_str()).into(),
@@ -3491,7 +3790,7 @@ pub fn push_refs(
 
     let push_stats = push_updates(
         mut_repo,
-        subprocess_options,
+        transport_options,
         remote,
         &ref_updates,
         callback,
@@ -3523,7 +3822,7 @@ pub fn push_refs(
     for (name, _, ref_update) in pushed_tag_updates() {
         let symbol = name.to_remote_symbol(remote);
         let edit = to_remote_tag_ref_update(symbol, ref_update.targets.after);
-        if let Err(err) = git_repo.edit_reference(edit) {
+        if let Err(err) = git_refs.transaction(&[edit]) {
             tracing::warn!(?symbol, ?err, "failed to update remote tag ref");
         }
     }
@@ -3565,7 +3864,7 @@ pub fn push_refs(
 /// Pushes the specified Git refs without updating the repo view.
 pub fn push_updates(
     repo: &dyn Repo,
-    subprocess_options: GitSubprocessOptions,
+    transport_options: GitTransportOptions,
     remote_name: &RemoteName,
     updates: &[GitRefUpdate],
     callback: &mut dyn GitSubprocessCallback,
@@ -3576,7 +3875,7 @@ pub fn push_updates(
     for update in updates {
         qualified_remote_refs_expected_locations.insert(
             update.qualified_name.as_ref(),
-            update.targets.before.as_deref(),
+            update.targets.before.as_ref(),
         );
         if let Some(new_target) = &update.targets.after {
             // We always force-push. We use the push_negotiation callback in
@@ -3596,7 +3895,7 @@ pub fn push_updates(
 
     let git_backend = get_git_backend(repo.store())?;
     let git_repo = git_backend.git_repo();
-    let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
+    let transport = GitTransport::from_git_backend(git_backend, transport_options);
 
     // check the remote exists
     if try_find_active_remote_inner(&git_repo, remote_name).is_none() {
@@ -3608,7 +3907,7 @@ pub fn push_updates(
         .map(|full_refspec| RefToPush::new(full_refspec, &qualified_remote_refs_expected_locations))
         .collect();
 
-    let mut push_stats = git_ctx.spawn_push(remote_name, &refs_to_push, callback, options)?;
+    let mut push_stats = transport.push(remote_name, &refs_to_push, callback, options)?;
     push_stats.pushed.sort();
     push_stats.rejected.sort();
     push_stats.remote_rejected.sort();
@@ -3626,13 +3925,10 @@ fn build_pushed_bookmarks_to_export<'a>(
         let symbol = name.to_remote_symbol(remote);
         match (update.before.as_ref(), update.after.as_ref()) {
             (old, Some(new)) => {
-                let old_oid = old.map(owned_oid_from_commit_id);
-                let new_oid = owned_oid_from_commit_id(new);
-                to_update.push((symbol.to_owned(), (old_oid, new_oid)));
+                to_update.push((symbol.to_owned(), (old.cloned(), new.clone())));
             }
             (Some(old), None) => {
-                let old_oid = owned_oid_from_commit_id(old);
-                to_delete.push((symbol.to_owned(), old_oid));
+                to_delete.push((symbol.to_owned(), old.clone()));
             }
             (None, None) => panic!("old/new targets should differ"),
         }
@@ -3648,31 +3944,25 @@ fn build_pushed_bookmarks_to_export<'a>(
 /// Constructs `RefEdit` to update pushed remote tag ref.
 fn to_remote_tag_ref_update(
     symbol: RemoteRefSymbol<'_>,
-    new_oid: Option<gix::ObjectId>,
-) -> gix::refs::transaction::RefEdit {
-    // No constraint on existing ref because remote tag ref shouldn't be moved
-    // externally, and should always point to the actual remote ref.
-    let expected = gix::refs::transaction::PreviousValue::Any;
-    let change = match new_oid {
-        Some(oid) => gix::refs::transaction::Change::Update {
-            log: gix::refs::transaction::LogChange::default(),
-            expected,
-            new: oid.into(),
-        },
-        None => gix::refs::transaction::Change::Delete {
-            expected,
-            log: gix::refs::transaction::RefLog::AndReference,
-        },
-    };
+    new_oid: Option<girt::ObjectId>,
+) -> girt::refs::RefEdit {
     let name = format!(
         "{REMOTE_TAG_REF_NAMESPACE}{remote}/{name}",
         remote = symbol.remote.as_str(),
         name = symbol.name.as_str()
     );
-    gix::refs::transaction::RefEdit {
-        change,
-        name: name.try_into().expect("pushed ref name should be valid"),
-        deref: false,
+    girt::refs::RefEdit {
+        name: git_ref_name(&name).expect("pushed ref name should be valid"),
+        dereference: false,
+        target: new_oid.map(girt::refs::Target::Direct),
+        // No constraint on existing ref because remote tag ref shouldn't be moved
+        // externally, and should always point to the actual remote ref.
+        expected: girt::refs::Expected::Any,
+        reflog: if new_oid.is_some() {
+            girt::refs::Reflog::Preserve
+        } else {
+            girt::refs::Reflog::Delete
+        },
     }
 }
 

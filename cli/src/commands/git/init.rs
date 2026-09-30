@@ -184,7 +184,7 @@ async fn do_init(
     command: &CommandHelper,
     workspace_root: &Path,
     colocate: bool,
-    object_hash: gix::hash::Kind,
+    object_hash: girt::ObjectFormat,
     git_repo: Option<&str>,
 ) -> Result<(), CommandError> {
     #[derive(Clone, Debug)]
@@ -255,7 +255,7 @@ async fn do_init(
                 }
             }
             print_trackable_remote_bookmarks(ui, workspace_command.repo().view())?;
-            if colocated && git_repo.kind() == gix::repository::Kind::LinkedWorkTree {
+            if colocated && git_repo.git_dir() != git_repo.common_dir() {
                 writeln!(
                     ui.warning_default(),
                     "Initialized a new colocated jj repo inside a Git worktree."
@@ -319,23 +319,25 @@ async fn init_git_refs(
 // Checks "upstream" first, then "origin" as fallback.
 pub fn maybe_set_repository_level_trunk_alias(
     ui: &Ui,
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
     config_env: &ConfigEnv,
 ) -> Result<(), CommandError> {
     // Try "upstream" first, then fall back to "origin"
     for remote in ["upstream", "origin"] {
         let ref_name = format!("refs/remotes/{remote}/HEAD");
-        if let Some(reference) = git_repo
-            .try_find_reference(&ref_name)
+        let ref_name = girt::refs::RefName::new(&ref_name).map_err(internal_error)?;
+        if let Some(target) = git_repo
+            .references()
+            .and_then(|refs| refs.read(&ref_name))
             .map_err(internal_error)?
         {
             // Found a HEAD reference for this remote. Even if we can't parse it,
             // we should stop here and not try other remotes because it doesn't
             // really make sense if "origin" were to be set as the default if we
             // know "upstream" exists.
-            if let Some(reference_name) = reference.target().try_name()
+            if let girt::refs::Target::Symbolic(reference_name) = &target
                 && let Some((GitRefKind::Bookmark, symbol)) =
-                    str::from_utf8(reference_name.as_bstr())
+                    str::from_utf8(reference_name.as_bytes())
                         .ok()
                         .and_then(|name| parse_git_ref(name.as_ref()))
             {

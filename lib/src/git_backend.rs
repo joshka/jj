@@ -15,7 +15,6 @@
 #![expect(missing_docs)]
 
 use std::collections::HashSet;
-use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::fmt::Error;
 use std::fmt::Formatter;
@@ -24,12 +23,11 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::process::Command;
-use std::process::ExitStatus;
 use std::str::Utf8Error;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::MutexGuard;
+use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -38,12 +36,7 @@ use futures::AsyncReadExt as _;
 use futures::StreamExt as _;
 use futures::io::Cursor;
 use futures::stream::BoxStream;
-use gix::bstr::BString;
-use gix::objs::CommitRefIter;
-use gix::objs::Exists as _;
-use gix::objs::Write as _;
-use gix::objs::WriteTo as _;
-use gix::objs::commit::signature_field_name;
+pub use girt::ObjectFormat;
 use itertools::Itertools as _;
 use once_cell::sync::OnceCell as OnceLock;
 use pollster::FutureExt as _;
@@ -108,9 +101,9 @@ pub const CHANGE_ID_COMMIT_HEADER: &str = "change-id";
 #[derive(Debug, Error)]
 pub enum GitBackendInitError {
     #[error("Failed to initialize git repository")]
-    InitRepository(#[source] gix::init::Error),
+    InitRepository(#[source] girt::InitError),
     #[error("Failed to open git repository")]
-    OpenRepository(#[source] gix::open::Error),
+    OpenRepository(#[source] girt::OpenError),
     #[error("Failed to encode git repository path")]
     EncodeRepositoryPath(#[source] BadPathEncoding),
     #[error(transparent)]
@@ -128,7 +121,7 @@ impl From<Box<GitBackendInitError>> for BackendInitError {
 #[derive(Debug, Error)]
 pub enum GitBackendLoadError {
     #[error("Failed to open git repository")]
-    OpenRepository(#[source] gix::open::Error),
+    OpenRepository(#[source] girt::OpenError),
     #[error("Failed to decode git repository path")]
     DecodeRepositoryPath(#[source] BadPathEncoding),
     #[error(transparent)]
@@ -163,7 +156,7 @@ pub enum GitRepoAtWorkdirError {
     #[error("No Git repository found at {path}")]
     NotFound {
         path: PathBuf,
-        source: gix::discover::is_git::Error,
+        source: girt::OpenError,
     },
     #[error("Unrelated Git repository found at {path}")]
     Unrelated { path: PathBuf },
@@ -173,75 +166,121 @@ pub enum GitRepoAtWorkdirError {
 
 #[derive(Debug, Error)]
 pub enum GitGcError {
-    #[error("Failed to run git gc command")]
-    GcCommand(#[source] std::io::Error),
-    #[error("git gc command exited with an error: {0}")]
-    GcCommandErrorStatus(ExitStatus),
+    #[error("Failed to plan retained Git objects")]
+    Plan(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("Refusing to remove Git objects because the reachability scan was incomplete")]
+    IncompletePlan,
+    #[error("Failed to repack or prune Git objects")]
+    Maintenance(#[source] Box<dyn std::error::Error + Send + Sync>),
+}
+
+/// Resource bounds for ordinary object reads. jj stores whole files in blobs,
+/// so these are sized to accept any object Git itself would write.
+/// Git configuration sources for repositories opened on behalf of the user.
+///
+/// This mirrors Git's selection of system, XDG, and home configuration files,
+/// plus `GIT_CONFIG_{COUNT,KEY_n,VALUE_n}` overrides, from the process
+/// environment.
+pub(crate) fn git_config_inputs() -> girt::config::ConfigInputs {
+    let system = cfg!(unix).then(|| PathBuf::from("/etc/gitconfig"));
+    girt::config::ConfigInputs::from_environment(system, |name| std::env::var_os(name), 1024)
+        .unwrap_or_default()
+}
+
+/// Options for creating a repository like `git init`, honoring the user's
+/// `init.defaultBranch`.
+fn init_options(
+    kind: girt::InitKind,
+    format: girt::ObjectFormat,
+) -> Result<girt::InitOptions, Box<GitBackendInitError>> {
+    let options = girt::InitOptions::new(kind).object_format(format);
+    // An unreadable user configuration leaves Git's built-in defaults in place.
+    match girt::Config::resolve(&git_config_inputs()) {
+        Ok(config) => options
+            .defaults_from(&config)
+            .map_err(|err| Box::new(GitBackendInitError::InitRepository(err))),
+        Err(_) => Ok(options),
+    }
+}
+
+/// Opens the Git repository at `path` (a Git directory, a `.git` file, or a
+/// working tree root) with user-level configuration.
+pub(crate) fn open_git_repository(path: &Path) -> Result<girt::Repository, girt::OpenError> {
+    girt::Repository::open_with_config(path, &git_config_inputs())
+}
+
+/// Converts a jj object id of valid length to a girt object id.
+pub(crate) fn to_git_object_id(format: girt::ObjectFormat, id: &impl ObjectId) -> girt::ObjectId {
+    girt::ObjectId::from_bytes(format, id.as_bytes()).expect("object id of repository length")
 }
 
 pub struct GitBackend {
-    // While gix::Repository can be created from gix::ThreadSafeRepository, it's
-    // cheaper to cache the thread-local instance behind a mutex than creating
-    // one for each backend method call. Our GitBackend is most likely to be
-    // used in a single-threaded context.
-    base_repo: gix::ThreadSafeRepository,
-    repo: Mutex<gix::Repository>,
+    /// Repository opened at load time. Its configuration is a snapshot; use
+    /// [`Self::git_repo()`] for a current view.
+    repo: girt::Repository,
+    /// Pack snapshot plus live loose-object reads. Refreshed when an object is
+    /// not found, since other processes (and fetch) may install new packs.
+    objects: RwLock<girt::Objects>,
     root_commit_id: CommitId,
     root_change_id: ChangeId,
     empty_tree_id: TreeId,
     shallow_root_ids: OnceLock<Vec<CommitId>>,
     extra_metadata_store: TableStore,
     cached_extra_metadata: Mutex<Option<Arc<ReadonlyTable>>>,
-    git_executable: PathBuf,
     write_change_id_header: bool,
+    user_name: String,
+    user_email: String,
 }
 
 impl GitBackend {
     pub const NAME: &str = "git";
 
     fn new(
-        base_repo: gix::ThreadSafeRepository,
+        repo: girt::Repository,
         extra_metadata_store: TableStore,
         git_settings: GitSettings,
-    ) -> Self {
-        let repo = base_repo.to_thread_local();
-        let root_commit_id = CommitId::from_bytes(repo.object_hash().null_ref().as_bytes());
+        settings: &UserSettings,
+    ) -> Result<Self, girt::OpenError> {
+        let format = repo.object_format();
+        let objects = repo.objects(girt::PackLimits::trusted()).map_err(|err| {
+            girt::OpenError::Malformed {
+                path: repo.object_dir().to_owned(),
+                reason: err.to_string(),
+            }
+        })?;
+        let root_commit_id = CommitId::from_bytes(girt::ObjectId::null(format).as_bytes());
         let root_change_id = ChangeId::from_bytes(&[0; CHANGE_ID_LENGTH]);
         let empty_tree_id =
-            TreeId::from_bytes(gix::ObjectId::empty_tree(repo.object_hash()).as_bytes());
-        Self {
-            base_repo,
-            repo: Mutex::new(repo),
+            TreeId::from_bytes(format.hash_object(girt::ObjectKind::Tree, b"").as_bytes());
+        Ok(Self {
+            repo,
+            objects: RwLock::new(objects),
             root_commit_id,
             root_change_id,
             empty_tree_id,
             shallow_root_ids: OnceLock::new(),
             extra_metadata_store,
             cached_extra_metadata: Mutex::new(None),
-            git_executable: git_settings.executable_path,
             write_change_id_header: git_settings.write_change_id_header,
-        }
+            user_name: settings.user_name().to_owned(),
+            user_email: settings.user_email().to_owned(),
+        })
     }
 
     pub fn init_internal(
         settings: &UserSettings,
         store_path: &Path,
-        object_hash: gix::hash::Kind,
+        object_hash: girt::ObjectFormat,
     ) -> Result<Self, Box<GitBackendInitError>> {
         let git_repo_path = Path::new("git");
-        let git_repo = gix::ThreadSafeRepository::init_opts(
+        girt::Repository::init_with_options(
             store_path.join(git_repo_path),
-            gix::create::Kind::Bare,
-            gix::create::Options {
-                object_hash: Some(object_hash),
-                ..Default::default()
-            },
-            gix_open_opts_from_settings(settings),
+            &init_options(girt::InitKind::Bare, object_hash)?,
         )
         .map_err(GitBackendInitError::InitRepository)?;
-        let git_settings =
-            GitSettings::from_settings(settings).map_err(GitBackendInitError::Config)?;
-        Self::init_with_repo(store_path, git_repo_path, git_repo, git_settings)
+        let git_repo = open_git_repository(&store_path.join(git_repo_path))
+            .map_err(GitBackendInitError::OpenRepository)?;
+        Self::init_with_repo(settings, store_path, git_repo_path, git_repo)
     }
 
     /// Initializes backend by creating a new Git repo at the specified
@@ -250,7 +289,7 @@ impl GitBackend {
         settings: &UserSettings,
         store_path: &Path,
         workspace_root: &Path,
-        object_hash: gix::hash::Kind,
+        object_hash: girt::ObjectFormat,
     ) -> Result<Self, Box<GitBackendInitError>> {
         let canonical_workspace_root = {
             let path = store_path.join(workspace_root);
@@ -258,20 +297,15 @@ impl GitBackend {
                 .context(&path)
                 .map_err(GitBackendInitError::Path)?
         };
-        let git_repo = gix::ThreadSafeRepository::init_opts(
-            canonical_workspace_root,
-            gix::create::Kind::WithWorktree,
-            gix::create::Options {
-                object_hash: Some(object_hash),
-                ..Default::default()
-            },
-            gix_open_opts_from_settings(settings),
+        girt::Repository::init_with_options(
+            &canonical_workspace_root,
+            &init_options(girt::InitKind::Worktree, object_hash)?,
         )
         .map_err(GitBackendInitError::InitRepository)?;
+        let git_repo = open_git_repository(&canonical_workspace_root.join(".git"))
+            .map_err(GitBackendInitError::OpenRepository)?;
         let git_repo_path = workspace_root.join(".git");
-        let git_settings =
-            GitSettings::from_settings(settings).map_err(GitBackendInitError::Config)?;
-        Self::init_with_repo(store_path, &git_repo_path, git_repo, git_settings)
+        Self::init_with_repo(settings, store_path, &git_repo_path, git_repo)
     }
 
     /// Initializes backend with an existing Git repo at the specified path.
@@ -286,22 +320,19 @@ impl GitBackend {
                 .context(&path)
                 .map_err(GitBackendInitError::Path)?
         };
-        let git_repo = gix::ThreadSafeRepository::open_opts(
-            canonical_git_repo_path,
-            gix_open_opts_from_settings(settings),
-        )
-        .map_err(GitBackendInitError::OpenRepository)?;
-        let git_settings =
-            GitSettings::from_settings(settings).map_err(GitBackendInitError::Config)?;
-        Self::init_with_repo(store_path, git_repo_path, git_repo, git_settings)
+        let git_repo = open_git_repository(&canonical_git_repo_path)
+            .map_err(GitBackendInitError::OpenRepository)?;
+        Self::init_with_repo(settings, store_path, git_repo_path, git_repo)
     }
 
     fn init_with_repo(
+        settings: &UserSettings,
         store_path: &Path,
         git_repo_path: &Path,
-        repo: gix::ThreadSafeRepository,
-        git_settings: GitSettings,
+        repo: girt::Repository,
     ) -> Result<Self, Box<GitBackendInitError>> {
+        let git_settings =
+            GitSettings::from_settings(settings).map_err(GitBackendInitError::Config)?;
         let extra_path = store_path.join("extra");
         fs::create_dir(&extra_path)
             .context(&extra_path)
@@ -323,11 +354,9 @@ impl GitBackend {
         fs::write(&target_path, git_repo_path_bytes)
             .context(&target_path)
             .map_err(GitBackendInitError::Path)?;
-        let extra_metadata_store = TableStore::init(
-            extra_path,
-            repo.to_thread_local().object_hash().len_in_bytes(),
-        );
-        Ok(Self::new(repo, extra_metadata_store, git_settings))
+        let extra_metadata_store = TableStore::init(extra_path, repo.object_format().digest_len());
+        Self::new(repo, extra_metadata_store, git_settings, settings)
+            .map_err(|err| Box::new(GitBackendInitError::OpenRepository(err)))
     }
 
     pub fn load(
@@ -346,62 +375,85 @@ impl GitBackend {
                 .context(&git_repo_path)
                 .map_err(GitBackendLoadError::Path)?
         };
-        let repo = gix::ThreadSafeRepository::open_opts(
-            git_repo_path,
-            gix_open_opts_from_settings(settings),
-        )
-        .map_err(GitBackendLoadError::OpenRepository)?;
-        let extra_metadata_store = TableStore::load(
-            store_path.join("extra"),
-            repo.to_thread_local().object_hash().len_in_bytes(),
-        );
+        let repo =
+            open_git_repository(&git_repo_path).map_err(GitBackendLoadError::OpenRepository)?;
+        let extra_metadata_store =
+            TableStore::load(store_path.join("extra"), repo.object_format().digest_len());
         let git_settings =
             GitSettings::from_settings(settings).map_err(GitBackendLoadError::Config)?;
-        Ok(Self::new(repo, extra_metadata_store, git_settings))
+        Self::new(repo, extra_metadata_store, git_settings, settings)
+            .map_err(|err| Box::new(GitBackendLoadError::OpenRepository(err)))
     }
 
-    fn lock_git_repo(&self) -> MutexGuard<'_, gix::Repository> {
-        self.repo.lock().unwrap()
+    /// Object format (hash function) of the underlying Git repository.
+    pub fn object_format(&self) -> girt::ObjectFormat {
+        self.repo.object_format()
     }
 
-    /// Returns a new thread-local handle for the underlying Git repository.
+    /// Returns a freshly opened handle to the underlying Git repository.
+    ///
+    /// The handle reflects configuration changes made since the backend was
+    /// loaded. Falls back to the load-time snapshot if reopening fails.
     ///
     /// Use [`Self::open_git_repo_at_workdir()`] for worktree operations.
-    pub fn git_repo(&self) -> gix::Repository {
-        self.base_repo.to_thread_local()
+    pub fn git_repo(&self) -> girt::Repository {
+        open_git_repository(self.repo.git_dir()).unwrap_or_else(|err| {
+            tracing::warn!(?err, "failed to reopen Git repository");
+            self.repo.clone()
+        })
     }
 
-    /// Reopens the repository at the given workspace path. Returns a new
-    /// thread-local handle.
+    /// Identity used for reflog entries written on behalf of the user.
+    pub fn committer_signature(&self) -> girt::Signature {
+        let now = crate::backend::Timestamp::now();
+        let name = if self.user_name.is_empty() {
+            EMPTY_STRING_PLACEHOLDER
+        } else {
+            &self.user_name
+        };
+        let email = if self.user_email.is_empty() {
+            EMPTY_STRING_PLACEHOLDER
+        } else {
+            &self.user_email
+        };
+        girt::Signature {
+            name: sanitize_identity(name),
+            email: sanitize_identity(email),
+            seconds: now.timestamp.0.div_euclid(1000).max(0),
+            offset_minutes: now.tz_offset.try_into().unwrap_or(0),
+        }
+    }
+
+    /// Reopens the repository at the given workspace path.
     pub fn open_git_repo_at_workdir(
         &self,
         path: &Path,
-    ) -> Result<gix::Repository, GitRepoAtWorkdirError> {
+    ) -> Result<girt::Repository, GitRepoAtWorkdirError> {
         // Try the open repository first.
         let open_repo = self.git_repo();
-        if let Some(workdir) = open_repo.workdir()
+        if let Some(workdir) = open_repo.worktree()
             && (workdir == path || dunce::canonicalize(path).is_ok_and(|path| workdir == path))
         {
             return Ok(open_repo);
         }
 
         // The input path doesn't include ".git".
-        let opts = open_repo.open_options().clone().open_path_as_is(false);
-        let work_repo = gix::ThreadSafeRepository::open_opts(path, opts)
-            .map_err(|err| match err {
-                gix::open::Error::NotARepository { path, source } => {
-                    GitRepoAtWorkdirError::NotFound { path, source }
+        // A `.git` that isn't a valid repository means there's no repository here.
+        let work_repo = open_git_repository(path).map_err(|err| match err {
+            err @ (girt::OpenError::NotFound(_) | girt::OpenError::Malformed { .. }) => {
+                GitRepoAtWorkdirError::NotFound {
+                    path: path.to_owned(),
+                    source: err,
                 }
-                err => GitRepoAtWorkdirError::Other(err.into()),
-            })?
-            .to_thread_local();
+            }
+            err => GitRepoAtWorkdirError::Other(err.into()),
+        })?;
         let canonicalize = |path: &Path| {
             dunce::canonicalize(path).map_err(|err| GitRepoAtWorkdirError::Other(err.into()))
         };
         if open_repo.common_dir() == work_repo.common_dir()
             || canonicalize(open_repo.common_dir())? == canonicalize(work_repo.common_dir())?
         {
-            // The last (path, work_repo) can be cached if needed.
             Ok(work_repo)
         } else {
             let path = path.to_owned();
@@ -411,26 +463,24 @@ impl GitBackend {
 
     /// Path to the `.git` directory or the repository itself if it's bare.
     pub fn git_repo_path(&self) -> &Path {
-        self.base_repo.path()
+        self.repo.git_dir()
     }
 
-    fn shallow_root_ids(&self, git_repo: &gix::Repository) -> BackendResult<&[CommitId]> {
-        // The list of shallow roots is cached by gix, but it's still expensive
-        // to stat file on every read_object() call. Refreshing shallow roots is
-        // also bad for consistency reasons.
-        self.shallow_root_ids
-            .get_or_try_init(|| {
-                let maybe_oids = git_repo
-                    .shallow_commits()
-                    .map_err(|err| BackendError::Other(err.into()))?;
-                let commit_ids = maybe_oids.map_or(vec![], |oids| {
-                    oids.iter()
-                        .map(|oid| CommitId::from_bytes(oid.as_bytes()))
-                        .collect()
-                });
-                Ok(commit_ids)
-            })
-            .map(AsRef::as_ref)
+    /// Path to the working tree of the underlying Git repository, if any.
+    pub fn git_workdir(&self) -> Option<&Path> {
+        self.repo.worktree()
+    }
+
+    fn shallow_root_ids(&self) -> &[CommitId] {
+        // Shallow roots are read once when the repository is opened. Refreshing
+        // them on every read would be expensive and bad for consistency.
+        self.shallow_root_ids.get_or_init(|| {
+            self.repo
+                .shallow_roots()
+                .iter()
+                .map(|oid| CommitId::from_bytes(oid.as_bytes()))
+                .collect()
+        })
     }
 
     fn cached_extra_metadata_table(&self) -> BackendResult<Arc<ReadonlyTable>> {
@@ -488,12 +538,16 @@ impl GitBackend {
             return Ok(());
         }
 
+        for id in &head_ids {
+            self.validate_git_object_id(*id)?;
+        }
         // Create no-gc ref even if known to the extras table. Concurrent GC
         // process might have deleted the no-gc ref.
-        let locked_repo = self.lock_git_repo();
-        locked_repo
-            .edit_references(head_ids.iter().copied().map(to_no_gc_ref_update))
-            .map_err(|err| BackendError::Other(Box::new(err)))?;
+        let edits = head_ids
+            .iter()
+            .map(|id| self.to_no_gc_ref_update(id))
+            .collect_vec();
+        self.edit_references(&edits)?;
 
         // These commits are imported from Git. Make our change ids persist (otherwise
         // future write_commit() could reassign new change id.)
@@ -503,102 +557,236 @@ impl GitBackend {
         );
         let (table, table_lock) = self.read_extra_metadata_table_locked()?;
         let mut mut_table = table.start_mutation();
-        import_extra_metadata_entries_from_heads(
-            &locked_repo,
-            &mut mut_table,
-            &table_lock,
-            &head_ids,
-            self.shallow_root_ids(&locked_repo)?,
-        )?;
+        self.import_extra_metadata_entries_from_heads(&mut mut_table, &table_lock, &head_ids)?;
         self.save_extra_metadata_table(mut_table, &table_lock)
     }
 
-    fn read_file_sync(&self, id: &FileId) -> BackendResult<Vec<u8>> {
-        let locked_repo = self.lock_git_repo();
-        let git_blob_id = validate_git_object_id(&locked_repo, id)?;
-        let mut blob = locked_repo
-            .find_object(git_blob_id)
-            .map_err(|err| map_not_found_err(err, id))?
-            .try_into_blob()
-            .map_err(|err| to_read_object_err(err, id))?;
-        Ok(blob.take_data())
-    }
-
-    fn new_diff_platform(&self) -> BackendResult<gix::diff::blob::Platform> {
-        let attributes = gix::worktree::Stack::new(
-            Path::new(""),
-            gix::worktree::stack::State::AttributesStack(Default::default()),
-            gix::worktree::glob::pattern::Case::Sensitive,
-            Vec::new(),
-            Vec::new(),
-        );
-        let filter = gix::diff::blob::Pipeline::new(
-            Default::default(),
-            gix::filter::plumbing::Pipeline::new(
-                self.git_repo()
-                    .command_context()
-                    .map_err(|err| BackendError::Other(Box::new(err)))?,
-                Default::default(),
-            ),
-            Vec::new(),
-            Default::default(),
-        );
-        Ok(gix::diff::blob::Platform::new(
-            Default::default(),
-            filter,
-            gix::diff::blob::pipeline::Mode::ToGit,
-            attributes,
-        ))
-    }
-
-    fn read_tree_for_commit<'repo>(
+    fn import_extra_metadata_entries_from_heads(
         &self,
-        repo: &'repo gix::Repository,
-        id: &CommitId,
-    ) -> BackendResult<gix::Tree<'repo>> {
+        mut_table: &mut MutableTable,
+        _table_lock: &FileLock,
+        head_ids: &HashSet<&CommitId>,
+    ) -> BackendResult<()> {
+        let shallow_roots = self.shallow_root_ids();
+        let mut work_ids = head_ids
+            .iter()
+            .filter(|&id| mut_table.get_value(id.as_bytes()).is_none())
+            .map(|&id| id.clone())
+            .collect_vec();
+        while let Some(id) = work_ids.pop() {
+            let data = self.read_git_object(&id, girt::ObjectKind::Commit)?;
+            let is_shallow = shallow_roots.contains(&id);
+            // TODO(#1624): Should we read the root tree here and check if it has a
+            // `.jjconflict-...` entries? That could happen if the user used `git` to e.g.
+            // change the description of a commit with tree-level conflicts.
+            let commit =
+                commit_from_git_without_root_parent(&id, self.object_format(), &data, is_shallow)?;
+            mut_table.add_entry(id.to_bytes(), serialize_extras(&commit));
+            work_ids.extend(
+                commit
+                    .parents
+                    .into_iter()
+                    .filter(|id| mut_table.get_value(id.as_bytes()).is_none()),
+            );
+        }
+        Ok(())
+    }
+
+    fn validate_git_object_id(&self, id: &impl ObjectId) -> BackendResult<girt::ObjectId> {
+        let format = self.object_format();
+        girt::ObjectId::from_bytes(format, id.as_bytes()).map_err(|_| {
+            BackendError::InvalidHashLength {
+                expected: format.digest_len(),
+                actual: id.as_bytes().len(),
+                object_type: id.object_type(),
+                hash: id.hex(),
+            }
+        })
+    }
+
+    /// Reads a raw object of the expected kind, refreshing the pack snapshot
+    /// once if it's not found.
+    fn read_git_object(
+        &self,
+        id: &impl ObjectId,
+        expected: girt::ObjectKind,
+    ) -> BackendResult<Vec<u8>> {
+        let git_id = self.validate_git_object_id(id)?;
+        let read = |objects: &girt::Objects| {
+            objects
+                .read(git_id, girt::ReadLimits::trusted())
+                .map_err(|err| to_read_object_err(err, id))
+        };
+        let mut object = read(&self.objects.read().unwrap())?;
+        if object.is_none() {
+            let mut objects = self.objects.write().unwrap();
+            objects
+                .refresh(
+                    girt::PackLimits::trusted(),
+                    girt::AlternateLimits::default(),
+                )
+                .map_err(|err| to_read_object_err(err, id))?;
+            object = read(&objects)?;
+        }
+        let Some(object) = object else {
+            return Err(BackendError::ObjectNotFound {
+                object_type: id.object_type(),
+                hash: id.hex(),
+                source: format!("An object with id {} could not be found", id.hex()).into(),
+            });
+        };
+        if object.kind() != expected {
+            return Err(to_read_object_err(
+                format!(
+                    "expected {} but found {}",
+                    expected.as_str(),
+                    object.kind().as_str()
+                ),
+                id,
+            ));
+        }
+        Ok(object.into_data())
+    }
+
+    /// Returns the (pack-snapshot) object store for bulk operations.
+    pub(crate) fn objects(&self) -> std::sync::RwLockReadGuard<'_, girt::Objects> {
+        self.objects.read().unwrap()
+    }
+
+    /// Refreshes the pack snapshot, e.g. after a fetch installed new packs.
+    pub(crate) fn refresh_objects(&self) -> Result<(), girt::ObjectReadError> {
+        self.objects.write().unwrap().refresh(
+            girt::PackLimits::trusted(),
+            girt::AlternateLimits::default(),
+        )
+    }
+
+    fn read_file_sync(&self, id: &FileId) -> BackendResult<Vec<u8>> {
+        self.read_git_object(id, girt::ObjectKind::Blob)
+    }
+
+    fn read_tree_for_commit(&self, id: &CommitId) -> BackendResult<girt::ObjectId> {
         let tree = self.read_commit(id).block_on()?.root_tree;
         // TODO(kfm): probably want to do something here if it is a merge
         let tree_id = tree.first().clone();
-        let gix_id = validate_git_object_id(repo, &tree_id)?;
-        repo.find_object(gix_id)
-            .map_err(|err| map_not_found_err(err, &tree_id))?
-            .try_into_tree()
-            .map_err(|err| to_read_object_err(err, &tree_id))
+        self.validate_git_object_id(&tree_id)
     }
 
-    // Similar to gix's write_blob, but compute the hash outside our lock to
-    // reduce contention.
-    fn write_blob(
-        &self,
-        bytes: &[u8],
-        object_type: &'static str,
-    ) -> BackendResult<gix::hash::ObjectId> {
-        let oid = gix::objs::compute_hash(
-            self.base_repo.objects.object_hash(),
-            gix::objs::Kind::Blob,
-            bytes,
-        )
-        .map_err(|err| BackendError::WriteObject {
-            object_type,
-            source: Box::new(err),
-        })?;
+    fn write_blob(&self, bytes: &[u8], object_type: &'static str) -> BackendResult<girt::ObjectId> {
+        self.repo
+            .loose_objects()
+            .write_blob(bytes)
+            .map_err(|err| BackendError::WriteObject {
+                object_type,
+                source: Box::new(err),
+            })
+    }
 
-        let locked_repo = self.lock_git_repo();
-        if !locked_repo.objects.exists(&oid) {
-            // reuse the precomputed hash, since Gitoxide provides an API for it (otherwise
-            // Gitoxide recomputes it).
-            let write_oid = locked_repo
-                .objects
-                .write_buf_with_known_id(gix::objs::Kind::Blob, bytes, oid)
-                .map_err(|err| BackendError::WriteObject {
-                    object_type,
-                    source: err,
-                })?;
-            assert!(oid == write_oid);
+    fn write_tree_entries(&self, entries: Vec<girt::TreeEntry>) -> BackendResult<girt::ObjectId> {
+        let to_err = |err: Box<dyn std::error::Error + Send + Sync>| BackendError::WriteObject {
+            object_type: "tree",
+            source: err,
+        };
+        let tree =
+            girt::Tree::new(self.object_format(), entries).map_err(|err| to_err(err.into()))?;
+        self.repo
+            .loose_objects()
+            .write_tree(&tree)
+            .map_err(|err| to_err(err.into()))
+    }
+
+    fn edit_references(&self, edits: &[girt::refs::RefEdit]) -> BackendResult<()> {
+        if edits.is_empty() {
+            return Ok(());
         }
-        Ok(oid)
+        let refs = self
+            .repo
+            .references()
+            .map_err(|err| BackendError::Other(err.into()))?;
+        refs.transaction(edits)
+            .map_err(|err| BackendError::Other(err.into()))?;
+        Ok(())
+    }
+
+    /// Returns `RefEdit` that will create a ref in `refs/jj/keep` if not exist.
+    /// Used for preventing GC of commits we create.
+    fn to_no_gc_ref_update(&self, id: &CommitId) -> girt::refs::RefEdit {
+        let name = girt::refs::RefName::new(format!("{NO_GC_REF_NAMESPACE}{id}")).unwrap();
+        let target = girt::refs::Target::Direct(to_git_object_id(self.object_format(), id));
+        girt::refs::RefEdit {
+            name,
+            dereference: false,
+            target: Some(target.clone()),
+            expected: girt::refs::Expected::AbsentOr(target),
+            reflog: girt::refs::Reflog::Preserve,
+        }
+    }
+
+    /// Write a tree conflict as a special tree with `.jjconflict-base-N` and
+    /// `.jjconflict-side-N` subtrees. This ensure that the parts are not GC'd.
+    /// Also includes a `JJ-CONFLICT-README` file explaining why these trees are
+    /// present. The rest of the tree is copied from the first term of the
+    /// conflict, which prevents editors with Git support from highlighting all
+    /// files as new.
+    fn write_tree_conflict(&self, conflict: &Merge<TreeId>) -> BackendResult<girt::ObjectId> {
+        let format = self.object_format();
+        let mut entries = itertools::chain(
+            conflict
+                .removes()
+                .enumerate()
+                .map(|(i, tree_id)| (format!(".jjconflict-base-{i}"), tree_id)),
+            conflict
+                .adds()
+                .enumerate()
+                .map(|(i, tree_id)| (format!(".jjconflict-side-{i}"), tree_id)),
+        )
+        .map(|(name, tree_id)| girt::TreeEntry {
+            mode: girt::EntryMode::Tree,
+            name: name.into_bytes(),
+            id: to_git_object_id(format, tree_id),
+        })
+        .collect_vec();
+        let readme_id = self
+            .write_blob(CONFLICT_README.as_bytes(), "file")
+            .map_err(|err| {
+                BackendError::Other(
+                    format!("Failed to write README for conflict tree: {err}").into(),
+                )
+            })?;
+        entries.push(girt::TreeEntry {
+            mode: girt::EntryMode::Blob,
+            name: JJ_CONFLICT_README_FILE_NAME.into(),
+            id: readme_id,
+        });
+        let first_tree_id = conflict.first();
+        if *first_tree_id != self.empty_tree_id {
+            let data = self.read_git_object(first_tree_id, girt::ObjectKind::Tree)?;
+            let first_tree = girt::Tree::parse(format, &data)
+                .map_err(|err| to_read_object_err(err, first_tree_id))?;
+            for entry in first_tree.entries() {
+                if !entry.name.starts_with(b".jjconflict")
+                    && entry.name != JJ_CONFLICT_README_FILE_NAME.as_bytes()
+                {
+                    entries.push(entry.clone());
+                }
+            }
+        }
+        self.write_tree_entries(entries)
     }
 }
+
+const CONFLICT_README: &str = r#"This commit was made by jj, https://jj-vcs.dev/.
+The commit contains file conflicts, and therefore looks wrong when used with
+plain Git or other tools that are unfamiliar with jj.
+
+The .jjconflict-* directories represent the different inputs to the conflict.
+For details, see
+https://docs.jj-vcs.dev/latest/git-compatibility/#format-mapping-details
+
+If you see this file in your working copy, it probably means that you used a
+regular `git` command to check out a conflicted commit. Use `jj abandon` to
+recover.
+"#;
 
 /// Canonicalizes the given `path` except for the last `".git"` component.
 ///
@@ -615,34 +803,44 @@ pub fn canonicalize_git_repo_path(path: &Path) -> io::Result<PathBuf> {
     }
 }
 
-fn gix_open_opts_from_settings(settings: &UserSettings) -> gix::open::Options {
-    let user_name = settings.user_name();
-    let user_email = settings.user_email();
-    gix::open::Options::default()
-        .config_overrides([
-            // Committer has to be configured to record reflog. Author isn't
-            // needed, but let's copy the same values.
-            format!("author.name={user_name}"),
-            format!("author.email={user_email}"),
-            format!("committer.name={user_name}"),
-            format!("committer.email={user_email}"),
-        ])
-        // The git_target path should point the repository, not the working directory.
-        .open_path_as_is(true)
-        // Gitoxide recommends this when correctness is preferred
-        .strict_config(true)
+/// Extra (non-standard) headers of a Git commit, in order, with folded
+/// continuation lines unfolded.
+struct CommitHeaders<'a> {
+    payload: girt::CommitPayload<'a>,
+}
+
+impl<'a> CommitHeaders<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self {
+            payload: girt::CommitPayload::from_bytes(data),
+        }
+    }
+
+    /// Returns the first header value with the given name.
+    fn find(&self, name: &str) -> Option<Vec<u8>> {
+        self.payload
+            .headers()
+            .find(|header| header.name == name.as_bytes())
+            .map(|header| header.unfolded_value())
+    }
+
+    /// Returns the index of the first header with the given name.
+    fn position(&self, name: &str) -> Option<usize> {
+        self.payload
+            .headers()
+            .position(|header| header.name == name.as_bytes())
+    }
 }
 
 /// Parses the `jj:conflict-labels` header value if present.
-fn extract_conflict_labels_from_commit(commit: &gix::objs::CommitRef) -> Merge<String> {
-    let Some(value) = commit
-        .extra_headers()
-        .find(JJ_CONFLICT_LABELS_COMMIT_HEADER)
-    else {
+fn extract_conflict_labels_from_commit(headers: &CommitHeaders) -> Merge<String> {
+    let Some(mut value) = headers.find(JJ_CONFLICT_LABELS_COMMIT_HEADER) else {
         return Merge::resolved(String::new());
     };
+    // As in Git, each line of the value ends in a newline.
+    value.push(b'\n');
 
-    str::from_utf8(value)
+    str::from_utf8(&value)
         .expect("labels should be valid utf8")
         .split_terminator('\n')
         .map(str::to_owned)
@@ -652,13 +850,16 @@ fn extract_conflict_labels_from_commit(commit: &gix::objs::CommitRef) -> Merge<S
 
 /// Parses the `jj:trees` header value if present, otherwise returns the
 /// resolved tree ID from Git.
-fn extract_root_tree_from_commit(commit: &gix::objs::CommitRef) -> Result<Merge<TreeId>, ()> {
-    let Some(value) = commit.extra_headers().find(JJ_TREES_COMMIT_HEADER) else {
+fn extract_root_tree_from_commit(
+    commit: &girt::Commit,
+    headers: &CommitHeaders,
+) -> Result<Merge<TreeId>, ()> {
+    let Some(value) = headers.find(JJ_TREES_COMMIT_HEADER) else {
         let tree_id = TreeId::from_bytes(commit.tree().as_bytes());
         return Ok(Merge::resolved(tree_id));
     };
 
-    let hash_len = commit.tree().kind().len_in_bytes();
+    let hash_len = commit.object_format().digest_len();
     let mut tree_ids = SmallVec::new();
     for hex in value.split(|b| *b == b' ') {
         let tree_id = TreeId::try_from_hex(hex).ok_or(())?;
@@ -676,19 +877,39 @@ fn extract_root_tree_from_commit(commit: &gix::objs::CommitRef) -> Result<Merge<
     Ok(Merge::from_vec(tree_ids))
 }
 
+/// Builds a commit header the way Git writes one: a value's final newline
+/// terminates its last line rather than adding an empty continuation line.
+fn git_header(name: &str, mut value: Vec<u8>) -> girt::CommitHeader {
+    if value.ends_with(b"\n") {
+        value.pop();
+    }
+    girt::CommitHeader {
+        name: name.into(),
+        value,
+    }
+}
+
+/// Name of the commit header that carries a signature over the rest of the
+/// commit, for the given object format.
+fn signature_field_name(format: girt::ObjectFormat) -> &'static str {
+    match format {
+        girt::ObjectFormat::Sha1 => "gpgsig",
+        girt::ObjectFormat::Sha256 => "gpgsig-sha256",
+    }
+}
+
 fn commit_from_git_without_root_parent(
     id: &CommitId,
-    git_object: &gix::Object,
+    format: girt::ObjectFormat,
+    data: &[u8],
     is_shallow: bool,
 ) -> BackendResult<Commit> {
-    let decode_err = |err: gix::objs::decode::Error| to_read_object_err(err, id);
-    let commit = git_object
-        .try_to_commit_ref()
-        .map_err(|err| to_read_object_err(err, id))?;
+    let commit = girt::Commit::parse(format, data).map_err(|err| to_read_object_err(err, id))?;
+    let headers = CommitHeaders::new(data);
 
     // If the git header has a change-id field, we attempt to convert that to a
     // valid JJ Change Id
-    let change_id = extract_change_id_from_commit(&commit)
+    let change_id = extract_change_id_from_headers(&headers)
         .unwrap_or_else(|| synthetic_change_id_from_git_commit_id(id));
 
     // shallow commits don't have parents their parents actually fetched, so we
@@ -699,43 +920,50 @@ fn commit_from_git_without_root_parent(
     } else {
         commit
             .parents()
+            .iter()
             .map(|oid| CommitId::from_bytes(oid.as_bytes()))
             .collect_vec()
     };
     // If the commit is a conflict, the conflict labels are stored in a commit
     // header separately from the trees.
-    let conflict_labels = extract_conflict_labels_from_commit(&commit);
+    let conflict_labels = extract_conflict_labels_from_commit(&headers);
     // Conflicted commits written before we started using the `jj:trees` header
     // (~March 2024) may have the root trees stored in the extra metadata table
     // instead. For such commits, we'll update the root tree later when we read the
     // extra metadata.
-    let root_tree = extract_root_tree_from_commit(&commit)
+    let root_tree = extract_root_tree_from_commit(&commit, &headers)
         .map_err(|()| to_read_object_err("Invalid jj:trees header", id))?;
     // Use lossy conversion as commit message with "mojibake" is still better than
     // nothing.
     // TODO: what should we do with commit.encoding?
-    let description = String::from_utf8_lossy(commit.message).into_owned();
-    let author = signature_from_git(commit.author().map_err(decode_err)?);
-    let committer = signature_from_git(commit.committer().map_err(decode_err)?);
+    let description = String::from_utf8_lossy(commit.message()).into_owned();
+    let author = commit
+        .author()
+        .map_err(|err| to_read_object_err(err, id))?
+        .ok_or_else(|| to_read_object_err("missing author", id))?;
+    let committer = commit
+        .committer()
+        .map_err(|err| to_read_object_err(err, id))?
+        .ok_or_else(|| to_read_object_err("missing committer", id))?;
+    let author = signature_from_git(author);
+    let committer = signature_from_git(committer);
 
     // If the commit is signed, extract both the signature and the signed data
-    // (which is the commit buffer with the gpgsig header omitted).
-    // We have to re-parse the raw commit data because gix CommitRef does not give
-    // us the sogned data, only the signature.
-    // Ideally, we could use try_to_commit_ref_iter at the beginning of this
-    // function and extract everything from that. For now, this works
-    let secure_sig = commit
-        .extra_headers
-        .iter()
-        .any(|(k, _)| *k == signature_field_name(git_object.id.kind()))
-        .then(|| CommitRefIter::signature(&git_object.data, git_object.id.kind()))
-        .transpose()
-        .map_err(decode_err)?
-        .flatten()
-        .map(|(sig, data)| SecureSig {
-            data: data.to_bstring().into(),
-            sig: sig.into_owned().into(),
-        });
+    // (which is the commit buffer with the signature header omitted).
+    let secure_sig = headers
+        .position(signature_field_name(format))
+        .map(|index| {
+            let header = headers.payload.headers().nth(index).unwrap();
+            let data = headers
+                .payload
+                .without_headers(&[index])
+                .ok_or_else(|| to_read_object_err("malformed signature header", id))?;
+            // As in Git, the value's lines each end in a newline.
+            let mut sig = header.unfolded_value();
+            sig.push(b'\n');
+            Ok::<_, BackendError>(SecureSig { data, sig })
+        })
+        .transpose()?;
 
     Ok(Commit {
         parents,
@@ -751,13 +979,16 @@ fn commit_from_git_without_root_parent(
     })
 }
 
-/// Extracts change id from commit headers.
-pub fn extract_change_id_from_commit(commit: &gix::objs::CommitRef) -> Option<ChangeId> {
-    commit
-        .extra_headers()
+fn extract_change_id_from_headers(headers: &CommitHeaders) -> Option<ChangeId> {
+    headers
         .find(CHANGE_ID_COMMIT_HEADER)
         .and_then(ChangeId::try_from_reverse_hex)
         .filter(|val| val.as_bytes().len() == CHANGE_ID_LENGTH)
+}
+
+/// Extracts change id from the headers of a raw Git commit object.
+pub fn extract_change_id_from_commit(commit_data: &[u8]) -> Option<ChangeId> {
+    extract_change_id_from_headers(&CommitHeaders::new(commit_data))
 }
 
 /// Deterministically creates a change id based on the commit id
@@ -781,33 +1012,50 @@ pub fn synthetic_change_id_from_git_commit_id(id: &CommitId) -> ChangeId {
 
 const EMPTY_STRING_PLACEHOLDER: &str = "JJ_EMPTY_STRING";
 
-fn signature_from_git(signature: gix::actor::SignatureRef) -> Signature {
+fn signature_from_git(signature: girt::IdentityRef) -> Signature {
     let name = signature.name;
-    let name = if name != EMPTY_STRING_PLACEHOLDER {
+    let name = if name != EMPTY_STRING_PLACEHOLDER.as_bytes() {
         String::from_utf8_lossy(name).into_owned()
     } else {
         "".to_string()
     };
     let email = signature.email;
-    let email = if email != EMPTY_STRING_PLACEHOLDER {
+    let email = if email != EMPTY_STRING_PLACEHOLDER.as_bytes() {
         String::from_utf8_lossy(email).into_owned()
     } else {
         "".to_string()
     };
-    let time = signature.time().unwrap_or_default();
-    let timestamp = MillisSinceEpoch(time.seconds * 1000);
-    let tz_offset = time.offset.div_euclid(60); // in minutes
+    let time = signature.date().unwrap_or(girt::IdentityDate {
+        seconds: 0,
+        offset_minutes: 0,
+    });
+    let timestamp = MillisSinceEpoch(time.seconds.saturating_mul(1000));
     Signature {
         name,
         email,
         timestamp: Timestamp {
             timestamp,
-            tz_offset,
+            tz_offset: time.offset_minutes.into(),
         },
     }
 }
 
-fn signature_to_git(signature: &Signature) -> gix::actor::Signature {
+/// Removes bytes that cannot be represented in a Git identity. Git itself
+/// drops angle brackets and newlines, and trims surrounding whitespace.
+fn sanitize_identity(value: &str) -> Vec<u8> {
+    let value: Vec<u8> = value
+        .bytes()
+        .filter(|b| !matches!(b, b'<' | b'>' | b'\n' | b'\r' | 0))
+        .collect();
+    let value = value.trim_ascii().to_vec();
+    if value.is_empty() {
+        EMPTY_STRING_PLACEHOLDER.into()
+    } else {
+        value
+    }
+}
+
+fn signature_to_git(signature: &Signature) -> girt::Signature {
     // git does not support empty names or emails
     let name = if !signature.name.is_empty() {
         &signature.name
@@ -819,14 +1067,11 @@ fn signature_to_git(signature: &Signature) -> gix::actor::Signature {
     } else {
         EMPTY_STRING_PLACEHOLDER
     };
-    let time = gix::date::Time::new(
-        signature.timestamp.timestamp.0.div_euclid(1000),
-        signature.timestamp.tz_offset * 60, // in seconds
-    );
-    gix::actor::Signature {
-        name: name.into(),
-        email: email.into(),
-        time,
+    girt::Signature {
+        name: sanitize_identity(name),
+        email: sanitize_identity(email),
+        seconds: signature.timestamp.timestamp.0.div_euclid(1000),
+        offset_minutes: signature.timestamp.tz_offset.clamp(-1439, 1439) as i16,
     }
 }
 
@@ -863,157 +1108,6 @@ fn deserialize_extras(commit: &mut Commit, bytes: &[u8]) {
     }
 }
 
-/// Returns `RefEdit` that will create a ref in `refs/jj/keep` if not exist.
-/// Used for preventing GC of commits we create.
-fn to_no_gc_ref_update(id: &CommitId) -> gix::refs::transaction::RefEdit {
-    let name = format!("{NO_GC_REF_NAMESPACE}{id}");
-    let new = gix::refs::Target::Object(gix::ObjectId::from_bytes_or_panic(id.as_bytes()));
-    let expected = gix::refs::transaction::PreviousValue::ExistingMustMatch(new.clone());
-    gix::refs::transaction::RefEdit {
-        change: gix::refs::transaction::Change::Update {
-            log: gix::refs::transaction::LogChange {
-                message: "used by jj".into(),
-                ..Default::default()
-            },
-            expected,
-            new,
-        },
-        name: name.try_into().unwrap(),
-        deref: false,
-    }
-}
-
-fn to_ref_deletion(git_ref: gix::refs::Reference) -> gix::refs::transaction::RefEdit {
-    let expected = gix::refs::transaction::PreviousValue::ExistingMustMatch(git_ref.target);
-    gix::refs::transaction::RefEdit {
-        change: gix::refs::transaction::Change::Delete {
-            expected,
-            log: gix::refs::transaction::RefLog::AndReference,
-        },
-        name: git_ref.name,
-        deref: false,
-    }
-}
-
-/// Recreates `refs/jj/keep` refs for the `new_heads`, and removes the other
-/// unreachable and non-head refs.
-fn recreate_no_gc_refs(
-    git_repo: &gix::Repository,
-    new_heads: impl IntoIterator<Item = CommitId>,
-    keep_newer: SystemTime,
-) -> BackendResult<()> {
-    // Calculate diff between existing no-gc refs and new heads.
-    let new_heads: HashSet<CommitId> = new_heads.into_iter().collect();
-    let mut no_gc_refs_to_keep_count: usize = 0;
-    let mut no_gc_refs_to_delete: Vec<gix::refs::Reference> = Vec::new();
-    let git_references = git_repo
-        .references()
-        .map_err(|err| BackendError::Other(err.into()))?;
-    let no_gc_refs_iter = git_references
-        .prefixed(NO_GC_REF_NAMESPACE)
-        .map_err(|err| BackendError::Other(err.into()))?;
-    for git_ref in no_gc_refs_iter {
-        let git_ref = git_ref.map_err(BackendError::Other)?.detach();
-        let oid = git_ref.target.try_id().ok_or_else(|| {
-            let name = git_ref.name.as_bstr();
-            BackendError::Other(format!("Symbolic no-gc ref found: {name}").into())
-        })?;
-        let id = CommitId::from_bytes(oid.as_bytes());
-        let name_good = git_ref.name.as_bstr()[NO_GC_REF_NAMESPACE.len()..] == id.hex();
-        if new_heads.contains(&id) && name_good {
-            no_gc_refs_to_keep_count += 1;
-            continue;
-        }
-        // Check timestamp of loose ref, but this is still racy on re-import
-        // because:
-        // - existing packed ref won't be demoted to loose ref
-        // - existing loose ref won't be touched
-        //
-        // TODO: might be better to switch to a dummy merge, where new no-gc ref
-        // will always have a unique name. Doing that with the current
-        // ref-per-head strategy would increase the number of the no-gc refs.
-        // https://github.com/jj-vcs/jj/pull/2659#issuecomment-1837057782
-        let loose_ref_path = git_repo.path().join(git_ref.name.to_path());
-        if let Ok(metadata) = loose_ref_path.metadata() {
-            let mtime = metadata.modified().expect("unsupported platform?");
-            if mtime > keep_newer {
-                tracing::trace!(?git_ref, "not deleting new");
-                no_gc_refs_to_keep_count += 1;
-                continue;
-            }
-        }
-        // Also deletes no-gc ref of random name created by old jj.
-        tracing::trace!(?git_ref, ?name_good, "will delete");
-        no_gc_refs_to_delete.push(git_ref);
-    }
-    tracing::info!(
-        new_heads_count = new_heads.len(),
-        no_gc_refs_to_keep_count,
-        no_gc_refs_to_delete_count = no_gc_refs_to_delete.len(),
-        "collected reachable refs"
-    );
-
-    // It's slow to delete packed refs one by one, so update refs all at once.
-    let ref_edits = itertools::chain(
-        no_gc_refs_to_delete.into_iter().map(to_ref_deletion),
-        new_heads.iter().map(to_no_gc_ref_update),
-    );
-    git_repo
-        .edit_references(ref_edits)
-        .map_err(|err| BackendError::Other(err.into()))?;
-
-    Ok(())
-}
-
-fn run_git_gc(program: &OsStr, git_dir: &Path, keep_newer: SystemTime) -> Result<(), GitGcError> {
-    let keep_newer = keep_newer
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default(); // underflow
-    let mut git = Command::new(program);
-    git.arg("--git-dir=.") // turn off discovery
-        .arg("gc")
-        .arg(format!("--prune=@{} +0000", keep_newer.as_secs()));
-    // Don't specify it by GIT_DIR/--git-dir. On Windows, the path could be
-    // canonicalized as UNC path, which wouldn't be supported by git.
-    git.current_dir(git_dir);
-    // TODO: pass output to UI layer instead of printing directly here
-    tracing::info!(?git, "running git gc");
-    let status = git.status().map_err(GitGcError::GcCommand)?;
-    tracing::info!(?status, "git gc exited");
-    if !status.success() {
-        return Err(GitGcError::GcCommandErrorStatus(status));
-    }
-    Ok(())
-}
-
-fn validate_git_object_id(
-    repo: &gix::Repository,
-    id: &impl ObjectId,
-) -> BackendResult<gix::ObjectId> {
-    let expected_kind = repo.object_hash();
-    match gix::ObjectId::try_from(id.as_bytes()) {
-        Ok(id) if id.kind() == expected_kind => Ok(id),
-        _ => Err(BackendError::InvalidHashLength {
-            expected: expected_kind.len_in_bytes(),
-            actual: id.as_bytes().len(),
-            object_type: id.object_type(),
-            hash: id.hex(),
-        }),
-    }
-}
-
-fn map_not_found_err(err: gix::object::find::existing::Error, id: &impl ObjectId) -> BackendError {
-    if matches!(err, gix::object::find::existing::Error::NotFound { .. }) {
-        BackendError::ObjectNotFound {
-            object_type: id.object_type(),
-            hash: id.hex(),
-            source: Box::new(err),
-        }
-    } else {
-        to_read_object_err(err, id)
-    }
-}
-
 fn to_read_object_err(
     err: impl Into<Box<dyn std::error::Error + Send + Sync>>,
     id: &impl ObjectId,
@@ -1033,38 +1127,6 @@ fn to_invalid_utf8_err(source: Utf8Error, id: &impl ObjectId) -> BackendError {
     }
 }
 
-fn import_extra_metadata_entries_from_heads(
-    git_repo: &gix::Repository,
-    mut_table: &mut MutableTable,
-    _table_lock: &FileLock,
-    head_ids: &HashSet<&CommitId>,
-    shallow_roots: &[CommitId],
-) -> BackendResult<()> {
-    let mut work_ids = head_ids
-        .iter()
-        .filter(|&id| mut_table.get_value(id.as_bytes()).is_none())
-        .map(|&id| id.clone())
-        .collect_vec();
-    while let Some(id) = work_ids.pop() {
-        let git_object = git_repo
-            .find_object(validate_git_object_id(git_repo, &id)?)
-            .map_err(|err| map_not_found_err(err, &id))?;
-        let is_shallow = shallow_roots.contains(&id);
-        // TODO(#1624): Should we read the root tree here and check if it has a
-        // `.jjconflict-...` entries? That could happen if the user used `git` to e.g.
-        // change the description of a commit with tree-level conflicts.
-        let commit = commit_from_git_without_root_parent(&id, &git_object, is_shallow)?;
-        mut_table.add_entry(id.to_bytes(), serialize_extras(&commit));
-        work_ids.extend(
-            commit
-                .parents
-                .into_iter()
-                .filter(|id| mut_table.get_value(id.as_bytes()).is_none()),
-        );
-    }
-    Ok(())
-}
-
 impl Debug for GitBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         f.debug_struct("GitBackend")
@@ -1080,7 +1142,7 @@ impl Backend for GitBackend {
     }
 
     fn commit_id_length(&self) -> usize {
-        self.base_repo.objects.object_hash().len_in_bytes()
+        self.object_format().digest_len()
     }
 
     fn change_id_length(&self) -> usize {
@@ -1125,15 +1187,9 @@ impl Backend for GitBackend {
     }
 
     async fn read_symlink(&self, _path: &RepoPath, id: &SymlinkId) -> BackendResult<String> {
-        let locked_repo = self.lock_git_repo();
-        let git_blob_id = validate_git_object_id(&locked_repo, id)?;
-        let mut blob = locked_repo
-            .find_object(git_blob_id)
-            .map_err(|err| map_not_found_err(err, id))?
-            .try_into_blob()
-            .map_err(|err| to_read_object_err(err, id))?;
-        let target = String::from_utf8(blob.take_data())
-            .map_err(|err| to_invalid_utf8_err(err.utf8_error(), id))?;
+        let data = self.read_git_object(id, girt::ObjectKind::Blob)?;
+        let target =
+            String::from_utf8(data).map_err(|err| to_invalid_utf8_err(err.utf8_error(), id))?;
         Ok(target)
     }
 
@@ -1165,50 +1221,32 @@ impl Backend for GitBackend {
             return Ok(Tree::default());
         }
 
-        let locked_repo = self.lock_git_repo();
-        let git_tree_id = validate_git_object_id(&locked_repo, id)?;
-        let git_tree = locked_repo
-            .find_object(git_tree_id)
-            .map_err(|err| map_not_found_err(err, id))?
-            .try_into_tree()
+        let data = self.read_git_object(id, girt::ObjectKind::Tree)?;
+        let git_tree = girt::Tree::parse(self.object_format(), &data)
             .map_err(|err| to_read_object_err(err, id))?;
         let mut entries: Vec<_> = git_tree
+            .entries()
             .iter()
             .map(|entry| -> BackendResult<_> {
-                let entry = entry.map_err(|err| to_read_object_err(err, id))?;
                 let name = RepoPathComponentBuf::new(
-                    str::from_utf8(entry.filename()).map_err(|err| to_invalid_utf8_err(err, id))?,
+                    str::from_utf8(&entry.name).map_err(|err| to_invalid_utf8_err(err, id))?,
                 )
                 .unwrap();
-                let value = match entry.mode().kind() {
-                    gix::object::tree::EntryKind::Tree => {
-                        let id = TreeId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::Tree(id)
-                    }
-                    gix::object::tree::EntryKind::Blob => {
-                        let id = FileId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::File {
-                            id,
-                            executable: false,
-                            copy_id: CopyId::placeholder(),
-                        }
-                    }
-                    gix::object::tree::EntryKind::BlobExecutable => {
-                        let id = FileId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::File {
-                            id,
-                            executable: true,
-                            copy_id: CopyId::placeholder(),
-                        }
-                    }
-                    gix::object::tree::EntryKind::Link => {
-                        let id = SymlinkId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::Symlink(id)
-                    }
-                    gix::object::tree::EntryKind::Commit => {
-                        let id = CommitId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::GitSubmodule(id)
-                    }
+                let oid = entry.id.as_bytes();
+                let value = match entry.mode {
+                    girt::EntryMode::Tree => TreeValue::Tree(TreeId::from_bytes(oid)),
+                    girt::EntryMode::Blob => TreeValue::File {
+                        id: FileId::from_bytes(oid),
+                        executable: false,
+                        copy_id: CopyId::placeholder(),
+                    },
+                    girt::EntryMode::Executable => TreeValue::File {
+                        id: FileId::from_bytes(oid),
+                        executable: true,
+                        copy_id: CopyId::placeholder(),
+                    },
+                    girt::EntryMode::Symlink => TreeValue::Symlink(SymlinkId::from_bytes(oid)),
+                    girt::EntryMode::Gitlink => TreeValue::GitSubmodule(CommitId::from_bytes(oid)),
                 };
                 Ok((name, value))
             })
@@ -1222,57 +1260,36 @@ impl Backend for GitBackend {
     }
 
     async fn write_tree(&self, _path: &RepoPath, contents: &Tree) -> BackendResult<TreeId> {
-        // Tree entries to be written must be sorted by Entry::filename(), which
-        // is slightly different from the order of our backend::Tree.
+        let format = self.object_format();
         let entries = contents
             .entries()
             .map(|entry| {
-                let filename = BString::from(entry.name().as_internal_str());
-                match entry.value() {
+                let name = entry.name().as_internal_str().as_bytes().to_vec();
+                let (mode, id) = match entry.value() {
                     TreeValue::File {
                         id,
-                        executable: false,
+                        executable,
                         copy_id: _, // TODO: Use the value
-                    } => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::Blob.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
-                    TreeValue::File {
-                        id,
-                        executable: true,
-                        copy_id: _, // TODO: Use the value
-                    } => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::BlobExecutable.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
-                    TreeValue::Symlink(id) => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::Link.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
-                    TreeValue::Tree(id) => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::Tree.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
-                    TreeValue::GitSubmodule(id) => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::Commit.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
+                    } => {
+                        let mode = if *executable {
+                            girt::EntryMode::Executable
+                        } else {
+                            girt::EntryMode::Blob
+                        };
+                        (mode, id.as_bytes())
+                    }
+                    TreeValue::Symlink(id) => (girt::EntryMode::Symlink, id.as_bytes()),
+                    TreeValue::Tree(id) => (girt::EntryMode::Tree, id.as_bytes()),
+                    TreeValue::GitSubmodule(id) => (girt::EntryMode::Gitlink, id.as_bytes()),
+                };
+                girt::TreeEntry {
+                    mode,
+                    name,
+                    id: girt::ObjectId::from_bytes(format, id).expect("valid object id"),
                 }
             })
-            .sorted_unstable()
             .collect();
-        let locked_repo = self.lock_git_repo();
-        let oid = locked_repo
-            .write_object(gix::objs::Tree { entries })
-            .map_err(|err| BackendError::WriteObject {
-                object_type: "tree",
-                source: Box::new(err),
-            })?;
+        let oid = self.write_tree_entries(entries)?;
         Ok(TreeId::from_bytes(oid.as_bytes()))
     }
 
@@ -1286,13 +1303,9 @@ impl Backend for GitBackend {
         }
 
         let mut commit = {
-            let locked_repo = self.lock_git_repo();
-            let git_commit_id = validate_git_object_id(&locked_repo, id)?;
-            let git_object = locked_repo
-                .find_object(git_commit_id)
-                .map_err(|err| map_not_found_err(err, id))?;
-            let is_shallow = self.shallow_root_ids(&locked_repo)?.contains(id);
-            commit_from_git_without_root_parent(id, &git_object, is_shallow)?
+            let data = self.read_git_object(id, girt::ObjectKind::Commit)?;
+            let is_shallow = self.shallow_root_ids().contains(id);
+            commit_from_git_without_root_parent(id, self.object_format(), &data, is_shallow)?
         };
         if commit.parents.is_empty() {
             commit.parents.push(self.root_commit_id.clone());
@@ -1322,11 +1335,11 @@ impl Backend for GitBackend {
     ) -> BackendResult<(CommitId, Commit)> {
         assert!(contents.secure_sig.is_none(), "commit.secure_sig was set");
 
-        let locked_repo = self.lock_git_repo();
+        let format = self.object_format();
         let tree_ids = &contents.root_tree;
         let git_tree_id = match tree_ids.as_resolved() {
-            Some(tree_id) => validate_git_object_id(&locked_repo, tree_id)?,
-            None => write_tree_conflict(&locked_repo, tree_ids)?,
+            Some(tree_id) => self.validate_git_object_id(tree_id)?,
+            None => self.write_tree_conflict(tree_ids)?,
         };
         let author = signature_to_git(&contents.author);
         let mut committer = signature_to_git(&contents.committer);
@@ -1336,7 +1349,7 @@ impl Backend for GitBackend {
                 "Cannot write a commit with no parents".into(),
             ));
         }
-        let mut parents = SmallVec::new();
+        let mut parents = vec![];
         for parent_id in &contents.parents {
             if *parent_id == self.root_commit_id {
                 // Git doesn't have a root commit, so if the parent is the root commit, we don't
@@ -1351,10 +1364,10 @@ impl Backend for GitBackend {
                     ));
                 }
             } else {
-                parents.push(validate_git_object_id(&locked_repo, parent_id)?);
+                parents.push(self.validate_git_object_id(parent_id)?);
             }
         }
-        let mut extra_headers: Vec<(BString, BString)> = vec![];
+        let mut extra_headers: Vec<girt::CommitHeader> = vec![];
         if !contents.conflict_labels.is_resolved() {
             // Labels cannot contain '\n' since we use it as a separator in the header.
             assert!(
@@ -1365,35 +1378,42 @@ impl Backend for GitBackend {
             );
             let mut joined_with_newlines = contents.conflict_labels.iter().join("\n");
             joined_with_newlines.push('\n');
-            extra_headers.push((
-                JJ_CONFLICT_LABELS_COMMIT_HEADER.into(),
+            extra_headers.push(git_header(
+                JJ_CONFLICT_LABELS_COMMIT_HEADER,
                 joined_with_newlines.into(),
             ));
         }
         if !tree_ids.is_resolved() {
             let value = tree_ids.iter().map(|id| id.hex()).join(" ");
-            extra_headers.push((JJ_TREES_COMMIT_HEADER.into(), value.into()));
+            extra_headers.push(girt::CommitHeader {
+                name: JJ_TREES_COMMIT_HEADER.into(),
+                value: value.into(),
+            });
         }
         if self.write_change_id_header {
-            extra_headers.push((
-                CHANGE_ID_COMMIT_HEADER.into(),
-                contents.change_id.reverse_hex().into(),
-            ));
+            extra_headers.push(girt::CommitHeader {
+                name: CHANGE_ID_COMMIT_HEADER.into(),
+                value: contents.change_id.reverse_hex().into(),
+            });
         }
 
+        let loose = self.repo.loose_objects();
         if tree_ids.iter().any(|id| id == &self.empty_tree_id) {
-            let tree = gix::objs::Tree::empty();
-            let tree_id =
-                locked_repo
-                    .write_object(&tree)
-                    .map_err(|err| BackendError::WriteObject {
-                        object_type: "tree",
-                        source: Box::new(err),
-                    })?;
-            assert!(tree_id.is_empty_tree());
+            let tree = girt::Tree::new(format, vec![]).unwrap();
+            loose
+                .write_tree(&tree)
+                .map_err(|err| BackendError::WriteObject {
+                    object_type: "tree",
+                    source: Box::new(err),
+                })?;
         }
 
         let extras = serialize_extras(&contents);
+        let to_write_err =
+            |err: Box<dyn std::error::Error + Send + Sync>| BackendError::WriteObject {
+                object_type: "commit",
+                source: err,
+            };
 
         // If two writers write commits of the same id with different metadata, they
         // will both succeed and the metadata entries will be "merged" later. Since
@@ -1403,39 +1423,30 @@ impl Backend for GitBackend {
         // repository is rsync-ed.
         let (table, table_lock) = self.read_extra_metadata_table_locked()?;
         let id = loop {
-            let mut commit = gix::objs::Commit {
-                message: message.to_owned().into(),
+            let mut fields = girt::CommitFields {
                 tree: git_tree_id,
+                parents: parents.clone(),
                 author: author.clone(),
                 committer: committer.clone(),
-                encoding: None,
-                parents: parents.clone(),
                 extra_headers: extra_headers.clone(),
+                message: message.as_bytes().to_vec(),
             };
 
             if let Some(sign) = &mut sign_with {
-                // we don't use gix pool, but at least use their heuristic
-                let mut data = Vec::with_capacity(512);
-                commit.write_to(&mut data).unwrap();
-
-                let sig = sign(&data).map_err(|err| BackendError::WriteObject {
-                    object_type: "commit",
-                    source: Box::new(err),
-                })?;
-                let field = signature_field_name(git_tree_id.kind());
-                commit
+                let unsigned =
+                    girt::Commit::new(fields.clone()).map_err(|err| to_write_err(err.into()))?;
+                let data = unsigned.as_bytes().to_vec();
+                let sig = sign(&data).map_err(|err| to_write_err(err.into()))?;
+                fields
                     .extra_headers
-                    .push((field.into(), sig.clone().into()));
+                    .push(git_header(signature_field_name(format), sig.clone()));
                 contents.secure_sig = Some(SecureSig { data, sig });
             }
 
-            let git_id =
-                locked_repo
-                    .write_object(&commit)
-                    .map_err(|err| BackendError::WriteObject {
-                        object_type: "commit",
-                        source: Box::new(err),
-                    })?;
+            let commit = girt::Commit::new(fields).map_err(|err| to_write_err(err.into()))?;
+            let git_id = loose
+                .write_commit(&commit)
+                .map_err(|err| to_write_err(err.into()))?;
 
             match table.get_value(git_id.as_bytes()) {
                 Some(existing_extras) if existing_extras != extras => {
@@ -1452,7 +1463,7 @@ impl Backend for GitBackend {
                     // commit had its timestamp set to 0. Moreover, we test that
                     // a commit with a negative timestamp can still be written
                     // and read back by `jj`.
-                    committer.time.seconds -= 1;
+                    committer.seconds -= 1;
                 }
                 _ => break CommitId::from_bytes(git_id.as_bytes()),
             }
@@ -1460,13 +1471,11 @@ impl Backend for GitBackend {
 
         // Everything up to this point had no permanent effect on the repo except
         // GC-able objects
-        locked_repo
-            .edit_reference(to_no_gc_ref_update(&id))
-            .map_err(|err| BackendError::Other(Box::new(err)))?;
+        self.edit_references(&[self.to_no_gc_ref_update(&id)])?;
 
         // Update the signature to match the one that was actually written to the object
         // store
-        contents.committer.timestamp.timestamp = MillisSinceEpoch(committer.time.seconds * 1000);
+        contents.committer.timestamp.timestamp = MillisSinceEpoch(committer.seconds * 1000);
         let mut mut_table = table.start_mutation();
         mut_table.add_entry(id.to_bytes(), extras);
         self.save_extra_metadata_table(mut_table, &table_lock)?;
@@ -1479,81 +1488,132 @@ impl Backend for GitBackend {
         root_id: &CommitId,
         head_id: &CommitId,
     ) -> BackendResult<BoxStream<'_, BackendResult<CopyRecord>>> {
-        let repo = self.git_repo();
-        let root_tree = self.read_tree_for_commit(&repo, root_id)?;
-        let head_tree = self.read_tree_for_commit(&repo, head_id)?;
+        let root_tree = self.read_tree_for_commit(root_id)?;
+        let head_tree = self.read_tree_for_commit(head_id)?;
+        let targets: Option<Vec<&[u8]>> = paths.map(|paths| {
+            paths
+                .iter()
+                .map(|path| path.as_internal_file_string().as_bytes())
+                .collect()
+        });
+        let options = girt::rewrites::Options {
+            similarity: 50,
+            copies: girt::rewrites::Copies::ModifiedPostimage,
+            track_empty: false,
+            candidate_limit: 1000,
+            // Binary files are only matched exactly.
+            approximate_binary: false,
+        };
+        let rewrites = self
+            .objects()
+            .detect_rewrites(
+                Some(root_tree),
+                Some(head_tree),
+                options,
+                girt::rewrites::Limits::default(),
+                targets.as_deref(),
+                &AtomicBool::new(false),
+            )
+            .map_err(|err| BackendError::Other(err.into()))?;
 
-        let change_to_copy_record =
-            |change: gix::object::tree::diff::Change| -> BackendResult<Option<CopyRecord>> {
-                let gix::object::tree::diff::Change::Rewrite {
-                    source_location,
-                    source_entry_mode,
-                    source_id,
-                    entry_mode: dest_entry_mode,
-                    location: dest_location,
-                    ..
-                } = change
-                else {
-                    return Ok(None);
-                };
-                // TODO: Renamed symlinks cannot be returned because CopyRecord
-                // expects `source_file: FileId`.
-                if !source_entry_mode.is_blob() || !dest_entry_mode.is_blob() {
-                    return Ok(None);
-                }
-
-                let source = str::from_utf8(source_location)
+        let records = rewrites
+            .into_iter()
+            .map(|rewrite| -> BackendResult<Option<CopyRecord>> {
+                let source = str::from_utf8(&rewrite.source)
                     .map_err(|err| to_invalid_utf8_err(err, root_id))?;
-                let dest = str::from_utf8(dest_location)
+                let dest = str::from_utf8(&rewrite.target)
                     .map_err(|err| to_invalid_utf8_err(err, head_id))?;
-
                 let target = RepoPathBuf::from_internal_string(dest).unwrap();
                 if !paths.is_none_or(|paths| paths.contains(&target)) {
                     return Ok(None);
                 }
-
                 Ok(Some(CopyRecord {
                     target,
                     target_commit: head_id.clone(),
                     source: RepoPathBuf::from_internal_string(source).unwrap(),
-                    source_file: FileId::from_bytes(source_id.as_bytes()),
+                    source_file: FileId::from_bytes(rewrite.source_id.as_bytes()),
                     source_commit: root_id.clone(),
                 }))
-            };
-
-        let mut records: Vec<BackendResult<CopyRecord>> = Vec::new();
-        root_tree
-            .changes()
-            .map_err(|err| BackendError::Other(err.into()))?
-            .options(|opts| {
-                opts.track_path().track_rewrites(Some(gix::diff::Rewrites {
-                    copies: Some(gix::diff::rewrites::Copies {
-                        source: gix::diff::rewrites::CopySource::FromSetOfModifiedFiles,
-                        percentage: Some(0.5),
-                    }),
-                    percentage: Some(0.5),
-                    limit: 1000,
-                    track_empty: false,
-                }));
             })
-            .for_each_to_obtain_tree_with_cache(
-                &head_tree,
-                &mut self.new_diff_platform()?,
-                |change| -> BackendResult<_> {
-                    match change_to_copy_record(change) {
-                        Ok(None) => {}
-                        Ok(Some(change)) => records.push(Ok(change)),
-                        Err(err) => records.push(Err(err)),
-                    }
-                    Ok(gix::object::tree::diff::Action::Continue(()))
-                },
-            )
-            .map_err(|err| BackendError::Other(err.into()))?;
+            .filter_map(Result::transpose)
+            .collect_vec();
         Ok(futures::stream::iter(records).boxed())
     }
 }
 
 impl GitBackend {
+    /// Recreates `refs/jj/keep` refs for the `new_heads`, and removes the other
+    /// unreachable and non-head refs.
+    fn recreate_no_gc_refs(
+        &self,
+        new_heads: impl IntoIterator<Item = CommitId>,
+        keep_newer: SystemTime,
+    ) -> BackendResult<()> {
+        // Calculate diff between existing no-gc refs and new heads.
+        let new_heads: HashSet<CommitId> = new_heads.into_iter().collect();
+        let mut no_gc_refs_to_keep_count: usize = 0;
+        let mut ref_edits = Vec::new();
+        let refs = self
+            .repo
+            .references()
+            .map_err(|err| BackendError::Other(err.into()))?;
+        let namespace =
+            girt::refs::RefName::new(NO_GC_REF_NAMESPACE.trim_end_matches('/')).unwrap();
+        let no_gc_refs = refs
+            .list_namespace(&namespace)
+            .map_err(|err| BackendError::Other(err.into()))?;
+        for git_ref in no_gc_refs {
+            let name_bytes = git_ref.name.as_bytes();
+            let name = String::from_utf8_lossy(name_bytes);
+            let girt::refs::Target::Direct(oid) = &git_ref.target else {
+                return Err(BackendError::Other(
+                    format!("Symbolic no-gc ref found: {name}").into(),
+                ));
+            };
+            let id = CommitId::from_bytes(oid.as_bytes());
+            let name_good = name_bytes[NO_GC_REF_NAMESPACE.len()..] == *id.hex().as_bytes();
+            if new_heads.contains(&id) && name_good {
+                no_gc_refs_to_keep_count += 1;
+                continue;
+            }
+            // Check timestamp of loose ref, but this is still racy on re-import
+            // because:
+            // - existing packed ref won't be demoted to loose ref
+            // - existing loose ref won't be touched
+            //
+            // TODO: might be better to switch to a dummy merge, where new no-gc ref
+            // will always have a unique name. Doing that with the current
+            // ref-per-head strategy would increase the number of the no-gc refs.
+            // https://github.com/jj-vcs/jj/pull/2659#issuecomment-1837057782
+            let loose_ref_path = self.repo.common_dir().join(&*name);
+            if let Ok(metadata) = loose_ref_path.metadata() {
+                let mtime = metadata.modified().expect("unsupported platform?");
+                if mtime > keep_newer {
+                    tracing::trace!(%name, "not deleting new");
+                    no_gc_refs_to_keep_count += 1;
+                    continue;
+                }
+            }
+            // Also deletes no-gc ref of random name created by old jj.
+            tracing::trace!(%name, ?name_good, "will delete");
+            ref_edits.push(girt::refs::RefEdit {
+                name: git_ref.name.clone(),
+                dereference: false,
+                target: None,
+                expected: girt::refs::Expected::Value(git_ref.target.clone()),
+                reflog: girt::refs::Reflog::Delete,
+            });
+        }
+        tracing::info!(
+            new_heads_count = new_heads.len(),
+            no_gc_refs_to_keep_count,
+            no_gc_refs_to_delete_count = ref_edits.len(),
+            "collected reachable refs"
+        );
+        ref_edits.extend(new_heads.iter().map(|id| self.to_no_gc_ref_update(id)));
+        self.edit_references(&ref_edits)
+    }
+
     /// Perform garbage collection.
     ///
     /// All commits found in the `index` won't be removed. In addition to that,
@@ -1561,12 +1621,12 @@ impl GitBackend {
     /// risk of deleting new commits created concurrently by another process.
     #[tracing::instrument(skip(self, index))]
     pub fn gc(&self, index: &dyn Index, keep_newer: SystemTime) -> BackendResult<()> {
-        let git_repo = self.lock_git_repo();
         let new_heads = index
             .all_heads_for_gc()
             .map_err(|err| BackendError::Other(err.into()))?
-            .filter(|id| *id != self.root_commit_id);
-        recreate_no_gc_refs(&git_repo, new_heads, keep_newer)?;
+            .filter(|id| *id != self.root_commit_id)
+            .collect_vec();
+        self.recreate_no_gc_refs(new_heads.iter().cloned(), keep_newer)?;
 
         // No locking is needed since we aren't going to add new "commits".
         let table = self.cached_extra_metadata_table()?;
@@ -1577,97 +1637,20 @@ impl GitBackend {
             .gc(&table, keep_newer)
             .map_err(|err| BackendError::Other(err.into()))?;
 
-        run_git_gc(
-            self.git_executable.as_ref(),
-            self.git_repo_path(),
-            keep_newer,
-        )
-        .map_err(|err| BackendError::Other(err.into()))?;
-        // Since "git gc" will move loose refs into packed refs, in-memory
-        // packed-refs cache should be invalidated without relying on mtime.
-        git_repo.refs.force_refresh_packed_buffer().ok();
+        crate::git_maintenance::collect_garbage(&self.git_repo(), keep_newer)
+            .map_err(|err| BackendError::Other(err.into()))?;
+        self.refresh_objects()
+            .map_err(|err| BackendError::Other(err.into()))?;
         Ok(())
     }
-}
-
-/// Write a tree conflict as a special tree with `.jjconflict-base-N` and
-/// `.jjconflict-side-N` subtrees. This ensure that the parts are not GC'd.
-/// Also includes a `JJ-CONFLICT-README` file explaining why these trees are
-/// present. The rest of the tree is copied from the first term of the conflict,
-/// which prevents editors with Git support from highlighting all files as new.
-fn write_tree_conflict(
-    repo: &gix::Repository,
-    conflict: &Merge<TreeId>,
-) -> BackendResult<gix::ObjectId> {
-    // Tree entries to be written must be sorted by Entry::filename().
-    let mut entries = itertools::chain(
-        conflict
-            .removes()
-            .enumerate()
-            .map(|(i, tree_id)| (format!(".jjconflict-base-{i}"), tree_id)),
-        conflict
-            .adds()
-            .enumerate()
-            .map(|(i, tree_id)| (format!(".jjconflict-side-{i}"), tree_id)),
-    )
-    .map(|(name, tree_id)| gix::objs::tree::Entry {
-        mode: gix::object::tree::EntryKind::Tree.into(),
-        filename: name.into(),
-        oid: gix::ObjectId::from_bytes_or_panic(tree_id.as_bytes()),
-    })
-    .collect_vec();
-    let readme_id = repo
-        .write_blob(
-            r#"This commit was made by jj, https://jj-vcs.dev/.
-The commit contains file conflicts, and therefore looks wrong when used with
-plain Git or other tools that are unfamiliar with jj.
-
-The .jjconflict-* directories represent the different inputs to the conflict.
-For details, see
-https://docs.jj-vcs.dev/latest/git-compatibility/#format-mapping-details
-
-If you see this file in your working copy, it probably means that you used a
-regular `git` command to check out a conflicted commit. Use `jj abandon` to
-recover.
-"#,
-        )
-        .map_err(|err| {
-            BackendError::Other(format!("Failed to write README for conflict tree: {err}").into())
-        })?
-        .detach();
-    entries.push(gix::objs::tree::Entry {
-        mode: gix::object::tree::EntryKind::Blob.into(),
-        filename: JJ_CONFLICT_README_FILE_NAME.into(),
-        oid: readme_id,
-    });
-    let first_tree_id = conflict.first();
-    let first_tree = repo
-        .find_tree(gix::ObjectId::from_bytes_or_panic(first_tree_id.as_bytes()))
-        .map_err(|err| to_read_object_err(err, first_tree_id))?;
-    for entry in first_tree.iter() {
-        let entry = entry.map_err(|err| to_read_object_err(err, first_tree_id))?;
-        if !entry.filename().starts_with(b".jjconflict")
-            && entry.filename() != JJ_CONFLICT_README_FILE_NAME
-        {
-            entries.push(entry.detach().into());
-        }
-    }
-    entries.sort_unstable();
-    let id = repo
-        .write_object(gix::objs::Tree { entries })
-        .map_err(|err| BackendError::WriteObject {
-            object_type: "tree",
-            source: Box::new(err),
-        })?;
-    Ok(id.detach())
 }
 
 #[cfg(test)]
 mod tests {
     use std::assert_matches;
+    use std::process::Command;
 
     use gix::date::parse::TimeBuf;
-    use gix::objs::CommitRef;
     use indoc::indoc;
     use test_case::test_case;
 
@@ -1693,6 +1676,18 @@ mod tests {
         gix::open::Options::isolated()
             .config_overrides(git_config())
             .strict_config(true)
+    }
+
+    /// Opens the backend's repository with gix, an independent implementation.
+    fn gix_repo(backend: &GitBackend) -> gix::Repository {
+        gix::open_opts(backend.git_repo_path(), open_options()).unwrap()
+    }
+
+    fn to_format(kind: gix::hash::Kind) -> ObjectFormat {
+        match kind {
+            gix::hash::Kind::Sha1 => ObjectFormat::Sha1,
+            _ => ObjectFormat::Sha256,
+        }
     }
 
     fn git_init(directory: impl AsRef<Path>, object_hash: gix::hash::Kind) -> gix::Repository {
@@ -1733,11 +1728,12 @@ mod tests {
 
         assert_matches!(
             backend.open_git_repo_at_workdir(&git_repo_path),
-            Ok(repo) if repo.workdir() == Some(backend.git_repo().workdir().unwrap())
+            Ok(repo) if repo.worktree() == gix_repo(&backend).workdir()
         );
+        let canonical_worktree = dunce::canonicalize(&worktree_dir).unwrap();
         assert_matches!(
             backend.open_git_repo_at_workdir(&worktree_dir),
-            Ok(repo) if repo.workdir() == Some(worktree_dir.as_ref())
+            Ok(repo) if repo.worktree() == Some(canonical_worktree.as_path())
         );
         assert_matches!(
             backend.open_git_repo_at_workdir(&temp_dir.path().join("unknown")),
@@ -1831,8 +1827,7 @@ mod tests {
         // Import the head commit and its ancestors
         backend.import_head_commits([&commit_id2])?;
         // Ref should be created only for the head commit
-        let git_refs = backend
-            .git_repo()
+        let git_refs = gix_repo(&backend)
             .references()?
             .prefixed("refs/jj/keep/")?
             .map(|git_ref| git_ref.unwrap().id().detach())
@@ -1990,10 +1985,10 @@ mod tests {
         };
 
         let mut commit_buf = Vec::new();
-        commit.write_to(&mut commit_buf)?;
+        gix::objs::WriteTo::write_to(&commit, &mut commit_buf)?;
         let commit_str = str::from_utf8(&commit_buf)?;
 
-        let field = signature_field_name(object_hash);
+        let field = signature_field_name(to_format(object_hash));
         commit.extra_headers.push((field.into(), secure_sig.into()));
 
         let git_commit_id = git_repo.write_object(&commit)?;
@@ -2014,11 +2009,7 @@ mod tests {
 
     #[test]
     fn change_id_parsing() {
-        let id = |commit_object_bytes: &[u8]| {
-            extract_change_id_from_commit(
-                &CommitRef::from_bytes(commit_object_bytes, gix::hash::Kind::Sha1).unwrap(),
-            )
-        };
+        let id = |commit_object_bytes: &[u8]| extract_change_id_from_commit(commit_object_bytes);
 
         let commit_with_id = indoc! {b"
             tree 126799bf8058d1b5c531e93079f4fe79733920dd
@@ -2136,20 +2127,15 @@ mod tests {
 
     #[test]
     fn read_empty_string_placeholder() {
-        let git_signature1 = gix::actor::Signature {
-            name: EMPTY_STRING_PLACEHOLDER.into(),
-            email: "git.author@example.com".into(),
-            time: gix::date::Time::new(1000, 60 * 60),
-        };
-        let signature1 = signature_from_git(git_signature1.to_ref(&mut TimeBuf::default()));
+        let git_signature1 =
+            format!("{EMPTY_STRING_PLACEHOLDER} <git.author@example.com> 1000 +0100");
+        let signature1 =
+            signature_from_git(girt::IdentityRef::parse(git_signature1.as_bytes()).unwrap());
         assert!(signature1.name.is_empty());
         assert_eq!(signature1.email, "git.author@example.com");
-        let git_signature2 = gix::actor::Signature {
-            name: "git committer".into(),
-            email: EMPTY_STRING_PLACEHOLDER.into(),
-            time: gix::date::Time::new(2000, -480 * 60),
-        };
-        let signature2 = signature_from_git(git_signature2.to_ref(&mut TimeBuf::default()));
+        let git_signature2 = format!("git committer <{EMPTY_STRING_PLACEHOLDER}> 2000 -0800");
+        let signature2 =
+            signature_from_git(girt::IdentityRef::parse(git_signature2.as_bytes()).unwrap());
         assert_eq!(signature2.name, "git committer");
         assert!(signature2.email.is_empty());
     }
@@ -2165,8 +2151,8 @@ mod tests {
             },
         };
         let git_signature1 = signature_to_git(&signature1);
-        assert_eq!(git_signature1.name, EMPTY_STRING_PLACEHOLDER);
-        assert_eq!(git_signature1.email, "someone@example.com");
+        assert_eq!(git_signature1.name, EMPTY_STRING_PLACEHOLDER.as_bytes());
+        assert_eq!(git_signature1.email, b"someone@example.com");
         let signature2 = Signature {
             name: "Someone".to_string(),
             email: "".to_string(),
@@ -2176,8 +2162,8 @@ mod tests {
             },
         };
         let git_signature2 = signature_to_git(&signature2);
-        assert_eq!(git_signature2.name, "Someone");
-        assert_eq!(git_signature2.email, EMPTY_STRING_PLACEHOLDER);
+        assert_eq!(git_signature2.name, b"Someone");
+        assert_eq!(git_signature2.email, EMPTY_STRING_PLACEHOLDER.as_bytes());
     }
 
     /// Test that parents get written correctly
@@ -2376,8 +2362,9 @@ mod tests {
     fn commit_has_ref(object_hash: gix::hash::Kind) -> TestResult {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
-        let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
-        let git_repo = backend.git_repo();
+        let backend =
+            GitBackend::init_internal(&settings, temp_dir.path(), to_format(object_hash))?;
+        let git_repo = gix_repo(&backend);
         let signature = Signature {
             name: "Someone".to_string(),
             email: "someone@example.com".to_string(),
@@ -2425,8 +2412,9 @@ mod tests {
     fn import_head_commits_duplicates(object_hash: gix::hash::Kind) -> TestResult {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
-        let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
-        let git_repo = backend.git_repo();
+        let backend =
+            GitBackend::init_internal(&settings, temp_dir.path(), to_format(object_hash))?;
+        let git_repo = gix_repo(&backend);
 
         let signature = gix::actor::Signature {
             name: GIT_USER.into(),
@@ -2462,7 +2450,8 @@ mod tests {
     fn overlapping_git_commit_id(object_hash: gix::hash::Kind) -> TestResult {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
-        let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
+        let backend =
+            GitBackend::init_internal(&settings, temp_dir.path(), to_format(object_hash))?;
         let commit1 = Commit {
             parents: vec![backend.root_commit_id().clone()],
             predecessors: vec![],
@@ -2557,7 +2546,8 @@ mod tests {
     fn write_signed_commit(object_hash: gix::hash::Kind) -> TestResult<(String, SecureSig)> {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
-        let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
+        let backend =
+            GitBackend::init_internal(&settings, temp_dir.path(), to_format(object_hash))?;
 
         let commit = Commit {
             parents: vec![backend.root_commit_id().clone()],
@@ -2585,7 +2575,7 @@ mod tests {
         let sig = commit.secure_sig.expect("failed to read the signature");
         assert_eq!(&sig, &returned_sig);
 
-        let git_repo = backend.git_repo();
+        let git_repo = gix_repo(&backend);
         let obj = git_repo.find_object(gix::ObjectId::from_bytes_or_panic(id.as_bytes()))?;
         Ok((String::from_utf8(obj.data.clone())?, sig))
     }

@@ -28,6 +28,7 @@ use testutils::TestResult;
 use testutils::TestWorkspace;
 use testutils::assert_tree_eq;
 use testutils::git;
+use testutils::git::GixRepoExt as _;
 use testutils::write_random_commit;
 
 fn canonicalize(input: &Path) -> (PathBuf, PathBuf) {
@@ -51,6 +52,13 @@ fn test_init_local() -> TestResult {
     Ok(())
 }
 
+fn to_object_format(kind: gix::hash::Kind) -> jj_lib::git_backend::ObjectFormat {
+    match kind {
+        gix::hash::Kind::Sha1 => jj_lib::git_backend::ObjectFormat::Sha1,
+        _ => jj_lib::git_backend::ObjectFormat::Sha256,
+    }
+}
+
 #[test_case(gix::hash::Kind::Sha1 ; "sha1")]
 #[test_case(gix::hash::Kind::Sha256; "sha256")]
 fn test_init_internal_git(object_hash: gix::hash::Kind) -> TestResult {
@@ -58,7 +66,8 @@ fn test_init_internal_git(object_hash: gix::hash::Kind) -> TestResult {
     let temp_dir = testutils::new_temp_dir();
     let (canonical, uncanonical) = canonicalize(temp_dir.path());
     let (workspace, repo) =
-        Workspace::init_internal_git(&settings, &uncanonical, object_hash).block_on()?;
+        Workspace::init_internal_git(&settings, &uncanonical, to_object_format(object_hash))
+            .block_on()?;
     let git_backend: &GitBackend = repo.store().backend_impl().unwrap();
     let repo_path = canonical.join(".jj").join("repo");
     assert_eq!(workspace.workspace_root(), &canonical);
@@ -66,7 +75,7 @@ fn test_init_internal_git(object_hash: gix::hash::Kind) -> TestResult {
         git_backend.git_repo_path(),
         canonical.join(PathBuf::from_iter([".jj", "repo", "store", "git"])),
     );
-    assert!(git_backend.git_repo().workdir().is_none());
+    assert!(git_backend.gix_repo().workdir().is_none());
     assert_eq!(
         std::fs::read_to_string(repo_path.join("store").join("git_target"))?,
         "git"
@@ -85,12 +94,13 @@ fn test_init_colocated_git(object_hash: gix::hash::Kind) -> TestResult {
     let temp_dir = testutils::new_temp_dir();
     let (canonical, uncanonical) = canonicalize(temp_dir.path());
     let (workspace, repo) =
-        Workspace::init_colocated_git(&settings, &uncanonical, object_hash).block_on()?;
+        Workspace::init_colocated_git(&settings, &uncanonical, to_object_format(object_hash))
+            .block_on()?;
     let git_backend: &GitBackend = repo.store().backend_impl().unwrap();
     let repo_path = canonical.join(".jj").join("repo");
     assert_eq!(workspace.workspace_root(), &canonical);
     assert_eq!(git_backend.git_repo_path(), canonical.join(".git"));
-    assert_eq!(git_backend.git_repo().workdir(), Some(canonical.as_ref()));
+    assert_eq!(git_backend.gix_repo().workdir(), Some(canonical.as_ref()));
     assert_eq!(
         std::fs::read_to_string(repo_path.join("store").join("git_target"))?,
         "../../../.git"
@@ -123,7 +133,7 @@ fn test_init_external_git() -> TestResult {
         canonical.join("git").join(".git")
     );
     assert_eq!(
-        git_backend.git_repo().workdir(),
+        git_backend.gix_repo().workdir(),
         Some(canonical.join("git").as_ref())
     );
 

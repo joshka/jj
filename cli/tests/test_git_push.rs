@@ -2991,16 +2991,16 @@ fn test_git_push_unmapped_refs() {
     // Make export of bookmark2 fail by creating non-empty directory
     local_dir.write_file(".git/refs/remotes/origin/bookmark2/dummy.lock", "");
     let output = local_dir.run_jj(["git", "push", "--bookmark=bookmark2"]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
     Changes to push to origin:
       bookmark: bookmark2 [add to aa5df56a071b]
     Warning: The following bookmarks couldn't be updated locally:
-      bookmark2@origin: Failed to set: The change for reference "refs/remotes/origin/bookmark2" could not be committed: Directory not empty
+      bookmark2@origin: Failed to set: reference namespace conflict at $TEST_ENV/local/.git/refs/remotes/origin/bookmark2
     Error: Failed to push some bookmarks
     [EOF]
     [exit status: 1]
-    "#);
+    ");
 
     // Since export failed, bookmark2@origin isn't created. If it were created,
     // this command would import "deletion" of bookmark2@origin as an external
