@@ -1,8 +1,7 @@
 name: macOS dependency cache benchmark
 
 on:
-  push:
-    branches: [joshka/ci-macos-cache-benchmark]
+  workflow_dispatch:
 
 permissions:
   contents: read
