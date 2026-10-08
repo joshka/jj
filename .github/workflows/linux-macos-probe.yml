@@ -1,0 +1,29 @@
+name: Linux to macOS build probe
+
+on:
+  push:
+    branches: [joshka/ci-linux-macos-probe]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Prepare cross compiler
+      run: |
+        docker pull ghcr.io/rust-cross/cargo-zigbuild@sha256:d8313491ec5798de0633fdc1c5753761bff79967bea69076020dc78121b2cca8
+        docker run --name macos-builder -d -v "$PWD:/io" -w /io ghcr.io/rust-cross/cargo-zigbuild@sha256:d8313491ec5798de0633fdc1c5753761bff79967bea69076020dc78121b2cca8 sleep infinity
+        docker exec macos-builder rustup toolchain install 1.97.1 --profile minimal --target x86_64-apple-darwin
+        docker exec macos-builder cargo-zigbuild --version
+        docker exec macos-builder zig version
+    - name: Cross compile all macOS x86 targets
+      run: |
+        time docker exec macos-builder cargo +1.97.1 zigbuild --config .cargo/config-ci.toml --workspace --all-targets --target x86_64-apple-darwin --timings
+    - name: Inspect macOS binary
+      run: file target/x86_64-apple-darwin/debug/jj
