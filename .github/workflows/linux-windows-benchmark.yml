@@ -1,0 +1,152 @@
+name: Linux-built Windows CI benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-cold:
+    name: Linux build cold / ${{ matrix.target }} / dev opt=0
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    strategy: &windows-build-matrix
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
+    env:
+      BUILD_STAGE: cold
+      TARGET: ${{ matrix.target }}
+      XWIN_CACHE_DIR: ${{ github.workspace }}/.xwin-cache
+    steps: &windows-build-steps
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+        targets: ${{ matrix.target }}
+    - name: Restore dependencies and Windows SDK
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-linux-windows-${{ github.run_id }}
+        shared-key: xwin-0.23.1-${{ matrix.target }}
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+        cache-directories: .xwin-cache
+    - name: Install cross compiler and nextest
+      uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: cargo-xwin@0.23.1,nextest
+    - name: Install LLVM and C build tools
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y clang lld llvm cmake ninja-build
+    - name: Record compiler and cache state
+      run: |
+        rustc -vV
+        cargo xwin --version
+        cargo nextest --version
+        echo 'Target: ${{ matrix.target }}; stage: ${{ env.BUILD_STAGE }}; cache hit: ${{ steps.cache.outputs.cache-hit }}' >> "$GITHUB_STEP_SUMMARY"
+    - name: Prepare MSVC SDK and compiler environment
+      run: cargo xwin env --target "$TARGET" > xwin-env.sh
+    - name: Build and archive Windows tests
+      run: |
+        source ./xwin-env.sh
+        CARGO_ENCODED_RUSTFLAGS="$(python .github/scripts/windows-cross-flags.py)"
+        export CARGO_ENCODED_RUSTFLAGS
+        unset CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_RUNNER
+        cargo nextest archive --config .cargo/config-ci.toml --workspace --all-targets --features jj-cli/test-fakes --target "$TARGET" --archive-file windows-tests.tar.zst
+        file "target/$TARGET/debug/jj.exe"
+        python .github/scripts/ci-build-identity.py write "$TARGET" "$BUILD_STAGE"
+    - name: Upload Windows test archive and identity
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: windows-${{ env.BUILD_STAGE }}-${{ matrix.target }}
+        path: |
+          windows-tests.tar.zst
+          build-identity.json
+        compression-level: 0
+        retention-days: 7
+
+  test-cold:
+    name: Windows tests cold / ${{ matrix.target }} / dev opt=0
+    needs: build-cold
+    env:
+      BUILD_STAGE: cold
+    timeout-minutes: 40
+    strategy: &windows-test-matrix
+      fail-fast: false
+      matrix:
+        include:
+        - target: x86_64-pc-windows-msvc
+          os: windows-2022
+        - target: aarch64-pc-windows-msvc
+          os: windows-11-arm
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps: &windows-test-steps
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Install nextest
+      uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Download matching Linux-built archive
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: windows-${{ env.BUILD_STAGE }}-${{ matrix.target }}
+    - name: Verify source, target, profile and archive checksum
+      run: python .github/scripts/ci-build-identity.py verify '${{ matrix.target }}' "$BUILD_STAGE"
+    - name: List transferred test coverage
+      run: cargo nextest list --archive-file windows-tests.tar.zst --workspace-remap "$PWD" -E 'platform(target)' --message-format json > test-list.json
+    - name: Run Linux-built Windows tests
+      run: |
+        set -o pipefail
+        cargo nextest run --archive-file windows-tests.tar.zst --workspace-remap "$PWD" --profile ci -E 'platform(target)' 2>&1 | tee windows-tests.log
+    - name: Upload test evidence
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: results-${{ env.BUILD_STAGE }}-${{ matrix.target }}
+        path: |
+          build-identity.json
+          test-list.json
+          windows-tests.log
+        retention-days: 7
+
+  build-warm:
+    name: Linux build warm / ${{ matrix.target }} / dev opt=0
+    needs: build-cold
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    strategy: *windows-build-matrix
+    env:
+      BUILD_STAGE: warm
+      TARGET: ${{ matrix.target }}
+      XWIN_CACHE_DIR: ${{ github.workspace }}/.xwin-cache
+    steps: *windows-build-steps
+
+  test-warm:
+    name: Windows tests warm / ${{ matrix.target }} / dev opt=0
+    needs: build-warm
+    timeout-minutes: 40
+    strategy: *windows-test-matrix
+    runs-on: ${{ matrix.os }}
+    env:
+      BUILD_STAGE: warm
+    defaults:
+      run:
+        shell: bash
+    steps: *windows-test-steps

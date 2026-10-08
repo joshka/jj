@@ -25,7 +25,7 @@ use crate::common::TestEnvironment;
 use crate::common::to_toml_value;
 
 fn set_up_fake_formatter(test_env: &mut TestEnvironment, args: &[&str]) {
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     test_env.add_config(formatdoc! {"
         [fix.tools.fake-formatter]
@@ -95,7 +95,7 @@ fn test_config_multiple_tools() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -138,7 +138,7 @@ fn test_config_multiple_tools_with_same_name() {
     let mut test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
 
@@ -194,7 +194,7 @@ fn test_config_disabled_tools() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -244,7 +244,7 @@ fn test_config_disabled_tools_warning_when_all_tools_are_disabled() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -273,7 +273,7 @@ fn test_config_tables_overlapping_patterns() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
 
@@ -353,7 +353,7 @@ fn test_config_tables_some_commands_missing() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -393,7 +393,7 @@ fn test_config_tables_empty_patterns_list() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -426,7 +426,7 @@ fn test_config_filesets() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -473,7 +473,7 @@ fn test_relative_paths() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -555,7 +555,7 @@ fn test_relative_tool_path_from_subdirectory() -> TestResult {
     let work_dir = test_env.work_dir("repo");
 
     // Copy the fake-formatter into the workspace as a relative tool
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     let formatter_name = formatter_path.file_name().unwrap().to_str().unwrap();
     let tool_dir = work_dir.create_dir("tools");
     let workspace_formatter_path = tool_dir.root().join(formatter_name);
@@ -1485,7 +1485,7 @@ fn test_all_files() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
 
@@ -1639,7 +1639,7 @@ fn test_fix_with_line_ranges() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -1759,7 +1759,7 @@ fn test_fix_with_run_tool_if_zero_line_ranges() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -1903,7 +1903,7 @@ fn test_fix_with_run_tool_if_zero_line_ranges_invalid() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -1946,7 +1946,7 @@ fn test_fix_with_all_lines_arg() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -2048,7 +2048,7 @@ fn test_fix_with_line_ranges_multiple_formatters() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -2124,7 +2124,7 @@ fn test_fix_with_line_ranges_and_include_unchanged_files_all_lines() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(
@@ -2225,7 +2225,7 @@ fn test_fix_line_range_args_migration() {
     let test_env = TestEnvironment::default();
     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
     let work_dir = test_env.work_dir("repo");
-    let formatter_path = assert_cmd::cargo::cargo_bin!("fake-formatter");
+    let formatter_path = &assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let formatter = to_toml_value(formatter_path.to_str().unwrap());
     test_env.add_config(format!(

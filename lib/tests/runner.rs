@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 #[test]
 fn test_no_forgotten_test_files() {
-    let test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").expect("test manifest directory");
+    let test_dir = PathBuf::from(manifest_dir).join("tests");
     testutils::assert_no_forgotten_test_files(&test_dir);
 }
 

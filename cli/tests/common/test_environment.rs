@@ -123,7 +123,7 @@ impl TestEnvironment {
     /// Use `run_jj_with()` to run command within customized environment.
     #[must_use]
     pub fn new_jj_cmd(&self) -> assert_cmd::Command {
-        let jj_path = assert_cmd::cargo::cargo_bin!("jj");
+        let jj_path = &assert_cmd::cargo::cargo_bin("jj");
         let mut cmd = assert_cmd::Command::new(jj_path);
         cmd.current_dir(&self.env_root);
         cmd.env_clear();
@@ -244,7 +244,7 @@ impl TestEnvironment {
     ///
     /// Windows machines may not have the echo executable installed.
     pub fn set_up_fake_echo_merge_tool(&self) {
-        let echo_path = assert_cmd::cargo::cargo_bin!("fake-echo");
+        let echo_path = &assert_cmd::cargo::cargo_bin("fake-echo");
         assert!(echo_path.is_file());
         let echo_path = to_toml_value(echo_path.to_str().unwrap());
         self.add_config(formatdoc!("merge-tools.fake-echo.program = {echo_path}"));
