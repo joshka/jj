@@ -1,0 +1,162 @@
+name: CI performance batch
+
+on:
+  push:
+    branches: [joshka/ci-perf-batch]
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - build: linux-x86
+          os: ubuntu-26.04
+          flags: --all-features
+        - build: linux-arm
+          os: ubuntu-26.04-arm
+          flags: --all-features
+        - build: windows-x86
+          os: windows-2022
+          flags: ''
+        - build: windows-arm
+          os: windows-11-arm
+          flags: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: '0'
+      RUST_BACKTRACE: 1
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Configure Windows x86 drive
+      if: matrix.build == 'windows-x86'
+      uses: ./.github/actions/setup-windows
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+    - name: Restore dependency cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-native-perf-batch-v1
+        shared-key: ${{ matrix.build }}-ci
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Install mold on Linux
+      uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444
+      with:
+        make-default: false
+    - name: Build
+      run: cargo build --config .cargo/config-ci.toml --workspace --all-targets --timings $BUILD_FLAGS
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Test default concurrency
+      run: |
+        set -o pipefail
+        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci $BUILD_FLAGS 2>&1 | tee default-tests.log
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Test doubled concurrency
+      if: ${{ !cancelled() }}
+      run: |
+        set -o pipefail
+        threads=$(python -c 'import os; print(os.cpu_count() * 2)')
+        echo "Concurrent tests: $threads" >> "$GITHUB_STEP_SUMMARY"
+        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci --test-threads "$threads" $BUILD_FLAGS 2>&1 | tee doubled-tests.log
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Upload measurements
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: cold-${{ matrix.build }}
+        path: |
+          *-tests.log
+          target/cargo-timings/
+        retention-days: 7
+
+  warm:
+    needs: cold
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - build: linux-x86
+          os: ubuntu-26.04
+          flags: --all-features
+        - build: linux-arm
+          os: ubuntu-26.04-arm
+          flags: --all-features
+        - build: windows-x86
+          os: windows-2022
+          flags: ''
+        - build: windows-arm
+          os: windows-11-arm
+          flags: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: '0'
+      RUST_BACKTRACE: 1
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Configure Windows x86 drive
+      if: matrix.build == 'windows-x86'
+      uses: ./.github/actions/setup-windows
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+    - name: Restore dependency cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-native-perf-batch-v1
+        shared-key: ${{ matrix.build }}-ci
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Install mold on Linux
+      uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444
+      with:
+        make-default: false
+    - name: Build
+      run: cargo build --config .cargo/config-ci.toml --workspace --all-targets --timings $BUILD_FLAGS
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Test default concurrency
+      run: |
+        set -o pipefail
+        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci $BUILD_FLAGS 2>&1 | tee default-tests.log
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Upload measurements
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: warm-${{ matrix.build }}
+        path: |
+          *-tests.log
+          target/cargo-timings/
+        retention-days: 7
+
