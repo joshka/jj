@@ -1,7 +1,8 @@
-name: Optimized Linux test batch
+name: Optimized Windows test batch
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [joshka/ci-perf-batch]
 
 permissions:
   contents: read
@@ -12,12 +13,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - build: linux-x86
-          os: ubuntu-26.04
-          flags: --all-features
-        - build: linux-arm
-          os: ubuntu-26.04-arm
-          flags: --all-features
+        - build: windows-x86
+          os: windows-2022
+          flags: ''
+        - build: windows-arm
+          os: windows-11-arm
+          flags: ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
@@ -61,15 +62,6 @@ jobs:
       run: |
         set -o pipefail
         cargo nextest run --config .cargo/config-ci.toml --config profile.dev.opt-level=1 --workspace --all-targets --profile ci ${BUILD_FLAGS:+"$BUILD_FLAGS"} 2>&1 | tee default-tests.log
-      env:
-        BUILD_FLAGS: ${{ matrix.flags }}
-    - name: Test doubled concurrency
-      if: ${{ !cancelled() }}
-      run: |
-        set -o pipefail
-        threads=$(python -c 'import os; print(os.cpu_count() * 2)')
-        echo "Concurrent tests: $threads" >> "$GITHUB_STEP_SUMMARY"
-        cargo nextest run --config .cargo/config-ci.toml --config profile.dev.opt-level=1 --workspace --all-targets --profile ci --test-threads "$threads" ${BUILD_FLAGS:+"$BUILD_FLAGS"} 2>&1 | tee doubled-tests.log
       env:
         BUILD_FLAGS: ${{ matrix.flags }}
     - name: Upload measurements
