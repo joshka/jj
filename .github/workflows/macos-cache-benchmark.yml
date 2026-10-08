@@ -1,0 +1,171 @@
+name: macOS dependency cache benchmark
+
+on:
+  push:
+    branches: [joshka/ci-macos-cache-benchmark]
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    name: seed (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        os: [macos-26, macos-26-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: '0'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Record runner architecture
+      run: |
+        uname -a
+        sysctl -n hw.ncpu hw.memsize
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+        targets: x86_64-apple-darwin
+    - name: Restore dependency cache
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-macos-cache-probe-v1
+        shared-key: ${{ matrix.os }}-x86-ci
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+        cache-workspace-crates: false
+    - name: Record cache result
+      run: echo "Exact dependency cache hit = $CACHE_HIT" >> "$GITHUB_STEP_SUMMARY"
+      env:
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Build
+      run: >-
+        cargo build --config .cargo/config-ci.toml
+        --workspace --all-targets --target x86_64-apple-darwin --timings
+    - name: Test
+      run: >-
+        cargo nextest run --config .cargo/config-ci.toml
+        --workspace --all-targets --profile ci --target x86_64-apple-darwin
+      env:
+        RUST_BACKTRACE: 1
+
+  warm:
+    name: warm (${{ matrix.os }})
+    needs: seed
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        os: [macos-26, macos-26-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: '0'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Record runner architecture
+      run: |
+        uname -a
+        sysctl -n hw.ncpu hw.memsize
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+        targets: x86_64-apple-darwin
+    - name: Restore dependency cache
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-macos-cache-probe-v1
+        shared-key: ${{ matrix.os }}-x86-ci
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+        cache-workspace-crates: false
+    - name: Record cache result
+      run: echo "Exact dependency cache hit = $CACHE_HIT" >> "$GITHUB_STEP_SUMMARY"
+      env:
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Build
+      run: >-
+        cargo build --config .cargo/config-ci.toml
+        --workspace --all-targets --target x86_64-apple-darwin --timings
+    - name: Test
+      run: >-
+        cargo nextest run --config .cargo/config-ci.toml
+        --workspace --all-targets --profile ci --target x86_64-apple-darwin
+      env:
+        RUST_BACKTRACE: 1
+
+  changed:
+    name: changed (${{ matrix.os }})
+    needs: warm
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        os: [macos-26, macos-26-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: '0'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Record runner architecture
+      run: |
+        uname -a
+        sysctl -n hw.ncpu hw.memsize
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+        targets: x86_64-apple-darwin
+    - name: Restore dependency cache
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-macos-cache-probe-v1
+        shared-key: ${{ matrix.os }}-x86-ci
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+        cache-workspace-crates: false
+    - name: Record cache result
+      run: echo "Exact dependency cache hit = $CACHE_HIT" >> "$GITHUB_STEP_SUMMARY"
+      env:
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Make a small Rust source change
+      run: |
+        echo '// Dependency cache benchmark: rebuild after a source-only edit.' >> cli/src/main.rs
+    - name: Build
+      run: >-
+        cargo build --config .cargo/config-ci.toml
+        --workspace --all-targets --target x86_64-apple-darwin --timings
+    - name: Test
+      run: >-
+        cargo nextest run --config .cargo/config-ci.toml
+        --workspace --all-targets --profile ci --target x86_64-apple-darwin
+      env:
+        RUST_BACKTRACE: 1
+
