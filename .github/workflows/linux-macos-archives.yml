@@ -1,0 +1,221 @@
+name: Linux-built macOS test benchmark
+
+on:
+  push:
+    branches: [joshka/ci-linux-macos-archives]
+    paths-ignore: ['.github/workflows/**']
+  workflow_dispatch:
+    inputs:
+      build-run:
+        description: Completed push run containing the warm test archive
+        required: false
+        type: string
+      opt-level:
+        description: Workspace optimization level for Linux compilation
+        type: choice
+        default: '0'
+        options: ['0', '1']
+      archive-name:
+        description: Test archive artifact to execute
+        default: macos-tests-warm
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  cold:
+    if: github.event_name == 'push' || inputs.build-run == ''
+    runs-on: ubuntu-26.04
+    container:
+      image: ghcr.io/rust-cross/cargo-zigbuild@sha256:d8313491ec5798de0633fdc1c5753761bff79967bea69076020dc78121b2cca8
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+        targets: x86_64-apple-darwin
+    - name: Restore cross-build dependencies
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-linux-macos-archive-v1
+        shared-key: zig-x86-macos-sdk11
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Configure Cargo wrapper
+      run: |
+        cat > /usr/local/bin/zig-cargo <<'SH'
+        #!/bin/bash
+        unset CARGO
+        global_args=()
+        while [[ $# -gt 0 && $1 == -* ]]; do
+          case "$1" in
+            --color|--config|-Z) global_args+=("$1" "$2"); shift 2 ;;
+            *) global_args+=("$1"); shift ;;
+          esac
+        done
+        if [[ ${1:-} == test ]]; then
+          shift
+          exec /usr/local/cargo/bin/cargo-zigbuild test "${global_args[@]}" "$@"
+        else
+          exec cargo "${global_args[@]}" "$@"
+        fi
+        SH
+        chmod +x /usr/local/bin/zig-cargo
+        rustc --version
+        cargo-nextest --version
+    - name: Prepare portable build paths
+      run: |
+        build_root=/Users/runner/work/jj/jj
+        mkdir -p "$build_root"
+        tar --exclude=./target --exclude=./.git -cf - . | tar -xf - -C "$build_root"
+        mkdir -p "$GITHUB_WORKSPACE/target"
+        ln -s "$GITHUB_WORKSPACE/target" "$build_root/target"
+    - name: Build and archive macOS tests
+      working-directory: /Users/runner/work/jj/jj
+      run: cargo-nextest nextest archive --config profile.dev.opt-level=${{ inputs.opt-level || '0' }} --features jj-cli/test-fakes --config .cargo/config-ci.toml --workspace --all-targets --target x86_64-apple-darwin --archive-file "$GITHUB_WORKSPACE/macos-tests.tar.zst"
+      env:
+        CARGO: /usr/local/bin/zig-cargo
+    - name: Run host-only tests on Linux
+      run: cargo-nextest nextest run --archive-file macos-tests.tar.zst --workspace-remap "$PWD" --profile ci --no-tests=warn -E 'platform(host)'
+    - name: Upload archive
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: macos-tests-cold
+        path: macos-tests.tar.zst
+        compression-level: 0
+        retention-days: 7
+
+  warm:
+    if: github.event_name == 'push' || inputs.build-run == ''
+    needs: cold
+    runs-on: ubuntu-26.04
+    container:
+      image: ghcr.io/rust-cross/cargo-zigbuild@sha256:d8313491ec5798de0633fdc1c5753761bff79967bea69076020dc78121b2cca8
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+        targets: x86_64-apple-darwin
+    - name: Restore cross-build dependencies
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-linux-macos-archive-v1
+        shared-key: zig-x86-macos-sdk11
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Configure Cargo wrapper
+      run: |
+        cat > /usr/local/bin/zig-cargo <<'SH'
+        #!/bin/bash
+        unset CARGO
+        global_args=()
+        while [[ $# -gt 0 && $1 == -* ]]; do
+          case "$1" in
+            --color|--config|-Z) global_args+=("$1" "$2"); shift 2 ;;
+            *) global_args+=("$1"); shift ;;
+          esac
+        done
+        if [[ ${1:-} == test ]]; then
+          shift
+          exec /usr/local/cargo/bin/cargo-zigbuild test "${global_args[@]}" "$@"
+        else
+          exec cargo "${global_args[@]}" "$@"
+        fi
+        SH
+        chmod +x /usr/local/bin/zig-cargo
+        rustc --version
+        cargo-nextest --version
+    - name: Prepare portable build paths
+      run: |
+        build_root=/Users/runner/work/jj/jj
+        mkdir -p "$build_root"
+        tar --exclude=./target --exclude=./.git -cf - . | tar -xf - -C "$build_root"
+        mkdir -p "$GITHUB_WORKSPACE/target"
+        ln -s "$GITHUB_WORKSPACE/target" "$build_root/target"
+    - name: Build and archive macOS tests
+      working-directory: /Users/runner/work/jj/jj
+      run: cargo-nextest nextest archive --config profile.dev.opt-level=${{ inputs.opt-level || '0' }} --features jj-cli/test-fakes --config .cargo/config-ci.toml --workspace --all-targets --target x86_64-apple-darwin --archive-file "$GITHUB_WORKSPACE/macos-tests.tar.zst"
+      env:
+        CARGO: /usr/local/bin/zig-cargo
+    - name: Run host-only tests on Linux
+      run: cargo-nextest nextest run --archive-file macos-tests.tar.zst --workspace-remap "$PWD" --profile ci --no-tests=warn -E 'platform(host)'
+    - name: Upload archive
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: macos-tests-warm
+        path: macos-tests.tar.zst
+        compression-level: 0
+        retention-days: 7
+
+  macos:
+    if: github.event_name == 'workflow_dispatch' && inputs.build-run != ''
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [macos-26-intel, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Download Linux-built archive
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: ${{ inputs.archive-name }}
+        run-id: ${{ inputs.build-run }}
+        github-token: ${{ github.token }}
+    - name: List macOS test coverage
+      run: cargo nextest list --archive-file macos-tests.tar.zst --extract-to "$PWD" --workspace-remap "$PWD" -E 'platform(target)' --message-format json > macos-test-list.json
+    - name: Run Linux-built macOS tests
+      run: |
+        set -o pipefail
+        /usr/bin/time -l cargo nextest run --archive-file macos-tests.tar.zst --extract-to "$PWD" --extract-overwrite --workspace-remap "$PWD" --profile ci -E 'platform(target)' 2>&1 | tee transferred-tests.log
+      env:
+        RUST_BACKTRACE: 1
+    - name: Upload measurements
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: transferred-${{ matrix.os }}
+        path: |
+          macos-test-list.json
+          transferred-tests.log
+        retention-days: 7
