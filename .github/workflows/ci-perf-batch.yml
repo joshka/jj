@@ -1,8 +1,7 @@
 name: CI performance batch
 
 on:
-  push:
-    branches: [joshka/ci-perf-batch]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -60,13 +59,13 @@ jobs:
       with:
         make-default: false
     - name: Build
-      run: cargo build --config .cargo/config-ci.toml --workspace --all-targets --timings $BUILD_FLAGS
+      run: cargo build --config .cargo/config-ci.toml --workspace --all-targets --timings ${BUILD_FLAGS:+"$BUILD_FLAGS"}
       env:
         BUILD_FLAGS: ${{ matrix.flags }}
     - name: Test default concurrency
       run: |
         set -o pipefail
-        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci $BUILD_FLAGS 2>&1 | tee default-tests.log
+        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci ${BUILD_FLAGS:+"$BUILD_FLAGS"} 2>&1 | tee default-tests.log
       env:
         BUILD_FLAGS: ${{ matrix.flags }}
     - name: Test doubled concurrency
@@ -75,7 +74,7 @@ jobs:
         set -o pipefail
         threads=$(python -c 'import os; print(os.cpu_count() * 2)')
         echo "Concurrent tests: $threads" >> "$GITHUB_STEP_SUMMARY"
-        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci --test-threads "$threads" $BUILD_FLAGS 2>&1 | tee doubled-tests.log
+        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci --test-threads "$threads" ${BUILD_FLAGS:+"$BUILD_FLAGS"} 2>&1 | tee doubled-tests.log
       env:
         BUILD_FLAGS: ${{ matrix.flags }}
     - name: Upload measurements
@@ -141,13 +140,13 @@ jobs:
       with:
         make-default: false
     - name: Build
-      run: cargo build --config .cargo/config-ci.toml --workspace --all-targets --timings $BUILD_FLAGS
+      run: cargo build --config .cargo/config-ci.toml --workspace --all-targets --timings ${BUILD_FLAGS:+"$BUILD_FLAGS"}
       env:
         BUILD_FLAGS: ${{ matrix.flags }}
     - name: Test default concurrency
       run: |
         set -o pipefail
-        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci $BUILD_FLAGS 2>&1 | tee default-tests.log
+        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci ${BUILD_FLAGS:+"$BUILD_FLAGS"} 2>&1 | tee default-tests.log
       env:
         BUILD_FLAGS: ${{ matrix.flags }}
     - name: Upload measurements
