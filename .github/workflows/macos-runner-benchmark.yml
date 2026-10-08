@@ -1,0 +1,62 @@
+name: macOS x86 runner benchmark
+
+on:
+  push:
+    branches: [joshka/ci-macos-runner-benchmark]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: x86 tests (${{ matrix.os }}, trial ${{ matrix.trial }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, macos-26-intel]
+        trial: [1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+    - name: Record runner architecture
+      run: |
+        uname -a
+        sysctl -n hw.ncpu hw.memsize
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+        # comma-separated list of extra targets to install
+        targets: x86_64-apple-darwin
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Install mold
+      uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444
+      with:
+        make-default: false
+    - name: Build
+      run: >-
+        cargo build
+        --config .cargo/config-ci.toml
+        --workspace
+        --all-targets
+        --verbose
+        --target x86_64-apple-darwin
+    - name: Test
+      run: >-
+        cargo nextest run
+        --config .cargo/config-ci.toml
+        --workspace
+        --all-targets
+        --verbose
+        --profile ci
+        --target x86_64-apple-darwin
+      env:
+        RUST_BACKTRACE: 1
+        CARGO_TERM_COLOR: always
