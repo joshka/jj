@@ -1,7 +1,8 @@
-name: macOS test concurrency tuning
+name: macOS optimized workspace tuning
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [joshka/ci-macos-cache-benchmark]
 
 permissions:
   contents: read
@@ -10,7 +11,7 @@ jobs:
   tune:
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         os: [macos-26, macos-26-intel]
     runs-on: ${{ matrix.os }}
@@ -50,12 +51,12 @@ jobs:
         tool: nextest
     - name: Build
       run: >-
-        cargo build --config .cargo/config-ci.toml
+        cargo build --config .cargo/config-ci.toml --config profile.dev.opt-level=1
         --workspace --all-targets --target x86_64-apple-darwin --timings
     - name: Default test concurrency
       run: |
         set -o pipefail
-        /usr/bin/time -l cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci --target x86_64-apple-darwin 2>&1 | tee default-tests.log
+        /usr/bin/time -l cargo nextest run --config .cargo/config-ci.toml --config profile.dev.opt-level=1 --workspace --all-targets --profile ci --target x86_64-apple-darwin 2>&1 | tee default-tests.log
       env:
         RUST_BACKTRACE: 1
     - name: Doubled test concurrency
@@ -63,6 +64,6 @@ jobs:
         set -o pipefail
         threads=$(($(sysctl -n hw.logicalcpu) * 2))
         echo "Testing with $threads concurrent tests" >> "$GITHUB_STEP_SUMMARY"
-        /usr/bin/time -l cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci --target x86_64-apple-darwin --test-threads "$threads" 2>&1 | tee doubled-tests.log
+        /usr/bin/time -l cargo nextest run --config .cargo/config-ci.toml --config profile.dev.opt-level=1 --workspace --all-targets --profile ci --target x86_64-apple-darwin --test-threads "$threads" 2>&1 | tee doubled-tests.log
       env:
         RUST_BACKTRACE: 1
