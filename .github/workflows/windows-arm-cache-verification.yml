@@ -1,0 +1,156 @@
+name: Native Windows ARM cache verification
+
+on:
+  push:
+    branches: [joshka/ci-windows-arm-cache]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - build: windows-arm
+          os: windows-11-arm
+          flags: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: '0'
+      RUST_BACKTRACE: 1
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+    - name: Remove unused runner toolchains from the cache identity
+      run: |
+        rustup toolchain list
+        while read -r toolchain _; do
+          case "$toolchain" in
+            1.97.1-*) ;;
+            *) rustup toolchain uninstall "$toolchain" ;;
+          esac
+        done < <(rustup toolchain list)
+        rustc -vV
+    - name: Restore dependency cache
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-native-arm-pinned-${{ github.run_id }}
+        shared-key: ${{ matrix.build }}-ci
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+    - name: Verify cache state
+      run: |
+        echo 'Cache hit: ${{ steps.cache.outputs.cache-hit }}' >> "$GITHUB_STEP_SUMMARY"
+        if [[ '${{ github.job }}' == warm ]]; then
+          [[ '${{ steps.cache.outputs.cache-hit }}' == true ]]
+        fi
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Build
+      run: cargo build --config .cargo/config-ci.toml --workspace --all-targets --timings ${BUILD_FLAGS:+"$BUILD_FLAGS"}
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Test default concurrency
+      run: |
+        set -o pipefail
+        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci ${BUILD_FLAGS:+"$BUILD_FLAGS"} 2>&1 | tee default-tests.log
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Upload measurements
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: cold-${{ matrix.build }}
+        path: |
+          *-tests.log
+          target/cargo-timings/
+        retention-days: 7
+
+  warm:
+    needs: cold
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - build: windows-arm
+          os: windows-11-arm
+          flags: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: '0'
+      RUST_BACKTRACE: 1
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+      with:
+        toolchain: 1.97.1
+    - name: Remove unused runner toolchains from the cache identity
+      run: |
+        rustup toolchain list
+        while read -r toolchain _; do
+          case "$toolchain" in
+            1.97.1-*) ;;
+            *) rustup toolchain uninstall "$toolchain" ;;
+          esac
+        done < <(rustup toolchain list)
+        rustc -vV
+    - name: Restore dependency cache
+      id: cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        prefix-key: jj-native-arm-pinned-${{ github.run_id }}
+        shared-key: ${{ matrix.build }}-ci
+        key: ${{ hashFiles('.cargo/config-ci.toml') }}
+        cache-bin: false
+    - name: Verify cache state
+      run: |
+        echo 'Cache hit: ${{ steps.cache.outputs.cache-hit }}' >> "$GITHUB_STEP_SUMMARY"
+        if [[ '${{ github.job }}' == warm ]]; then
+          [[ '${{ steps.cache.outputs.cache-hit }}' == true ]]
+        fi
+    - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60
+      with:
+        tool: nextest
+    - name: Build
+      run: cargo build --config .cargo/config-ci.toml --workspace --all-targets --timings ${BUILD_FLAGS:+"$BUILD_FLAGS"}
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Test default concurrency
+      run: |
+        set -o pipefail
+        cargo nextest run --config .cargo/config-ci.toml --workspace --all-targets --profile ci ${BUILD_FLAGS:+"$BUILD_FLAGS"} 2>&1 | tee default-tests.log
+      env:
+        BUILD_FLAGS: ${{ matrix.flags }}
+    - name: Upload measurements
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: warm-${{ matrix.build }}
+        path: |
+          *-tests.log
+          target/cargo-timings/
+        retention-days: 7
+
