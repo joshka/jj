@@ -28,6 +28,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -221,6 +223,9 @@ pub struct GitBackend {
     /// Pack snapshot plus live loose-object reads. Refreshed when an object is
     /// not found, since other processes (and fetch) may install new packs.
     objects: RwLock<girt::Objects>,
+    /// Number of successful refreshes of `objects`, updated under its write
+    /// lock. Lets callers refresh at most once per snapshot they started from.
+    objects_generation: AtomicU64,
     root_commit_id: CommitId,
     root_change_id: ChangeId,
     empty_tree_id: TreeId,
@@ -255,6 +260,7 @@ impl GitBackend {
         Ok(Self {
             repo,
             objects: RwLock::new(objects),
+            objects_generation: AtomicU64::new(0),
             root_commit_id,
             root_change_id,
             empty_tree_id,
@@ -620,11 +626,7 @@ impl GitBackend {
         let mut object = read(&self.objects.read().unwrap())?;
         if object.is_none() {
             let mut objects = self.objects.write().unwrap();
-            objects
-                .refresh(
-                    girt::PackLimits::trusted(),
-                    girt::AlternateLimits::default(),
-                )
+            self.refresh_locked(&mut objects)
                 .map_err(|err| to_read_object_err(err, id))?;
             object = read(&objects)?;
         }
@@ -648,33 +650,52 @@ impl GitBackend {
         Ok(object.into_data())
     }
 
-    /// Peels `id` through annotated tags, refreshing the pack snapshot once if
-    /// an object in the chain is not found.
-    pub(crate) fn peel(&self, id: girt::ObjectId) -> Result<girt::PeeledObject, girt::PeelError> {
-        let peel = |objects: &girt::Objects| {
-            objects.peel(
-                id,
-                girt::PeelLimits::trusted(),
-                &std::sync::atomic::AtomicBool::new(false),
-            )
+    /// Returns the current pack-snapshot generation, for [`Self::peel()`].
+    pub(crate) fn objects_generation(&self) -> u64 {
+        self.objects_generation.load(Ordering::Acquire)
+    }
+
+    /// Peels `id` through annotated tags. Returns `None` if an object in the
+    /// chain is missing.
+    ///
+    /// A miss refreshes the pack snapshot and retries, but only if no refresh
+    /// has happened since `generation` (from [`Self::objects_generation()`]).
+    /// A caller resolving many refs thus refreshes at most once, even when
+    /// many of them point to objects that are genuinely absent.
+    pub(crate) fn peel(
+        &self,
+        id: girt::ObjectId,
+        generation: u64,
+    ) -> Result<Option<girt::PeeledObject>, Box<dyn std::error::Error + Send + Sync>> {
+        let peel = |objects: &girt::Objects| match objects.peel(
+            id,
+            girt::PeelLimits::trusted(),
+            &AtomicBool::new(false),
+        ) {
+            Ok(peeled) => Ok(Some(peeled)),
+            Err(err) if matches!(*err.source, girt::PeelFailure::Missing) => Ok(None),
+            Err(err) => Err(err.into()),
         };
-        let result = peel(&self.objects.read().unwrap());
-        match result {
-            Err(err) if matches!(*err.source, girt::PeelFailure::Missing) => {
-                let mut objects = self.objects.write().unwrap();
-                if objects
-                    .refresh(
-                        girt::PackLimits::trusted(),
-                        girt::AlternateLimits::default(),
-                    )
-                    .is_err()
-                {
-                    return Err(err);
-                }
-                peel(&objects)
-            }
-            result => result,
+        if let Some(peeled) = peel(&self.objects.read().unwrap())? {
+            return Ok(Some(peeled));
         }
+        let mut objects = self.objects.write().unwrap();
+        if self.objects_generation.load(Ordering::Acquire) != generation {
+            // Refreshed since the caller's snapshot: either by an earlier miss
+            // of the same caller, or concurrently after our read above.
+            return peel(&objects);
+        }
+        self.refresh_locked(&mut objects)?;
+        peel(&objects)
+    }
+
+    fn refresh_locked(&self, objects: &mut girt::Objects) -> Result<(), girt::ObjectReadError> {
+        objects.refresh(
+            girt::PackLimits::trusted(),
+            girt::AlternateLimits::default(),
+        )?;
+        self.objects_generation.fetch_add(1, Ordering::AcqRel);
+        Ok(())
     }
 
     /// Returns the (pack-snapshot) object store for bulk operations.
@@ -684,10 +705,7 @@ impl GitBackend {
 
     /// Refreshes the pack snapshot, e.g. after a fetch installed new packs.
     pub(crate) fn refresh_objects(&self) -> Result<(), girt::ObjectReadError> {
-        self.objects.write().unwrap().refresh(
-            girt::PackLimits::trusted(),
-            girt::AlternateLimits::default(),
-        )
+        self.refresh_locked(&mut self.objects.write().unwrap())
     }
 
     fn read_file_sync(&self, id: &FileId) -> BackendResult<Vec<u8>> {

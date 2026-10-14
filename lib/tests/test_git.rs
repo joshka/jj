@@ -7258,3 +7258,63 @@ fn test_import_refs_sees_objects_repacked_after_load() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn test_import_refs_refreshes_once_for_many_missing_objects() -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let git_dir = get_git_backend(repo).git_repo_path().to_owned();
+    let import_options = default_import_options();
+
+    // Refs to absent objects, as in shallow clones or keep refs after gc.
+    for i in 0..3 {
+        let path = git_dir.join(format!("refs/heads/missing-{i}"));
+        fs::write(path, format!("{:040x}\n", 0xdead_0000_u64 + i))?;
+    }
+
+    let mut tx = repo.start_transaction();
+    let (stats, opens) =
+        count_object_store_opens(|| git::import_refs(tx.repo_mut(), &import_options).block_on());
+    stats?;
+    assert_eq!(opens, 1, "missing objects should share a single refresh");
+    for i in 0..3 {
+        let name = format!("missing-{i}");
+        assert!(
+            tx.repo()
+                .view()
+                .get_local_bookmark(name.as_ref())
+                .is_absent()
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_import_refs_reports_corrupt_ref_target() -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let git_repo = get_git_repo(repo);
+    let git_dir = get_git_backend(repo).git_repo_path().to_owned();
+    let import_options = default_import_options();
+
+    let mut tx = repo.start_transaction();
+    let commit = empty_git_commit(&git_repo, "refs/heads/main", &[]);
+    git::import_refs(tx.repo_mut(), &import_options).block_on()?;
+    assert_eq!(
+        tx.repo().view().get_local_bookmark("main".as_ref()),
+        &RefTarget::normal(jj_id(commit))
+    );
+    let commit = empty_git_commit(&git_repo, "refs/heads/main", &[commit]);
+
+    // A corrupt object is an error, not a deleted ref.
+    let hex = commit.to_string();
+    let path = git_dir.join("objects").join(&hex[..2]).join(&hex[2..]);
+    let mut permissions = fs::metadata(&path)?.permissions();
+    #[expect(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(false);
+    fs::set_permissions(&path, permissions)?;
+    fs::write(&path, b"not a zlib stream")?;
+    let result = git::import_refs(tx.repo_mut(), &import_options).block_on();
+    assert_matches!(result, Err(GitImportError::Git(_)));
+    Ok(())
+}

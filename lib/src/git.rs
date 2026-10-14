@@ -180,6 +180,8 @@ pub(crate) struct GitRefs<'a> {
     repo: &'a girt::Repository,
     refs: girt::refs::References<'a>,
     backend: &'a GitBackend,
+    /// Object-store generation at creation; see [`GitBackend::peel()`].
+    objects_generation: u64,
 }
 
 impl<'a> GitRefs<'a> {
@@ -192,6 +194,7 @@ impl<'a> GitRefs<'a> {
             repo,
             refs: repo.references()?,
             backend,
+            objects_generation: backend.objects_generation(),
         })
     }
 
@@ -216,29 +219,41 @@ impl<'a> GitRefs<'a> {
     }
 
     /// Peels `id` through annotated tags and returns it if it's a commit.
-    fn peel_to_commit(&self, id: girt::ObjectId) -> Option<girt::ObjectId> {
-        let peeled = self.backend.peel(id).ok()?;
-        (peeled.kind == girt::ObjectKind::Commit).then_some(peeled.target)
+    ///
+    /// Returns `None` if an object is missing. Corrupt objects and I/O errors
+    /// are errors, so they are not mistaken for a deleted ref.
+    fn peel_to_commit(&self, id: girt::ObjectId) -> Result<Option<girt::ObjectId>, BoxedError> {
+        let peeled = self.backend.peel(id, self.objects_generation)?;
+        Ok(peeled
+            .filter(|peeled| peeled.kind == girt::ObjectKind::Commit)
+            .map(|peeled| peeled.target))
     }
 
     /// Resolves a reference's target (following symbolic refs) to a commit id.
     ///
     /// If the ref points to the previously `known_commit_oid` (i.e. unchanged),
-    /// this avoids reading objects.
+    /// this avoids reading objects. Returns `None` if the ref doesn't resolve
+    /// to an existing commit.
     fn resolve_to_commit_id(
         &self,
         observation: &girt::refs::ReferenceObservation,
         known_commit_oid: Option<girt::ObjectId>,
-    ) -> Option<girt::ObjectId> {
+    ) -> Result<Option<girt::ObjectId>, BoxedError> {
         let id = match &observation.target {
             girt::refs::Target::Direct(id) => *id,
-            girt::refs::Target::Symbolic(name) => self.refs.resolve(name, 5).ok()?.id?,
-            _ => return None,
+            // A dangling or unresolvable symbolic ref is an invalid ref.
+            girt::refs::Target::Symbolic(name) => {
+                match self.refs.resolve(name, 5).ok().and_then(|r| r.id) {
+                    Some(id) => id,
+                    None => return Ok(None),
+                }
+            }
+            _ => return Ok(None),
         };
         if let Some(known) = known_commit_oid
             && (id == known || observation.peeled_hint == Some(known))
         {
-            return Some(known);
+            return Ok(Some(known));
         }
         self.peel_to_commit(id)
     }
@@ -258,7 +273,7 @@ type BoxedError = Box<dyn std::error::Error + Send + Sync>;
 fn head_id(git_repo: &girt::Repository, git_backend: &GitBackend) -> Option<girt::ObjectId> {
     let git_refs = GitRefs::new(git_repo, git_backend).ok()?;
     let head = git_refs.find("HEAD").ok()??;
-    git_refs.resolve_to_commit_id(&head, None)
+    git_refs.resolve_to_commit_id(&head, None).ok()?
 }
 
 /// Reflog policy for a ref update made on behalf of the user, following
@@ -1102,7 +1117,10 @@ fn collect_changed_refs_to_import(
         let old_git_oid = old_git_target
             .as_normal()
             .map(|id| oid_from_commit_id(git_refs.repo, id));
-        let Some(oid) = git_refs.resolve_to_commit_id(&git_ref, old_git_oid) else {
+        let Some(oid) = git_refs
+            .resolve_to_commit_id(&git_ref, old_git_oid)
+            .map_err(GitImportError::Git)?
+        else {
             // Skip (or remove existing) invalid refs.
             continue;
         };
@@ -1160,7 +1178,10 @@ fn collect_changed_remote_tags_to_import(
             .target
             .as_normal()
             .map(|id| oid_from_commit_id(git_refs.repo, id));
-        let Some(oid) = git_refs.resolve_to_commit_id(&git_ref, old_git_oid) else {
+        let Some(oid) = git_refs
+            .resolve_to_commit_id(&git_ref, old_git_oid)
+            .map_err(GitImportError::Git)?
+        else {
             // Skip (or remove existing) invalid refs.
             continue;
         };
@@ -1756,7 +1777,10 @@ fn find_git_tag_oid_to_copy(
         // This usually holds because remote tags are managed by jj, but jj's
         // view may be updated independently by undo/redo commands.
         .filter(|git_ref| {
-            git_refs.resolve_to_commit_id(git_ref, Some(commit_oid)) == Some(commit_oid)
+            // A ref that can't be resolved just isn't reused.
+            git_refs
+                .resolve_to_commit_id(git_ref, Some(commit_oid))
+                .is_ok_and(|id| id == Some(commit_oid))
         })
         .find_map(|git_ref| match git_ref.target {
             girt::refs::Target::Direct(id) => Some(id),
@@ -1776,7 +1800,10 @@ fn delete_git_ref(
         // The ref is already deleted
         return Ok(());
     };
-    if git_refs.resolve_to_commit_id(&git_ref, Some(old_oid)) == Some(old_oid) {
+    let git_commit_oid = git_refs
+        .resolve_to_commit_id(&git_ref, Some(old_oid))
+        .map_err(FailedRefExportReason::FailedToDelete)?;
+    if git_commit_oid == Some(old_oid) {
         // The ref has not been updated by git, so go ahead and delete it
         let edit = girt::refs::RefEdit::new(
             git_ref.name,
@@ -1843,7 +1870,10 @@ fn create_git_ref(
     };
     // The ref was added in jj and in git. We're good if and only if git
     // pointed it to our desired target.
-    if git_refs.resolve_to_commit_id(&git_ref, None) == Some(new_commit_oid) {
+    let git_commit_oid = git_refs
+        .resolve_to_commit_id(&git_ref, None)
+        .map_err(FailedRefExportReason::FailedToSet)?;
+    if git_commit_oid == Some(new_commit_oid) {
         Ok(())
     } else {
         Err(FailedRefExportReason::AddedInJjAddedInGit)
@@ -1874,7 +1904,9 @@ fn move_git_ref(
         return Err(FailedRefExportReason::ModifiedInJjDeletedInGit);
     };
     // We still consider this a success if it was updated to our desired target
-    let git_commit_oid = git_refs.resolve_to_commit_id(&git_ref, Some(old_commit_oid));
+    let git_commit_oid = git_refs
+        .resolve_to_commit_id(&git_ref, Some(old_commit_oid))
+        .map_err(FailedRefExportReason::FailedToSet)?;
     if git_commit_oid == Some(new_commit_oid) {
         Ok(())
     } else if git_commit_oid == Some(old_commit_oid) {
