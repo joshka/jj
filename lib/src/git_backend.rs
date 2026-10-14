@@ -29,6 +29,8 @@ use std::process::ExitStatus;
 use std::str::Utf8Error;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::sync::RwLock;
 use std::time::SystemTime;
@@ -231,6 +233,7 @@ pub struct GitBackend {
     // used in a single-threaded context.
     native_repo: girt::Repository,
     objects: RwLock<girt::Objects>,
+    objects_generation: AtomicU64,
     root_commit_id: CommitId,
     root_change_id: ChangeId,
     empty_tree_id: TreeId,
@@ -450,6 +453,7 @@ impl GitBackend {
             girt::PackLimits::trusted(),
             girt::AlternateLimits::default(),
         )?;
+        self.objects_generation.fetch_add(1, Ordering::AcqRel);
         Ok(())
     }
 
@@ -515,14 +519,34 @@ impl GitBackend {
     pub(crate) fn open_native_git_repo_at_workdir(&self, path: &Path) -> Result<girt::Repository, GitRepoAtWorkdirError> {
         self.open_git_repo_at_workdir(path)
     }
-    pub(crate) fn objects_generation(&self) -> u64 { 0 }
-    pub(crate) fn peel(&self, id: girt::ObjectId, _generation: u64) -> Result<Option<girt::PeeledObject>, Box<dyn std::error::Error + Send + Sync>> {
-        let objects = self.native_git_repo().objects(girt::PackLimits::trusted())?;
-        match objects.peel(id, girt::PeelLimits::trusted(), &std::sync::atomic::AtomicBool::new(false)) {
+    pub(crate) fn objects_generation(&self) -> u64 {
+        self.objects_generation.load(Ordering::Acquire)
+    }
+    pub(crate) fn peel(
+        &self,
+        id: girt::ObjectId,
+        generation: u64,
+    ) -> Result<Option<girt::PeeledObject>, Box<dyn std::error::Error + Send + Sync>> {
+        let peel = |objects: &girt::Objects| match objects.peel(
+            id,
+            girt::PeelLimits::trusted(),
+            &AtomicBool::new(false),
+        ) {
             Ok(peeled) => Ok(Some(peeled)),
             Err(err) if matches!(*err.source, girt::PeelFailure::Missing) => Ok(None),
             Err(err) => Err(err.into()),
+        };
+        if let Some(peeled) = peel(&self.objects.read().unwrap())? {
+            return Ok(Some(peeled));
         }
+        let mut objects = self.objects.write().unwrap();
+        if self.objects_generation.load(Ordering::Acquire) != generation {
+            // Refreshed since the caller's snapshot: either by an earlier miss
+            // of the same caller, or concurrently after our read above.
+            return peel(&objects);
+        }
+        self.refresh_locked(&mut objects)?;
+        peel(&objects)
     }
 
 
@@ -568,6 +592,7 @@ impl GitBackend {
         Ok(Self {
             native_repo: repo,
             objects: RwLock::new(objects),
+            objects_generation: AtomicU64::new(0),
             root_commit_id,
             root_change_id,
             empty_tree_id,

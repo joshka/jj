@@ -70,6 +70,9 @@ rustix = { workspace = true, features = ["process", "system"] }
 windows-sys = { workspace = true }
 
 [dev-dependencies]
+# Count object-store opens to verify handle reuse.
+girt = { workspace = true, features = ["tracing"] }
+tracing-subscriber = { workspace = true }
 eyre = { workspace = true }
 indoc = { workspace = true }
 insta = { workspace = true }

@@ -1507,6 +1507,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
  "windows-sys 0.61.2",
 ]
 
@@ -3087,6 +3088,7 @@ dependencies = [
  "tokio",
  "toml_edit",
  "tracing",
+ "tracing-subscriber",
  "watchman_client",
  "windows-sys 0.61.2",
 ]

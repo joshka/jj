@@ -7161,3 +7161,161 @@ fn test_remote_name_validation() -> TestResult {
     Ok(())
 }
 
+/// Counts girt object-store opens (including refreshes) on the current thread.
+fn count_object_store_opens<T>(f: impl FnOnce() -> T) -> (T, usize) {
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    struct OpenCounter(Arc<AtomicUsize>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for OpenCounter {
+        fn on_new_span(
+            &self,
+            attrs: &tracing::span::Attributes<'_>,
+            _id: &tracing::span::Id,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let metadata = attrs.metadata();
+            if metadata.target() == "girt" && metadata.name() == "objects.open" {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    let opens = Arc::new(AtomicUsize::new(0));
+    let subscriber = tracing_subscriber::registry().with(OpenCounter(opens.clone()));
+    let result = tracing::subscriber::with_default(subscriber, f);
+    (result, opens.load(Ordering::Relaxed))
+}
+
+#[test]
+fn test_ref_operations_reuse_backend_object_store() -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let git_repo = get_git_repo(repo);
+    let import_options = default_import_options();
+
+    let mut tx = repo.start_transaction();
+    let commit1 = write_random_commit(tx.repo_mut());
+    let commit2 = write_random_commit_with_parents(tx.repo_mut(), &[&commit1]);
+    git_repo.reference(
+        "refs/heads/main",
+        git_id(&commit1),
+        gix::refs::transaction::PreviousValue::Any,
+        "test",
+    )?;
+    testutils::git::set_head_to_id(&git_repo, git_id(&commit1));
+
+    let (result, opens) = count_object_store_opens(|| -> TestResult {
+        import_head(tx.repo_mut(), &test_workspace.workspace)?;
+        git::import_refs(tx.repo_mut(), &import_options).block_on()?;
+        tx.repo_mut()
+            .set_local_bookmark_target("feature".as_ref(), RefTarget::normal(commit2.id().clone()));
+        git::export_refs(tx.repo_mut())?;
+        reset_head(tx.repo_mut(), &test_workspace.workspace, &commit2)?;
+        Ok(())
+    });
+    result?;
+    assert_eq!(
+        opens, 0,
+        "ref operations should reuse the backend's object store"
+    );
+    assert!(git_repo.find_reference("refs/heads/feature").is_ok());
+    Ok(())
+}
+
+#[test]
+fn test_import_refs_sees_objects_repacked_after_load() -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let git_repo = get_git_repo(repo);
+    let git_dir = get_git_backend(repo).git_repo_path().to_owned();
+    let import_options = default_import_options();
+
+    // Written after the backend's pack snapshot, then moved into a new pack so
+    // the snapshot can only find them after refreshing.
+    let commit1 = empty_git_commit(&git_repo, "refs/heads/main", &[]);
+    run_git(
+        &git_dir,
+        &["tag", "-a", "-m", "annotated", "v1", &commit1.to_string()],
+    );
+    run_git(&git_dir, &["repack", "-a", "-d", "-q"]);
+
+    let mut tx = repo.start_transaction();
+    let (stats, opens) =
+        count_object_store_opens(|| git::import_refs(tx.repo_mut(), &import_options).block_on());
+    stats?;
+    assert_eq!(opens, 1, "one refresh should make the new pack visible");
+    let view = tx.repo().view();
+    assert_eq!(
+        view.get_local_bookmark("main".as_ref()),
+        &RefTarget::normal(jj_id(commit1))
+    );
+    assert_eq!(
+        view.get_local_tag("v1".as_ref()),
+        &RefTarget::normal(jj_id(commit1))
+    );
+    Ok(())
+}
+
+#[test]
+fn test_import_refs_refreshes_once_for_many_missing_objects() -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let git_dir = get_git_backend(repo).git_repo_path().to_owned();
+    let import_options = default_import_options();
+
+    // Refs to absent objects, as in shallow clones or keep refs after gc.
+    for i in 0..3 {
+        let path = git_dir.join(format!("refs/heads/missing-{i}"));
+        fs::write(path, format!("{:040x}\n", 0xdead_0000_u64 + i))?;
+    }
+
+    let mut tx = repo.start_transaction();
+    let (stats, opens) =
+        count_object_store_opens(|| git::import_refs(tx.repo_mut(), &import_options).block_on());
+    stats?;
+    assert_eq!(opens, 1, "missing objects should share a single refresh");
+    for i in 0..3 {
+        let name = format!("missing-{i}");
+        assert!(
+            tx.repo()
+                .view()
+                .get_local_bookmark(name.as_ref())
+                .is_absent()
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_import_refs_reports_corrupt_ref_target() -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let git_repo = get_git_repo(repo);
+    let git_dir = get_git_backend(repo).git_repo_path().to_owned();
+    let import_options = default_import_options();
+
+    let mut tx = repo.start_transaction();
+    let commit = empty_git_commit(&git_repo, "refs/heads/main", &[]);
+    git::import_refs(tx.repo_mut(), &import_options).block_on()?;
+    assert_eq!(
+        tx.repo().view().get_local_bookmark("main".as_ref()),
+        &RefTarget::normal(jj_id(commit))
+    );
+    let commit = empty_git_commit(&git_repo, "refs/heads/main", &[commit]);
+
+    // A corrupt object is an error, not a deleted ref.
+    let hex = commit.to_string();
+    let path = git_dir.join("objects").join(&hex[..2]).join(&hex[2..]);
+    let mut permissions = fs::metadata(&path)?.permissions();
+    #[expect(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(false);
+    fs::set_permissions(&path, permissions)?;
+    fs::write(&path, b"not a zlib stream")?;
+    let result = git::import_refs(tx.repo_mut(), &import_options).block_on();
+    assert_matches!(result, Err(GitImportError::Git(_)));
+    Ok(())
+}
