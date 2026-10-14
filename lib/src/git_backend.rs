@@ -177,6 +177,20 @@ pub enum GitGcError {
     GcCommandErrorStatus(ExitStatus),
 }
 
+pub(crate) fn git_config_inputs() -> girt::config::ConfigInputs {
+    let system = cfg!(unix).then(|| PathBuf::from("/etc/gitconfig"));
+    girt::config::ConfigInputs::from_environment(system, |name| std::env::var_os(name), 1024)
+        .unwrap_or_default()
+}
+
+pub(crate) fn open_git_repository(path: &Path) -> Result<girt::Repository, girt::OpenError> {
+    girt::Repository::open_with_config(path, &git_config_inputs())
+}
+
+pub(crate) fn to_git_object_id(format: girt::ObjectFormat, id: &impl ObjectId) -> girt::ObjectId {
+    girt::ObjectId::from_bytes(format, id.as_bytes()).expect("object id of repository length")
+}
+
 pub struct GitBackend {
     // While gix::Repository can be created from gix::ThreadSafeRepository, it's
     // cheaper to cache the thread-local instance behind a mutex than creating
@@ -192,15 +206,57 @@ pub struct GitBackend {
     cached_extra_metadata: Mutex<Option<Arc<ReadonlyTable>>>,
     git_executable: PathBuf,
     write_change_id_header: bool,
+    user_name: String,
+    user_email: String,
 }
 
 impl GitBackend {
+
+    pub(crate) fn native_git_repo(&self) -> girt::Repository {
+        open_git_repository(self.git_repo_path()).expect("already-open repository")
+    }
+    pub(crate) fn open_native_git_repo_at_workdir(&self, path: &Path) -> Result<girt::Repository, Box<dyn std::error::Error + Send + Sync>> {
+        self.open_git_repo_at_workdir(path)?;
+        Ok(open_git_repository(path)?)
+    }
+    pub(crate) fn objects_generation(&self) -> u64 { 0 }
+    pub(crate) fn peel(&self, id: girt::ObjectId, _generation: u64) -> Result<Option<girt::PeeledObject>, Box<dyn std::error::Error + Send + Sync>> {
+        let objects = self.native_git_repo().objects(girt::PackLimits::trusted())?;
+        match objects.peel(id, girt::PeelLimits::trusted(), &std::sync::atomic::AtomicBool::new(false)) {
+            Ok(peeled) => Ok(Some(peeled)),
+            Err(err) if matches!(*err.source, girt::PeelFailure::Missing) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+
+    pub fn committer_signature(&self) -> girt::Signature {
+        let now = crate::backend::Timestamp::now();
+        let name = if self.user_name.is_empty() {
+            EMPTY_STRING_PLACEHOLDER
+        } else {
+            &self.user_name
+        };
+        let email = if self.user_email.is_empty() {
+            EMPTY_STRING_PLACEHOLDER
+        } else {
+            &self.user_email
+        };
+        girt::Signature {
+            name: native_sanitize_identity(name),
+            email: native_sanitize_identity(email),
+            seconds: now.timestamp.0.div_euclid(1000).max(0),
+            offset_minutes: now.tz_offset.try_into().unwrap_or(0),
+        }
+    }
+
     pub const NAME: &str = "git";
 
     fn new(
         base_repo: gix::ThreadSafeRepository,
         extra_metadata_store: TableStore,
         git_settings: GitSettings,
+        settings: &UserSettings,
     ) -> Self {
         let repo = base_repo.to_thread_local();
         let root_commit_id = CommitId::from_bytes(repo.object_hash().null_ref().as_bytes());
@@ -218,6 +274,8 @@ impl GitBackend {
             cached_extra_metadata: Mutex::new(None),
             git_executable: git_settings.executable_path,
             write_change_id_header: git_settings.write_change_id_header,
+            user_name: settings.user_name().to_owned(),
+            user_email: settings.user_email().to_owned(),
         }
     }
 
@@ -239,7 +297,7 @@ impl GitBackend {
         .map_err(GitBackendInitError::InitRepository)?;
         let git_settings =
             GitSettings::from_settings(settings).map_err(GitBackendInitError::Config)?;
-        Self::init_with_repo(store_path, git_repo_path, git_repo, git_settings)
+        Self::init_with_repo(settings, store_path, git_repo_path, git_repo, git_settings)
     }
 
     /// Initializes backend by creating a new Git repo at the specified
@@ -269,7 +327,7 @@ impl GitBackend {
         let git_repo_path = workspace_root.join(".git");
         let git_settings =
             GitSettings::from_settings(settings).map_err(GitBackendInitError::Config)?;
-        Self::init_with_repo(store_path, &git_repo_path, git_repo, git_settings)
+        Self::init_with_repo(settings, store_path, &git_repo_path, git_repo, git_settings)
     }
 
     /// Initializes backend with an existing Git repo at the specified path.
@@ -291,10 +349,11 @@ impl GitBackend {
         .map_err(GitBackendInitError::OpenRepository)?;
         let git_settings =
             GitSettings::from_settings(settings).map_err(GitBackendInitError::Config)?;
-        Self::init_with_repo(store_path, git_repo_path, git_repo, git_settings)
+        Self::init_with_repo(settings, store_path, git_repo_path, git_repo, git_settings)
     }
 
     fn init_with_repo(
+        settings: &UserSettings,
         store_path: &Path,
         git_repo_path: &Path,
         repo: gix::ThreadSafeRepository,
@@ -325,7 +384,7 @@ impl GitBackend {
             extra_path,
             repo.to_thread_local().object_hash().len_in_bytes(),
         );
-        Ok(Self::new(repo, extra_metadata_store, git_settings))
+        Ok(Self::new(repo, extra_metadata_store, git_settings, settings))
     }
 
     pub fn load(
@@ -355,7 +414,7 @@ impl GitBackend {
         );
         let git_settings =
             GitSettings::from_settings(settings).map_err(GitBackendLoadError::Config)?;
-        Ok(Self::new(repo, extra_metadata_store, git_settings))
+        Ok(Self::new(repo, extra_metadata_store, git_settings, settings))
     }
 
     fn lock_git_repo(&self) -> MutexGuard<'_, gix::Repository> {
