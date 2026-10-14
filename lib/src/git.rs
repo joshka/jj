@@ -47,6 +47,7 @@ use crate::file_util::IoResultExt as _;
 use crate::file_util::PathError;
 use crate::file_util::is_empty_dir;
 use crate::git_backend::GitBackend;
+use crate::git_backend::to_git_object_id;
 use crate::git_subprocess::GitFetchStatus;
 pub use crate::git_subprocess::GitProgress;
 pub use crate::git_subprocess::GitSidebandLineTerminator;
@@ -89,6 +90,136 @@ use crate::str_util::StringPattern;
 use crate::view::View;
 
 /// Reserved remote name for the backing Git repo.
+fn git_ref_name(name: &str) -> Result<girt::refs::RefName, girt::refs::InvalidRefName> {
+    girt::refs::RefName::new(name)
+}
+
+/// Returns the committed object id format of `git_repo` for the given id.
+fn oid_from_commit_id(git_repo: &girt::Repository, id: &CommitId) -> girt::ObjectId {
+    to_git_object_id(git_repo.object_format(), id)
+}
+
+/// Reference access that peels through the backend's shared object store.
+pub(crate) struct GitRefs<'a> {
+    repo: &'a girt::Repository,
+    refs: girt::refs::References<'a>,
+    backend: &'a GitBackend,
+    /// Object-store generation at creation; see [`GitBackend::peel()`].
+    objects_generation: u64,
+}
+
+impl<'a> GitRefs<'a> {
+    /// `repo` must share `backend`'s object store, as worktrees of it do.
+    pub(crate) fn new(
+        repo: &'a girt::Repository,
+        backend: &'a GitBackend,
+    ) -> Result<Self, BoxedError> {
+        Ok(Self {
+            repo,
+            refs: repo.references()?,
+            backend,
+            objects_generation: backend.objects_generation(),
+        })
+    }
+
+    pub(crate) fn refs(&self) -> &girt::refs::References<'a> {
+        &self.refs
+    }
+
+    /// Lists references (with peeled hints) under `prefix`, which must end in `/`.
+    fn list_prefixed(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<girt::refs::ReferenceObservation>, BoxedError> {
+        let namespace = girt::refs::RefName::new(prefix.trim_end_matches('/'))?;
+        Ok(self.refs.list_namespace_observations(&namespace)?)
+    }
+
+    fn find(&self, name: &str) -> Result<Option<girt::refs::ReferenceObservation>, BoxedError> {
+        let Ok(name) = git_ref_name(name) else {
+            return Ok(None);
+        };
+        Ok(self.refs.read_observation(&name)?)
+    }
+
+    /// Peels `id` through annotated tags and returns it if it's a commit.
+    ///
+    /// Returns `None` if an object is missing. Corrupt objects and I/O errors
+    /// are errors, so they are not mistaken for a deleted ref.
+    fn peel_to_commit(&self, id: girt::ObjectId) -> Result<Option<girt::ObjectId>, BoxedError> {
+        let peeled = self.backend.peel(id, self.objects_generation)?;
+        Ok(peeled
+            .filter(|peeled| peeled.kind == girt::ObjectKind::Commit)
+            .map(|peeled| peeled.target))
+    }
+
+    /// Resolves a reference's target (following symbolic refs) to a commit id.
+    ///
+    /// If the ref points to the previously `known_commit_oid` (i.e. unchanged),
+    /// this avoids reading objects. Returns `None` if the ref doesn't resolve
+    /// to an existing commit.
+    fn resolve_to_commit_id(
+        &self,
+        observation: &girt::refs::ReferenceObservation,
+        known_commit_oid: Option<girt::ObjectId>,
+    ) -> Result<Option<girt::ObjectId>, BoxedError> {
+        let id = match &observation.target {
+            girt::refs::Target::Direct(id) => *id,
+            // A dangling or unresolvable symbolic ref is an invalid ref.
+            girt::refs::Target::Symbolic(name) => {
+                match self.refs.resolve(name, 5).ok().and_then(|r| r.id) {
+                    Some(id) => id,
+                    None => return Ok(None),
+                }
+            }
+            _ => return Ok(None),
+        };
+        if let Some(known) = known_commit_oid
+            && (id == known || observation.peeled_hint == Some(known))
+        {
+            return Ok(Some(known));
+        }
+        self.peel_to_commit(id)
+    }
+
+    fn transaction(&self, edits: &[girt::refs::RefEdit]) -> Result<(), BoxedError> {
+        if !edits.is_empty() {
+            self.refs.transaction(edits)?;
+        }
+        Ok(())
+    }
+}
+
+type BoxedError = Box<dyn std::error::Error + Send + Sync>;
+
+/// Returns the commit HEAD resolves to, or `None` if HEAD is unborn,
+/// unreadable, or doesn't point to an existing commit.
+fn native_head_id(git_repo: &girt::Repository, git_backend: &GitBackend) -> Option<girt::ObjectId> {
+    let git_refs = GitRefs::new(git_repo, git_backend).ok()?;
+    let head = git_refs.find("HEAD").ok()??;
+    git_refs.resolve_to_commit_id(&head, None).ok()?
+}
+
+/// Reflog policy for a ref update made on behalf of the user, following
+/// `core.logAllRefUpdates`.
+fn reflog_for(
+    git_repo: &girt::Repository,
+    name: &girt::refs::RefName,
+    committer: &girt::Signature,
+    message: &str,
+) -> Result<girt::refs::Reflog, girt::ReflogPolicyError> {
+    Ok(if git_repo.logs_updates_to(name)? {
+        girt::refs::Reflog::Append {
+            committer: committer.clone(),
+            message: message.as_bytes().to_vec(),
+        }
+    } else {
+        girt::refs::Reflog::Preserve
+    })
+}
+
+/// Type of Git ref to be imported or exported.
+
 pub const REMOTE_NAME_FOR_LOCAL_GIT_REPO: &RemoteName = RemoteName::new("git");
 /// Git ref prefix that would conflict with the reserved "git" remote.
 pub const RESERVED_REMOTE_REF_NAMESPACE: &str = "refs/remotes/git/";
@@ -178,7 +309,7 @@ fn validate_remote_name(name: &RemoteName) -> Result<(), GitRemoteNameError> {
 }
 
 /// Converts [`CommitId`] of valid length to [`gix::oid`].
-fn oid_from_commit_id(id: &CommitId) -> &gix::oid {
+fn gix_oid_from_commit_id(id: &CommitId) -> &gix::oid {
     gix::oid::from_bytes_unchecked(id.as_bytes())
 }
 
@@ -432,6 +563,10 @@ pub fn get_git_backend(store: &Store) -> Result<&GitBackend, UnexpectedGitBacken
 }
 
 /// Returns new thread-local instance to access to the underlying Git repo.
+fn get_native_git_repo(store: &Store) -> Result<girt::Repository, UnexpectedGitBackendError> {
+    get_git_backend(store).map(|backend| backend.native_git_repo())
+}
+
 pub fn get_git_repo(store: &Store) -> Result<gix::Repository, UnexpectedGitBackendError> {
     get_git_backend(store).map(|backend| backend.git_repo())
 }
@@ -1049,7 +1184,7 @@ fn collect_changed_refs_to_import(
             continue;
         }
         let old_git_target = known_git_refs.get(full_name).copied().flatten();
-        let old_git_oid = old_git_target.as_normal().map(oid_from_commit_id);
+        let old_git_oid = old_git_target.as_normal().map(gix_oid_from_commit_id);
         let Some(oid) = resolve_git_ref_to_commit_id(&git_ref, old_git_oid) else {
             // Skip (or remove existing) invalid refs.
             continue;
@@ -1104,7 +1239,7 @@ fn collect_changed_remote_tags_to_import(
             .get(&symbol)
             .copied()
             .unwrap_or(&ABSENT_REMOTE_REF);
-        let old_git_oid = old_remote_ref.target.as_normal().map(oid_from_commit_id);
+        let old_git_oid = old_remote_ref.target.as_normal().map(gix_oid_from_commit_id);
         let Some(oid) = resolve_git_ref_to_commit_id(&git_ref, old_git_oid) else {
             // Skip (or remove existing) invalid refs.
             continue;
@@ -1536,6 +1671,318 @@ fn copy_exportable_local_tags_to_remote_view(
 }
 
 /// Calculates diff of bookmarks and tags to be exported.
+fn native_find_git_tag_oid_to_copy(
+    view: &View,
+    git_refs: &GitRefs,
+    name: &RefName,
+    remote_matcher: &StringMatcher,
+    commit_oid: girt::ObjectId,
+) -> Option<girt::ObjectId> {
+    // Filter candidates by tag name and known commit id first
+    view.remote_tags_matching(&StringMatcher::exact(name), remote_matcher)
+        .filter(|(_, remote_ref)| {
+            let maybe_id = remote_ref.tracked_target().as_normal();
+            maybe_id.is_some_and(|id| id.as_bytes() == commit_oid.as_bytes())
+        })
+        // Query existing Git ref and tag object
+        .filter_map(|(symbol, _)| {
+            let git_ref_name = to_git_or_remote_tag_ref_name(symbol);
+            git_refs.find(git_ref_name.as_str()).ok().flatten()
+        })
+        // This usually holds because remote tags are managed by jj, but jj's
+        // view may be updated independently by undo/redo commands.
+        .filter(|git_ref| {
+            // A ref that can't be resolved just isn't reused.
+            git_refs
+                .resolve_to_commit_id(git_ref, Some(commit_oid))
+                .is_ok_and(|id| id == Some(commit_oid))
+        })
+        .find_map(|git_ref| match git_ref.target {
+            girt::refs::Target::Direct(id) => Some(id),
+            _ => None,
+        })
+}
+
+fn native_delete_git_ref(
+    git_refs: &GitRefs,
+    git_ref_name: &GitRefName,
+    old_oid: girt::ObjectId,
+) -> Result<(), FailedRefExportReason> {
+    let Some(git_ref) = git_refs
+        .find(git_ref_name.as_str())
+        .map_err(FailedRefExportReason::FailedToDelete)?
+    else {
+        // The ref is already deleted
+        return Ok(());
+    };
+    let git_commit_oid = git_refs
+        .resolve_to_commit_id(&git_ref, Some(old_oid))
+        .map_err(FailedRefExportReason::FailedToDelete)?;
+    if git_commit_oid == Some(old_oid) {
+        // The ref has not been updated by git, so go ahead and delete it
+        let edit = girt::refs::RefEdit::new(
+            git_ref.name,
+            None,
+            girt::refs::Expected::Value(git_ref.target),
+            girt::refs::Reflog::Delete,
+        );
+        git_refs
+            .transaction(&[edit])
+            .map_err(FailedRefExportReason::FailedToDelete)
+    } else {
+        // The ref was updated by git
+        Err(FailedRefExportReason::DeletedInJjModifiedInGit)
+    }
+}
+
+fn native_set_git_ref(
+    git_refs: &GitRefs,
+    git_ref_name: &GitRefName,
+    target: girt::ObjectId,
+    expected: girt::refs::Expected,
+    committer: &girt::Signature,
+) -> Result<(), BoxedError> {
+    let name = native_git_ref_name_or_err(git_ref_name.as_str())?;
+    let reflog = reflog_for(git_refs.repo, &name, committer, "export from jj")?;
+    let edit = girt::refs::RefEdit::new(
+        name,
+        Some(girt::refs::Target::Direct(target)),
+        expected,
+        reflog,
+    );
+    git_refs.transaction(&[edit])
+}
+
+fn native_git_ref_name_or_err(name: &str) -> Result<girt::refs::RefName, BoxedError> {
+    git_ref_name(name).map_err(|_| format!("Invalid Git ref name: {name}").into())
+}
+
+fn native_create_git_ref(
+    git_refs: &GitRefs,
+    git_ref_name: &GitRefName,
+    new_commit_oid: girt::ObjectId,
+    new_ref_oid: Option<girt::ObjectId>,
+    committer: &girt::Signature,
+) -> Result<(), FailedRefExportReason> {
+    let new_oid = new_ref_oid.unwrap_or(new_commit_oid);
+    let Err(set_err) = native_set_git_ref(
+        git_refs,
+        git_ref_name,
+        new_oid,
+        girt::refs::Expected::Absent,
+        committer,
+    ) else {
+        // The ref was added in jj but still doesn't exist in git
+        return Ok(());
+    };
+    let Some(git_ref) = git_refs
+        .find(git_ref_name.as_str())
+        .map_err(FailedRefExportReason::FailedToSet)?
+    else {
+        return Err(FailedRefExportReason::FailedToSet(set_err));
+    };
+    // The ref was added in jj and in git. We're good if and only if git
+    // pointed it to our desired target.
+    let git_commit_oid = git_refs
+        .resolve_to_commit_id(&git_ref, None)
+        .map_err(FailedRefExportReason::FailedToSet)?;
+    if git_commit_oid == Some(new_commit_oid) {
+        Ok(())
+    } else {
+        Err(FailedRefExportReason::AddedInJjAddedInGit)
+    }
+}
+
+fn native_move_git_ref(
+    git_refs: &GitRefs,
+    git_ref_name: &GitRefName,
+    old_commit_oid: girt::ObjectId,
+    new_commit_oid: girt::ObjectId,
+    new_ref_oid: Option<girt::ObjectId>,
+    committer: &girt::Signature,
+) -> Result<(), FailedRefExportReason> {
+    let new_oid = new_ref_oid.unwrap_or(new_commit_oid);
+    let expected = girt::refs::Expected::Value(girt::refs::Target::Direct(old_commit_oid));
+    let Err(set_err) = native_set_git_ref(git_refs, git_ref_name, new_oid, expected, committer) else {
+        // Successfully updated from old_oid to new_oid (unchanged in git)
+        return Ok(());
+    };
+    // The reference was probably updated in git
+    let Some(git_ref) = git_refs
+        .find(git_ref_name.as_str())
+        .map_err(FailedRefExportReason::FailedToSet)?
+    else {
+        // The reference was deleted in git and moved in jj
+        return Err(FailedRefExportReason::ModifiedInJjDeletedInGit);
+    };
+    // We still consider this a success if it was updated to our desired target
+    let git_commit_oid = git_refs
+        .resolve_to_commit_id(&git_ref, Some(old_commit_oid))
+        .map_err(FailedRefExportReason::FailedToSet)?;
+    if git_commit_oid == Some(new_commit_oid) {
+        Ok(())
+    } else if git_commit_oid == Some(old_commit_oid) {
+        // The reference would point to annotated tag, try again
+        let expected = girt::refs::Expected::Value(git_ref.target);
+        native_set_git_ref(git_refs, git_ref_name, new_oid, expected, committer)
+            .map_err(FailedRefExportReason::FailedToSet)?;
+        Ok(())
+    } else {
+        Err(FailedRefExportReason::FailedToSet(set_err))
+    }
+}
+
+fn native_update_git_ref(
+    git_refs: &GitRefs,
+    git_ref_name: &GitRefName,
+    old_commit_oid: Option<girt::ObjectId>,
+    new_commit_oid: girt::ObjectId,
+    new_ref_oid: Option<girt::ObjectId>,
+    committer: &girt::Signature,
+) -> Result<(), FailedRefExportReason> {
+    match old_commit_oid {
+        None => native_create_git_ref(
+            git_refs,
+            git_ref_name,
+            new_commit_oid,
+            new_ref_oid,
+            committer,
+        ),
+        Some(old_oid) => native_move_git_ref(
+            git_refs,
+            git_ref_name,
+            old_oid,
+            new_commit_oid,
+            new_ref_oid,
+            committer,
+        ),
+    }
+}
+
+fn native_update_git_head(
+    git_repo: &girt::Repository,
+    expected_ref: girt::refs::Expected,
+    new_oid: Option<girt::ObjectId>,
+    committer: &girt::Signature,
+) -> Result<(), BoxedError> {
+    let refs = git_repo.references()?;
+    let head = git_ref_name("HEAD").unwrap();
+    let new_target = if let Some(oid) = new_oid {
+        girt::refs::Target::Direct(oid)
+    } else {
+        // Can't detach HEAD without a commit. Use placeholder ref to nullify
+        // the HEAD. The placeholder ref isn't a normal branch ref. Git CLI
+        // appears to deal with that, and can move the placeholder ref. So we
+        // need to ensure that the ref doesn't exist. (A transaction can't both
+        // delete a ref and make HEAD point to it.)
+        let unborn = git_ref_name(UNBORN_ROOT_REF_NAME).unwrap();
+        refs.transaction(&[girt::refs::RefEdit::new(
+            unborn.clone(),
+            None,
+            girt::refs::Expected::Any,
+            girt::refs::Reflog::Delete,
+        )])?;
+        girt::refs::Target::Symbolic(unborn)
+    };
+    let reflog = reflog_for(git_repo, &head, committer, "export from jj")?;
+    refs.transaction(&[girt::refs::RefEdit::new(
+        head,
+        Some(new_target),
+        expected_ref,
+        reflog,
+    )])?;
+    Ok(())
+}
+
+fn native_export_refs_to_git(
+    mut_repo: &mut MutableRepo,
+    git_repo: &girt::Repository,
+    kind: GitRefKind,
+    refs: RefsToExport,
+) -> Vec<(RemoteRefSymbolBuf, FailedRefExportReason)> {
+    let mut failed = refs.failed;
+    let store = mut_repo.store().clone();
+    let git_backend = get_git_backend(&store).expect("backend type should have been tested");
+    let git_refs = match GitRefs::new(git_repo, git_backend) {
+        Ok(git_refs) => git_refs,
+        Err(err) => {
+            let err: Arc<BoxedError> = Arc::new(err);
+            failed.extend(
+                itertools::chain(
+                    refs.to_delete.into_iter().map(|(symbol, _)| symbol),
+                    refs.to_update.into_iter().map(|(symbol, _)| symbol),
+                )
+                .map(|symbol| {
+                    (
+                        symbol,
+                        FailedRefExportReason::FailedToSet(err.to_string().into()),
+                    )
+                }),
+            );
+            failed.sort_unstable_by(|(name1, _), (name2, _)| name1.cmp(name2));
+            return failed;
+        }
+    };
+    let committer = get_git_backend(mut_repo.store())
+        .expect("backend type should have been tested")
+        .committer_signature();
+    for (symbol, old_oid) in refs.to_delete {
+        let Some(git_ref_name) = to_git_ref_name(kind, symbol.as_ref()) else {
+            failed.push((symbol, FailedRefExportReason::InvalidGitName));
+            continue;
+        };
+        let old_oid = CommitId::from_bytes(old_oid.as_bytes());
+        let old_oid = oid_from_commit_id(git_repo, &old_oid);
+        if let Err(reason) = native_delete_git_ref(&git_refs, &git_ref_name, old_oid) {
+            failed.push((symbol, reason));
+        } else {
+            let new_target = RefTarget::absent();
+            mut_repo.set_git_ref_target(&git_ref_name, new_target);
+        }
+    }
+    for (symbol, (old_commit_oid, new_commit_oid)) in refs.to_update {
+        let old_commit_oid = old_commit_oid.map(|id| CommitId::from_bytes(id.as_bytes()));
+        let new_commit_oid = CommitId::from_bytes(new_commit_oid.as_bytes());
+        let Some(git_ref_name) = to_git_ref_name(kind, symbol.as_ref()) else {
+            failed.push((symbol, FailedRefExportReason::InvalidGitName));
+            continue;
+        };
+        let new_ref_oid = match kind {
+            GitRefKind::Bookmark => None,
+            // Copy existing tag ref, which may point to annotated tag object.
+            GitRefKind::Tag => {
+                let remote_matcher = StringMatcher::all();
+                native_find_git_tag_oid_to_copy(
+                    mut_repo.view(),
+                    &git_refs,
+                    &symbol.name,
+                    &remote_matcher,
+                    oid_from_commit_id(git_repo, &new_commit_oid),
+                )
+            }
+        };
+        if let Err(reason) = native_update_git_ref(
+            &git_refs,
+            &git_ref_name,
+            old_commit_oid
+                .as_ref()
+                .map(|id| oid_from_commit_id(git_repo, id)),
+            oid_from_commit_id(git_repo, &new_commit_oid),
+            new_ref_oid,
+            &committer,
+        ) {
+            failed.push((symbol, reason));
+        } else {
+            let new_target = RefTarget::normal(new_commit_oid);
+            mut_repo.set_git_ref_target(&git_ref_name, new_target);
+        }
+    }
+
+    // Stabilize output, allow binary search.
+    failed.sort_unstable_by(|(name1, _), (name2, _)| name1.cmp(name2));
+    failed
+}
+
 fn diff_refs_to_export(
     view: &View,
     root_commit_id: &CommitId,
