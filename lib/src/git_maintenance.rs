@@ -158,14 +158,12 @@ pub(crate) fn collect_garbage(
     keep_newer: SystemTime,
 ) -> Result<(), GitGcError> {
     let now = SystemTime::now();
-    let policy = girt::retention::RetentionPolicy {
-        recent_cutoff: keep_newer,
-        reflog_expiry: girt::retention::ReflogExpiryPolicy::ClassifiedCutoffs {
+    let policy = girt::retention::RetentionPolicy::trusted()
+        .with_recent_cutoff(keep_newer)
+        .with_reflog_expiry(girt::retention::ReflogExpiryPolicy::ClassifiedCutoffs {
             live_before: Some(unix_seconds(now - REFLOG_EXPIRE)),
             disconnected_before: Some(unix_seconds(now - REFLOG_EXPIRE_UNREACHABLE)),
-        },
-        ..girt::retention::RetentionPolicy::trusted()
-    };
+        });
     let cancel = AtomicBool::new(false);
     repo.expire_reflogs(&mut GcLock, &policy, &cancel)
         .map_err(|err| GitGcError::Maintenance(err.into()))?;

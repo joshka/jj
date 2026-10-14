@@ -220,12 +220,10 @@ impl GitTransport {
                 })?,
                 None => girt::ObjectId::null(format),
             };
-            commands.push(girt::push::PushCommand {
-                name,
-                expected: reference.expected_location.copied(),
-                new,
-                force: girt::push::ForcePolicy::Allow,
-            });
+            commands.push(
+                girt::push::PushCommand::new(name, reference.expected_location.copied(), new)
+                    .with_force(girt::push::ForcePolicy::Allow),
+            );
         }
         let mut push_options =
             girt::transfer::PushOptions::default().identity(self.committer.clone());
@@ -251,7 +249,8 @@ fn push_stats_from_report(report: &girt::push::PushReport) -> GitPushStats {
     let mut stats = GitPushStats::default();
     let unpack_error = match &report.unpack {
         Some(girt::push::Status::Rejected(reason)) => Some(reason.to_str_lossy().into_owned()),
-        _ => None,
+        Some(girt::push::Status::Ok) | None => None,
+        _ => Some("unsupported unpack status reported by the remote".to_owned()),
     };
     for status in &report.refs {
         let name = GitRefNameBuf::from(status.command.name.as_bytes().to_str_lossy().into_owned());
@@ -275,6 +274,12 @@ fn push_stats_from_report(report: &girt::push::PushReport) -> GitPushStats {
                 stats
                     .remote_rejected
                     .push((name, Some("no status reported by the remote".to_owned())));
+            }
+            _ => {
+                stats.remote_rejected.push((
+                    name,
+                    Some("unsupported status reported by the remote".to_owned()),
+                ));
             }
         }
     }

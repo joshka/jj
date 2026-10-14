@@ -713,13 +713,13 @@ impl GitBackend {
     fn to_no_gc_ref_update(&self, id: &CommitId) -> girt::refs::RefEdit {
         let name = girt::refs::RefName::new(format!("{NO_GC_REF_NAMESPACE}{id}")).unwrap();
         let target = girt::refs::Target::Direct(to_git_object_id(self.object_format(), id));
-        girt::refs::RefEdit {
+        girt::refs::RefEdit::new(
             name,
-            dereference: false,
-            target: Some(target.clone()),
-            expected: girt::refs::Expected::AbsentOr(target),
-            reflog: girt::refs::Reflog::Preserve,
-        }
+            Some(target.clone()),
+            girt::refs::Expected::AbsentOr(target),
+            girt::refs::Reflog::Preserve,
+        )
+        .with_dereference(false)
     }
 
     /// Write a tree conflict as a special tree with `.jjconflict-base-N` and
@@ -891,10 +891,17 @@ fn git_header(name: &str, mut value: Vec<u8>) -> girt::CommitHeader {
 
 /// Name of the commit header that carries a signature over the rest of the
 /// commit, for the given object format.
-fn signature_field_name(format: girt::ObjectFormat) -> &'static str {
+fn signature_field_name(format: girt::ObjectFormat) -> BackendResult<&'static str> {
     match format {
-        girt::ObjectFormat::Sha1 => "gpgsig",
-        girt::ObjectFormat::Sha256 => "gpgsig-sha256",
+        girt::ObjectFormat::Sha1 => Ok("gpgsig"),
+        girt::ObjectFormat::Sha256 => Ok("gpgsig-sha256"),
+        _ => Err(BackendError::Other(
+            std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                format!("unsupported Git signature format: {format}"),
+            )
+            .into(),
+        )),
     }
 }
 
@@ -951,7 +958,7 @@ fn commit_from_git_without_root_parent(
     // If the commit is signed, extract both the signature and the signed data
     // (which is the commit buffer with the signature header omitted).
     let secure_sig = headers
-        .position(signature_field_name(format))
+        .position(signature_field_name(format)?)
         .map(|index| {
             let header = headers.payload.headers().nth(index).unwrap();
             let data = headers
@@ -1247,6 +1254,15 @@ impl Backend for GitBackend {
                     },
                     girt::EntryMode::Symlink => TreeValue::Symlink(SymlinkId::from_bytes(oid)),
                     girt::EntryMode::Gitlink => TreeValue::GitSubmodule(CommitId::from_bytes(oid)),
+                    _ => {
+                        return Err(BackendError::Other(
+                            std::io::Error::new(
+                                std::io::ErrorKind::Unsupported,
+                                format!("unsupported Git tree entry mode: {:?}", entry.mode),
+                            )
+                            .into(),
+                        ));
+                    }
                 };
                 Ok((name, value))
             })
@@ -1439,7 +1455,7 @@ impl Backend for GitBackend {
                 let sig = sign(&data).map_err(|err| to_write_err(err.into()))?;
                 fields
                     .extra_headers
-                    .push(git_header(signature_field_name(format), sig.clone()));
+                    .push(git_header(signature_field_name(format)?, sig.clone()));
                 contents.secure_sig = Some(SecureSig { data, sig });
             }
 
@@ -1496,14 +1512,12 @@ impl Backend for GitBackend {
                 .map(|path| path.as_internal_file_string().as_bytes())
                 .collect()
         });
-        let options = girt::rewrites::Options {
-            similarity: 50,
-            copies: girt::rewrites::Copies::ModifiedPostimage,
-            track_empty: false,
-            candidate_limit: 1000,
-            // Binary files are only matched exactly.
-            approximate_binary: false,
-        };
+        let options = girt::rewrites::Options::default()
+            .with_similarity(50)
+            .with_copies(girt::rewrites::Copies::ModifiedPostimage)
+            .with_track_empty(false)
+            .with_candidate_limit(1000)
+            .with_approximate_binary(false);
         let rewrites = self
             .objects()
             .detect_rewrites(
@@ -1596,13 +1610,15 @@ impl GitBackend {
             }
             // Also deletes no-gc ref of random name created by old jj.
             tracing::trace!(%name, ?name_good, "will delete");
-            ref_edits.push(girt::refs::RefEdit {
-                name: git_ref.name.clone(),
-                dereference: false,
-                target: None,
-                expected: girt::refs::Expected::Value(git_ref.target.clone()),
-                reflog: girt::refs::Reflog::Delete,
-            });
+            ref_edits.push(
+                girt::refs::RefEdit::new(
+                    git_ref.name.clone(),
+                    None,
+                    girt::refs::Expected::Value(git_ref.target.clone()),
+                    girt::refs::Reflog::Delete,
+                )
+                .with_dereference(false),
+            );
         }
         tracing::info!(
             new_heads_count = new_heads.len(),
@@ -1988,7 +2004,7 @@ mod tests {
         gix::objs::WriteTo::write_to(&commit, &mut commit_buf)?;
         let commit_str = str::from_utf8(&commit_buf)?;
 
-        let field = signature_field_name(to_format(object_hash));
+        let field = signature_field_name(to_format(object_hash)).unwrap();
         commit.extra_headers.push((field.into(), secure_sig.into()));
 
         let git_commit_id = git_repo.write_object(&commit)?;

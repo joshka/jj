@@ -1471,9 +1471,8 @@ dependencies = [
 
 [[package]]
 name = "girt"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff8b924b9773e1fd73d6f10a048431448b6d59ccfe2eb6e1ca60a976aeb1395a"
+version = "0.8.0"
+source = "git+https://github.com/joshka/girt.git?rev=17af61dbc708996b4b33000cd829a17b729ff131#17af61dbc708996b4b33000cd829a17b729ff131"
 dependencies = [
  "aws-lc-rs",
  "crc32fast",

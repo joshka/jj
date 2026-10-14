@@ -236,6 +236,7 @@ impl<'a> GitRefs<'a> {
         let id = match &observation.target {
             girt::refs::Target::Direct(id) => *id,
             girt::refs::Target::Symbolic(name) => self.refs.resolve(name, 5).ok()?.id?,
+            _ => return None,
         };
         if let Some(known) = known_commit_oid
             && (id == known || observation.peeled_hint == Some(known))
@@ -1751,7 +1752,7 @@ fn find_git_tag_oid_to_copy(
         })
         .find_map(|git_ref| match git_ref.target {
             girt::refs::Target::Direct(id) => Some(id),
-            girt::refs::Target::Symbolic(_) => None,
+            _ => None,
         })
 }
 
@@ -1769,13 +1770,12 @@ fn delete_git_ref(
     };
     if git_refs.resolve_to_commit_id(&git_ref, Some(old_oid)) == Some(old_oid) {
         // The ref has not been updated by git, so go ahead and delete it
-        let edit = girt::refs::RefEdit {
-            name: git_ref.name,
-            dereference: false,
-            target: None,
-            expected: girt::refs::Expected::Value(git_ref.target),
-            reflog: girt::refs::Reflog::Delete,
-        };
+        let edit = girt::refs::RefEdit::new(
+            git_ref.name,
+            None,
+            girt::refs::Expected::Value(git_ref.target),
+            girt::refs::Reflog::Delete,
+        );
         git_refs
             .transaction(&[edit])
             .map_err(FailedRefExportReason::FailedToDelete)
@@ -1795,13 +1795,12 @@ fn set_git_ref(
 ) -> Result<(), BoxedError> {
     let name = git_ref_name_or_err(git_ref_name.as_str())?;
     let reflog = reflog_for(git_refs.repo, &name, committer, "export from jj")?;
-    let edit = girt::refs::RefEdit {
+    let edit = girt::refs::RefEdit::new(
         name,
-        dereference: false,
-        target: Some(girt::refs::Target::Direct(target)),
+        Some(girt::refs::Target::Direct(target)),
         expected,
         reflog,
-    };
+    );
     git_refs.transaction(&[edit])
 }
 
@@ -1927,23 +1926,21 @@ fn update_git_head(
         // need to ensure that the ref doesn't exist. (A transaction can't both
         // delete a ref and make HEAD point to it.)
         let unborn = git_ref_name(UNBORN_ROOT_REF_NAME).unwrap();
-        refs.transaction(&[girt::refs::RefEdit {
-            name: unborn.clone(),
-            dereference: false,
-            target: None,
-            expected: girt::refs::Expected::Any,
-            reflog: girt::refs::Reflog::Delete,
-        }])?;
+        refs.transaction(&[girt::refs::RefEdit::new(
+            unborn.clone(),
+            None,
+            girt::refs::Expected::Any,
+            girt::refs::Reflog::Delete,
+        )])?;
         girt::refs::Target::Symbolic(unborn)
     };
     let reflog = reflog_for(git_repo, &head, committer, "export from jj")?;
-    refs.transaction(&[girt::refs::RefEdit {
-        name: head,
-        dereference: false,
-        target: Some(new_target),
-        expected: expected_ref,
+    refs.transaction(&[girt::refs::RefEdit::new(
+        head,
+        Some(new_target),
+        expected_ref,
         reflog,
-    }])?;
+    )])?;
     Ok(())
 }
 
@@ -2924,12 +2921,13 @@ fn remove_remote_git_refs(
         git_refs.list_prefixed(&bookmark_prefix)?,
         git_refs.list_prefixed(&tag_prefix)?,
     )
-    .map(|reference| girt::refs::RefEdit {
-        name: reference.name,
-        dereference: false,
-        target: None,
-        expected: girt::refs::Expected::Value(reference.target),
-        reflog: girt::refs::Reflog::Delete,
+    .map(|reference| {
+        girt::refs::RefEdit::new(
+            reference.name,
+            None,
+            girt::refs::Expected::Value(reference.target),
+            girt::refs::Reflog::Delete,
+        )
     })
     .collect_vec();
     git_refs.transaction(&edits)
@@ -3046,20 +3044,18 @@ fn rename_remote_git_refs(
             )
             .map_err(|_| "new ref name to be valid")?;
             let reflog = reflog_for(git_repo, &new_name, committer, &ref_log_message)?;
-            edits.push(girt::refs::RefEdit {
-                name: new_name,
-                dereference: false,
-                target: Some(old_ref.target.clone()),
-                expected: girt::refs::Expected::Absent,
+            edits.push(girt::refs::RefEdit::new(
+                new_name,
+                Some(old_ref.target.clone()),
+                girt::refs::Expected::Absent,
                 reflog,
-            });
-            edits.push(girt::refs::RefEdit {
-                name: old_ref.name,
-                dereference: false,
-                target: None,
-                expected: girt::refs::Expected::Value(old_ref.target),
-                reflog: girt::refs::Reflog::Delete,
-            });
+            ));
+            edits.push(girt::refs::RefEdit::new(
+                old_ref.name,
+                None,
+                girt::refs::Expected::Value(old_ref.target),
+                girt::refs::Reflog::Delete,
+            ));
         }
     }
     git_refs.transaction(&edits)
@@ -3542,6 +3538,7 @@ fn parse_fetch_refspec(
         | girt::remote::ConfiguredRefspecKind::Deletion => {
             return Err("push refspecs are not supported");
         }
+        _ => return Err("unknown refspec kinds are not supported"),
     };
 
     let src_branch = src
@@ -3951,19 +3948,16 @@ fn to_remote_tag_ref_update(
         remote = symbol.remote.as_str(),
         name = symbol.name.as_str()
     );
-    girt::refs::RefEdit {
-        name: git_ref_name(&name).expect("pushed ref name should be valid"),
-        dereference: false,
-        target: new_oid.map(girt::refs::Target::Direct),
-        // No constraint on existing ref because remote tag ref shouldn't be moved
-        // externally, and should always point to the actual remote ref.
-        expected: girt::refs::Expected::Any,
-        reflog: if new_oid.is_some() {
+    girt::refs::RefEdit::new(
+        git_ref_name(&name).expect("pushed ref name should be valid"),
+        new_oid.map(girt::refs::Target::Direct),
+        girt::refs::Expected::Any,
+        if new_oid.is_some() {
             girt::refs::Reflog::Preserve
         } else {
             girt::refs::Reflog::Delete
         },
-    }
+    )
 }
 
 #[cfg(test)]

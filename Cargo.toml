@@ -67,8 +67,8 @@ gix = { version = "0.87.1", default-features = false, features = [
     "sha1",
     "sha256",
 ] }
-# Local path until girt publishes the jj-backend API; see docs/technical/girt.md.
-girt = "0.7.0"
+# Pin the non-exhaustive API migration until girt 0.8.0 is released.
+girt = { version = "0.8.0", git = "https://github.com/joshka/girt.git", rev = "17af61dbc708996b4b33000cd829a17b729ff131" }
 globset = "0.4.18"
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more"] }
 indexmap = { version = "2.14.0", features = ["serde"] }
