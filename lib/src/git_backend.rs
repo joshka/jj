@@ -171,6 +171,8 @@ pub enum GitRepoAtWorkdirError {
 
 #[derive(Debug, Error)]
 pub enum GitGcError {
+    #[error("Failed to repack or prune Git objects")]
+    Maintenance(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("Failed to run git gc command")]
     GcCommand(#[source] std::io::Error),
     #[error("git gc command exited with an error: {0}")]
