@@ -648,6 +648,35 @@ impl GitBackend {
         Ok(object.into_data())
     }
 
+    /// Peels `id` through annotated tags, refreshing the pack snapshot once if
+    /// an object in the chain is not found.
+    pub(crate) fn peel(&self, id: girt::ObjectId) -> Result<girt::PeeledObject, girt::PeelError> {
+        let peel = |objects: &girt::Objects| {
+            objects.peel(
+                id,
+                girt::PeelLimits::trusted(),
+                &std::sync::atomic::AtomicBool::new(false),
+            )
+        };
+        let result = peel(&self.objects.read().unwrap());
+        match result {
+            Err(err) if matches!(*err.source, girt::PeelFailure::Missing) => {
+                let mut objects = self.objects.write().unwrap();
+                if objects
+                    .refresh(
+                        girt::PackLimits::trusted(),
+                        girt::AlternateLimits::default(),
+                    )
+                    .is_err()
+                {
+                    return Err(err);
+                }
+                peel(&objects)
+            }
+            result => result,
+        }
+    }
+
     /// Returns the (pack-snapshot) object store for bulk operations.
     pub(crate) fn objects(&self) -> std::sync::RwLockReadGuard<'_, girt::Objects> {
         self.objects.read().unwrap()

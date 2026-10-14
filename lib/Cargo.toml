@@ -71,6 +71,8 @@ windows-sys = { workspace = true }
 [dev-dependencies]
 gix = { workspace = true }
 eyre = { workspace = true }
+# `tracing` exposes `objects.open` spans, which tests count to check handle reuse.
+girt = { workspace = true, features = ["tracing"] }
 indoc = { workspace = true }
 insta = { workspace = true }
 num_cpus = { workspace = true }
@@ -80,6 +82,8 @@ rustversion = { workspace = true }
 test-case = { workspace = true }
 testutils = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = [ "fs" ] }

@@ -175,19 +175,23 @@ fn oid_from_commit_id(git_repo: &girt::Repository, id: &CommitId) -> girt::Objec
     to_git_object_id(git_repo.object_format(), id)
 }
 
-/// Reference access bundled with an object snapshot for peeling.
+/// Reference access that peels through the backend's shared object store.
 pub(crate) struct GitRefs<'a> {
     repo: &'a girt::Repository,
     refs: girt::refs::References<'a>,
-    objects: girt::Objects,
+    backend: &'a GitBackend,
 }
 
 impl<'a> GitRefs<'a> {
-    pub(crate) fn new(repo: &'a girt::Repository) -> Result<Self, BoxedError> {
+    /// `repo` must share `backend`'s object store, as worktrees of it do.
+    pub(crate) fn new(
+        repo: &'a girt::Repository,
+        backend: &'a GitBackend,
+    ) -> Result<Self, BoxedError> {
         Ok(Self {
             repo,
             refs: repo.references()?,
-            objects: repo.objects(girt::PackLimits::trusted())?,
+            backend,
         })
     }
 
@@ -213,14 +217,7 @@ impl<'a> GitRefs<'a> {
 
     /// Peels `id` through annotated tags and returns it if it's a commit.
     fn peel_to_commit(&self, id: girt::ObjectId) -> Option<girt::ObjectId> {
-        let peeled = self
-            .objects
-            .peel(
-                id,
-                girt::PeelLimits::trusted(),
-                &std::sync::atomic::AtomicBool::new(false),
-            )
-            .ok()?;
+        let peeled = self.backend.peel(id).ok()?;
         (peeled.kind == girt::ObjectKind::Commit).then_some(peeled.target)
     }
 
@@ -258,8 +255,8 @@ type BoxedError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Returns the commit HEAD resolves to, or `None` if HEAD is unborn,
 /// unreadable, or doesn't point to an existing commit.
-fn head_id(git_repo: &girt::Repository) -> Option<girt::ObjectId> {
-    let git_refs = GitRefs::new(git_repo).ok()?;
+fn head_id(git_repo: &girt::Repository, git_backend: &GitBackend) -> Option<girt::ObjectId> {
+    let git_refs = GitRefs::new(git_repo, git_backend).ok()?;
     let head = git_refs.find("HEAD").ok()??;
     git_refs.resolve_to_commit_id(&head, None)
 }
@@ -645,7 +642,9 @@ pub async fn import_some_refs(
     options: &GitImportOptions,
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<GitImportStats, GitImportError> {
-    let git_repo = get_git_repo(mut_repo.store())?;
+    let store = mut_repo.store().clone();
+    let git_backend = get_git_backend(&store)?;
+    let git_repo = git_backend.git_repo();
 
     // Allocate views for new remotes configured externally. There may be
     // remotes with no refs, but the user might still want to "track" absent
@@ -656,8 +655,13 @@ pub async fn import_some_refs(
 
     // Exclude real remote tags, which should never be updated by Git.
     let all_remote_tags = false;
-    let refs_to_import =
-        diff_refs_to_import(mut_repo.view(), &git_repo, all_remote_tags, git_ref_filter)?;
+    let refs_to_import = diff_refs_to_import(
+        mut_repo.view(),
+        &git_repo,
+        git_backend,
+        all_remote_tags,
+        git_ref_filter,
+    )?;
     import_refs_inner(mut_repo, refs_to_import, options).await
 }
 
@@ -938,6 +942,7 @@ async fn record_synthetic_predecessors(
 fn diff_refs_to_import(
     view: &View,
     git_repo: &girt::Repository,
+    git_backend: &GitBackend,
     all_remote_tags: bool,
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<RefsToImport, GitImportError> {
@@ -978,7 +983,7 @@ fn diff_refs_to_import(
     let mut changed_remote_bookmarks = Vec::new();
     let mut changed_remote_tags = Vec::new();
     let mut failed_ref_names = Vec::new();
-    let actual = GitRefs::new(git_repo).map_err(GitImportError::Git)?;
+    let actual = GitRefs::new(git_repo, git_backend).map_err(GitImportError::Git)?;
     collect_changed_refs_to_import(
         &actual,
         actual
@@ -1241,7 +1246,8 @@ pub async fn import_head(
         .map_err(GitImportError::from_git)?;
 
     let old_git_head = mut_repo.view().git_head(workspace_name);
-    let new_git_head_id = head_id(&git_repo).map(|oid| CommitId::from_bytes(oid.as_bytes()));
+    let new_git_head_id =
+        head_id(&git_repo, git_backend).map(|oid| CommitId::from_bytes(oid.as_bytes()));
     if old_git_head.as_resolved() == Some(&new_git_head_id) {
         return Ok(());
     }
@@ -1275,7 +1281,7 @@ pub async fn import_head_commit(
     let git_backend = get_git_backend(store)?;
     let git_repo = git_backend.git_repo();
 
-    let Some(oid) = head_id(&git_repo) else {
+    let Some(oid) = head_id(&git_repo, git_backend) else {
         return Ok(None);
     };
     let head_id = CommitId::from_bytes(oid.as_bytes());
@@ -1402,7 +1408,7 @@ pub fn export_some_refs(
     let git_backend = get_git_backend(mut_repo.store())?;
     let committer = git_backend.committer_signature();
     let check_and_detach_head = |git_repo: &girt::Repository| -> Result<(), GitExportError> {
-        let git_refs = GitRefs::new(git_repo).map_err(GitExportError::Git)?;
+        let git_refs = GitRefs::new(git_repo, git_backend).map_err(GitExportError::Git)?;
         let Some(head_ref) = git_refs.find("HEAD").map_err(GitExportError::Git)? else {
             return Ok(());
         };
@@ -1485,7 +1491,9 @@ fn export_refs_to_git(
     refs: RefsToExport,
 ) -> Vec<(RemoteRefSymbolBuf, FailedRefExportReason)> {
     let mut failed = refs.failed;
-    let git_refs = match GitRefs::new(git_repo) {
+    let store = mut_repo.store().clone();
+    let git_backend = get_git_backend(&store).expect("backend type should have been tested");
+    let git_refs = match GitRefs::new(git_repo, git_backend) {
         Ok(git_refs) => git_refs,
         Err(err) => {
             let err: Arc<BoxedError> = Arc::new(err);
@@ -2895,7 +2903,8 @@ pub fn remove_remote(
     remove_remote_git_config_sections(document, remote_name)?;
     commit_config(edit)?;
 
-    remove_remote_git_refs(&git_repo, remote_name).map_err(GitRemoteManagementError::from_git)?;
+    remove_remote_git_refs(&git_repo, get_git_backend(mut_repo.store())?, remote_name)
+        .map_err(GitRemoteManagementError::from_git)?;
 
     if remote_name != REMOTE_NAME_FOR_LOCAL_GIT_REPO {
         remove_remote_refs(mut_repo, remote_name);
@@ -2906,6 +2915,7 @@ pub fn remove_remote(
 
 fn remove_remote_git_refs(
     git_repo: &girt::Repository,
+    git_backend: &GitBackend,
     remote: &RemoteName,
 ) -> Result<(), BoxedError> {
     let bookmark_prefix = format!(
@@ -2916,7 +2926,7 @@ fn remove_remote_git_refs(
         "{REMOTE_TAG_REF_NAMESPACE}{remote}/",
         remote = remote.as_str()
     );
-    let git_refs = GitRefs::new(git_repo)?;
+    let git_refs = GitRefs::new(git_repo, git_backend)?;
     let edits = itertools::chain(
         git_refs.list_prefixed(&bookmark_prefix)?,
         git_refs.list_prefixed(&tag_prefix)?,
@@ -2998,11 +3008,13 @@ pub fn rename_remote(
     remove_remote_git_config_sections(document, old_remote_name)?;
     commit_config(edit)?;
 
+    let git_backend = get_git_backend(mut_repo.store())?;
     rename_remote_git_refs(
         &git_repo,
+        git_backend,
         old_remote_name,
         new_remote_name,
-        &get_git_backend(mut_repo.store())?.committer_signature(),
+        &git_backend.committer_signature(),
     )
     .map_err(GitRemoteManagementError::from_git)?;
 
@@ -3015,6 +3027,7 @@ pub fn rename_remote(
 
 fn rename_remote_git_refs(
     git_repo: &girt::Repository,
+    git_backend: &GitBackend,
     old_remote_name: &RemoteName,
     new_remote_name: &RemoteName,
     committer: &girt::Signature,
@@ -3030,7 +3043,7 @@ fn rename_remote_git_refs(
         old_remote_name = old_remote_name.as_symbol(),
         new_remote_name = new_remote_name.as_symbol(),
     );
-    let git_refs = GitRefs::new(git_repo)?;
+    let git_refs = GitRefs::new(git_repo, git_backend)?;
     let mut edits = Vec::new();
     for namespace in [REMOTE_BOOKMARK_REF_NAMESPACE, REMOTE_TAG_REF_NAMESPACE] {
         let (old_prefix, new_prefix) = to_prefixes(namespace);
@@ -3678,9 +3691,12 @@ impl<'a> GitFetch<'a> {
     pub async fn import_refs(&mut self) -> Result<GitImportStats, GitImportError> {
         tracing::debug!("import_refs");
         let all_remote_tags = true;
+        let store = self.mut_repo.store().clone();
+        let git_backend = get_git_backend(&store)?;
         let refs_to_import = diff_refs_to_import(
             self.mut_repo.view(),
             &self.git_repo,
+            git_backend,
             all_remote_tags,
             |kind, symbol| match kind {
                 GitRefKind::Bookmark => self
@@ -3751,8 +3767,10 @@ pub fn push_refs(
 ) -> Result<GitPushStats, GitPushError> {
     validate_remote_name(remote)?;
 
-    let git_repo = get_git_repo(mut_repo.store())?;
-    let git_refs = GitRefs::new(&git_repo).map_err(|err| {
+    let store = mut_repo.store().clone();
+    let git_backend = get_git_backend(&store)?;
+    let git_repo = git_backend.git_repo();
+    let git_refs = GitRefs::new(&git_repo, git_backend).map_err(|err| {
         GitPushError::Transport(GitTransportError::Transfer(
             girt::transfer::TransferError::Local(err),
         ))
