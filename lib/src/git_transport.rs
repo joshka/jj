@@ -45,14 +45,14 @@ pub enum GitTransportError {
     UnsupportedTransport(String),
     /// The transfer failed.
     #[error(transparent)]
-    Transfer(#[from] girt::transfer::TransferError),
+    Transfer(#[from] girt::workflow::TransferError),
 }
 
 impl GitTransportError {
     fn from_transfer(
         repo: &girt::Repository,
         remote: &RemoteName,
-        error: girt::transfer::TransferError,
+        error: girt::workflow::TransferError,
     ) -> Self {
         let url = || {
             crate::git::try_find_active_remote(repo, remote)
@@ -63,7 +63,7 @@ impl GitTransportError {
         };
         let source_missing = matches!(
             &error,
-            girt::transfer::TransferError::Fetch(error)
+            girt::workflow::TransferError::Fetch(error)
                 if matches!(
                     error.as_ref(),
                     girt::fetch::FetchWorkflowError::Transfer(girt::fetch::FetchError::Source(_))
@@ -71,7 +71,7 @@ impl GitTransportError {
         );
         let destination_missing = matches!(
             &error,
-            girt::transfer::TransferError::Push(error)
+            girt::workflow::TransferError::Push(error)
                 if matches!(
                     error.as_ref(),
                     girt::push::PushError::NotSent(girt::push::PushFailure::Destination(_))
@@ -81,9 +81,9 @@ impl GitTransportError {
             return Self::NoSuchRepository(url());
         }
         match error {
-            girt::transfer::TransferError::NoSuchRemote(_) => Self::NoSuchRepository(url()),
-            girt::transfer::TransferError::Authentication(url) => Self::Authentication(url),
-            girt::transfer::TransferError::UnsupportedTransport(_) => {
+            girt::workflow::TransferError::NoSuchRemote(_) => Self::NoSuchRepository(url()),
+            girt::workflow::TransferError::Authentication(url) => Self::Authentication(url),
+            girt::workflow::TransferError::UnsupportedTransport(_) => {
                 Self::UnsupportedTransport(remote.as_str().to_owned())
             }
             error => Self::Transfer(error),
@@ -102,12 +102,12 @@ pub(crate) struct GitFetchOutcome {
 pub(crate) struct GitTransport {
     repo: girt::Repository,
     committer: girt::Signature,
-    environment: girt::transfer::Environment,
+    environment: girt::workflow::Environment,
 }
 
 impl GitTransport {
     pub(crate) fn from_git_backend(git_backend: &GitBackend, options: GitTransportOptions) -> Self {
-        let mut environment = girt::transfer::Environment::from_process();
+        let mut environment = girt::workflow::Environment::from_process();
         for (name, value) in options.environment {
             environment = environment.with(name, value);
         }
@@ -132,7 +132,7 @@ impl GitTransport {
         if refspecs.is_empty() {
             return Ok(GitFetchOutcome::default());
         }
-        let mut options = girt::transfer::FetchOptions::new(
+        let mut options = girt::workflow::FetchOptions::new(
             refspecs
                 .iter()
                 .map(|refspec| refspec.to_git_format())
@@ -153,15 +153,14 @@ impl GitTransport {
             options = options.tag_namespace(namespace);
         }
         let mut callbacks = Callbacks::new(callback);
-        let outcome = self
-            .repo
-            .fetch(
-                remote_name.as_str(),
-                &options,
-                &self.environment,
-                &mut callbacks,
-            )
-            .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
+        let outcome = girt::workflow::fetch(
+            &self.repo,
+            remote_name.as_str(),
+            &options,
+            &self.environment,
+            &mut callbacks,
+        )
+        .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
         Ok(GitFetchOutcome {
             missing_sources: outcome
                 .missing_sources
@@ -176,11 +175,14 @@ impl GitTransport {
         &self,
         remote_name: &RemoteName,
     ) -> Result<Option<RefNameBuf>, GitTransportError> {
-        let mut callbacks = girt::transfer::NoCallbacks;
-        let head = self
-            .repo
-            .remote_head(remote_name.as_str(), &self.environment, &mut callbacks)
-            .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
+        let mut callbacks = girt::workflow::NoCallbacks;
+        let head = girt::workflow::remote_head(
+            &self.repo,
+            remote_name.as_str(),
+            &self.environment,
+            &mut callbacks,
+        )
+        .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
         // Like `git remote show`, an unborn HEAD has no default branch.
         let (girt::fetch::RemoteHead::Symbolic { branch, .. }
         | girt::fetch::RemoteHead::Inferred { branch, .. }) = head
@@ -207,14 +209,14 @@ impl GitTransport {
         let mut commands = Vec::with_capacity(references.len());
         for reference in references {
             let name = girt::refs::RefName::new(&reference.refspec.destination).map_err(|_| {
-                GitTransportError::Transfer(girt::transfer::TransferError::Configuration(format!(
+                GitTransportError::Transfer(girt::workflow::TransferError::Configuration(format!(
                     "invalid ref name: {}",
                     reference.refspec.destination
                 )))
             })?;
             let new = match &reference.refspec.source {
                 Some(source) => girt::ObjectId::from_hex(format, source).map_err(|_| {
-                    GitTransportError::Transfer(girt::transfer::TransferError::Configuration(
+                    GitTransportError::Transfer(girt::workflow::TransferError::Configuration(
                         format!("invalid push source: {source}"),
                     ))
                 })?,
@@ -226,21 +228,20 @@ impl GitTransport {
             );
         }
         let mut push_options =
-            girt::transfer::PushOptions::default().identity(self.committer.clone());
+            girt::workflow::PushOptions::default().identity(self.committer.clone());
         for option in &options.remote_push_options {
             push_options = push_options.push_option(option.as_bytes());
         }
         let mut callbacks = Callbacks::new(callback);
-        let report = self
-            .repo
-            .push(
-                remote_name.as_str(),
-                commands,
-                &push_options,
-                &self.environment,
-                &mut callbacks,
-            )
-            .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
+        let report = girt::workflow::push(
+            &self.repo,
+            remote_name.as_str(),
+            commands,
+            &push_options,
+            &self.environment,
+            &mut callbacks,
+        )
+        .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
         Ok(push_stats_from_report(&report))
     }
 }
@@ -356,7 +357,7 @@ fn split_lines(buffer: &mut Vec<u8>, data: &[u8], mut emit: impl FnMut(&[u8])) {
     buffer.drain(..start);
 }
 
-impl girt::transfer::TransferCallbacks for Callbacks<'_> {
+impl girt::workflow::TransferCallbacks for Callbacks<'_> {
     fn remote_message(&mut self, message: &[u8]) {
         let mut buffer = std::mem::take(&mut self.remote_line);
         split_lines(&mut buffer, message, |line| self.remote_line(line));
@@ -375,11 +376,11 @@ impl girt::transfer::TransferCallbacks for Callbacks<'_> {
     fn credential(
         &mut self,
         url: &str,
-        prompt: girt::transfer::CredentialPrompt,
+        prompt: girt::workflow::CredentialPrompt,
     ) -> Option<Vec<u8>> {
         let prompt = match prompt {
-            girt::transfer::CredentialPrompt::Username => GitCredentialPrompt::Username,
-            girt::transfer::CredentialPrompt::Password => GitCredentialPrompt::Password,
+            girt::workflow::CredentialPrompt::Username => GitCredentialPrompt::Username,
+            girt::workflow::CredentialPrompt::Password => GitCredentialPrompt::Password,
             _ => return None,
         };
         self.callback

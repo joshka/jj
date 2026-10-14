@@ -3687,7 +3687,7 @@ impl<'a> GitFetch<'a> {
         *self.git_repo = git_backend.git_repo();
         git_backend.refresh_objects().map_err(|err| {
             GitFetchError::Transport(GitTransportError::Transfer(
-                girt::transfer::TransferError::Local(err.into()),
+                girt::workflow::TransferError::Local(err.into()),
             ))
         })?;
 
@@ -3804,7 +3804,7 @@ pub fn push_refs(
     let git_repo = git_backend.git_repo();
     let git_refs = GitRefs::new(&git_repo, git_backend).map_err(|err| {
         GitPushError::Transport(GitTransportError::Transfer(
-            girt::transfer::TransferError::Local(err),
+            girt::workflow::TransferError::Local(err),
         ))
     })?;
     let to_oid = |id: &CommitId| oid_from_commit_id(&git_repo, id);

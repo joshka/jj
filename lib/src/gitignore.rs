@@ -133,7 +133,14 @@ impl GitIgnoreFile {
                 // path itself is matched here. Paths exceeding the (generous)
                 // limits are treated as not ignored.
                 let m = matcher
-                    .check_direct(relative_path.as_internal_file_string().as_bytes(), is_dir)
+                    .check_direct(
+                        relative_path.as_internal_file_string().as_bytes(),
+                        if is_dir {
+                            girt::ignore::InputKind::Directory
+                        } else {
+                            girt::ignore::InputKind::File
+                        },
+                    )
                     .ok()
                     .flatten();
                 if let Some(m) = m {

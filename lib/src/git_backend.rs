@@ -766,7 +766,7 @@ impl GitBackend {
             girt::refs::Expected::AbsentOr(target),
             girt::refs::Reflog::Preserve,
         )
-        .with_dereference(false)
+        .with_dereference(girt::refs::Dereference::Stored)
     }
 
     /// Write a tree conflict as a special tree with `.jjconflict-base-N` and
@@ -1664,7 +1664,7 @@ impl GitBackend {
                     girt::refs::Expected::Value(git_ref.target.clone()),
                     girt::refs::Reflog::Delete,
                 )
-                .with_dereference(false),
+                .with_dereference(girt::refs::Dereference::Stored),
             );
         }
         tracing::info!(
