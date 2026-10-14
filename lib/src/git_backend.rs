@@ -40,11 +40,8 @@ use futures::StreamExt as _;
 use futures::io::Cursor;
 use futures::stream::BoxStream;
 use gix::bstr::BString;
-use gix::objs::CommitRefIter;
 use gix::objs::Exists as _;
 use gix::objs::Write as _;
-use gix::objs::WriteTo as _;
-use gix::objs::commit::signature_field_name;
 use bstr::ByteSlice as _;
 use itertools::Itertools as _;
 use once_cell::sync::OnceCell as OnceLock;
@@ -96,6 +93,19 @@ use crate::stacked_table::ReadonlyTable;
 use crate::stacked_table::TableSegment as _;
 use crate::stacked_table::TableStore;
 use crate::stacked_table::TableStoreError;
+
+const CONFLICT_README: &str = r#"This commit was made by jj, https://jj-vcs.dev/.
+The commit contains file conflicts, and therefore looks wrong when used with
+plain Git or other tools that are unfamiliar with jj.
+
+The .jjconflict-* directories represent the different inputs to the conflict.
+For details, see
+https://docs.jj-vcs.dev/latest/git-compatibility/#format-mapping-details
+
+If you see this file in your working copy, it probably means that you used a
+regular `git` command to check out a conflicted commit. Use `jj abandon` to
+recover.
+"#;
 
 const CHANGE_ID_LENGTH: usize = 16;
 /// Ref namespace used only for preventing GC.
@@ -216,6 +226,111 @@ pub struct GitBackend {
 }
 
 impl GitBackend {
+
+    fn import_extra_metadata_entries_from_heads(
+        &self,
+        mut_table: &mut MutableTable,
+        _table_lock: &FileLock,
+        head_ids: &HashSet<&CommitId>,
+    ) -> BackendResult<()> {
+        let shallow_roots = self.shallow_root_ids(&self.git_repo())?;
+        let mut work_ids = head_ids
+            .iter()
+            .filter(|&id| mut_table.get_value(id.as_bytes()).is_none())
+            .map(|&id| id.clone())
+            .collect_vec();
+        while let Some(id) = work_ids.pop() {
+            let data = self.read_git_object(&id, girt::ObjectKind::Commit)?;
+            let is_shallow = shallow_roots.contains(&id);
+            // TODO(#1624): Should we read the root tree here and check if it has a
+            // `.jjconflict-...` entries? That could happen if the user used `git` to e.g.
+            // change the description of a commit with tree-level conflicts.
+            let commit =
+                native_commit_from_git_without_root_parent(&id, self.object_format(), &data, is_shallow)?;
+            mut_table.add_entry(id.to_bytes(), serialize_extras(&commit));
+            work_ids.extend(
+                commit
+                    .parents
+                    .into_iter()
+                    .filter(|id| mut_table.get_value(id.as_bytes()).is_none()),
+            );
+        }
+        Ok(())
+    }
+
+
+    fn to_no_gc_ref_update(&self, id: &CommitId) -> girt::refs::RefEdit {
+        let name = girt::refs::RefName::new(format!("{NO_GC_REF_NAMESPACE}{id}")).unwrap();
+        let target = girt::refs::Target::Direct(to_git_object_id(self.object_format(), id));
+        girt::refs::RefEdit::new(
+            name,
+            Some(target.clone()),
+            girt::refs::Expected::AbsentOr(target),
+            girt::refs::Reflog::Preserve,
+        )
+        .with_dereference(girt::refs::Dereference::Stored)
+    }
+
+
+    fn edit_references(&self, edits: &[girt::refs::RefEdit]) -> BackendResult<()> {
+        if edits.is_empty() {
+            return Ok(());
+        }
+        let refs = self.native_repo
+            .references()
+            .map_err(|err| BackendError::Other(err.into()))?;
+        refs.transaction(edits)
+            .map_err(|err| BackendError::Other(err.into()))?;
+        Ok(())
+    }
+
+
+    fn write_tree_conflict(&self, conflict: &Merge<TreeId>) -> BackendResult<girt::ObjectId> {
+        let format = self.object_format();
+        let mut entries = itertools::chain(
+            conflict
+                .removes()
+                .enumerate()
+                .map(|(i, tree_id)| (format!(".jjconflict-base-{i}"), tree_id)),
+            conflict
+                .adds()
+                .enumerate()
+                .map(|(i, tree_id)| (format!(".jjconflict-side-{i}"), tree_id)),
+        )
+        .map(|(name, tree_id)| girt::TreeEntry {
+            mode: girt::EntryMode::Tree,
+            name: name.into_bytes(),
+            id: to_git_object_id(format, tree_id),
+        })
+        .collect_vec();
+        let readme_id = self
+            .write_blob(CONFLICT_README.as_bytes(), "file")
+            .map_err(|err| {
+                BackendError::Other(
+                    format!("Failed to write README for conflict tree: {err}").into(),
+                )
+            })?;
+        entries.push(girt::TreeEntry {
+            mode: girt::EntryMode::Blob,
+            name: JJ_CONFLICT_README_FILE_NAME.into(),
+            id: readme_id,
+        });
+        let first_tree_id = conflict.first();
+        if *first_tree_id != self.empty_tree_id {
+            let data = self.read_git_object(first_tree_id, girt::ObjectKind::Tree)?;
+            let first_tree = girt::Tree::parse(format, &data)
+                .map_err(|err| to_read_object_err(err, first_tree_id))?;
+            for entry in first_tree.entries() {
+                if !entry.name.starts_with(b".jjconflict")
+                    && entry.name != JJ_CONFLICT_README_FILE_NAME.as_bytes()
+                {
+                    entries.push(entry.clone());
+                }
+            }
+        }
+        self.write_tree_entries(entries)
+    }
+
 
     fn write_tree_entries(&self, entries: Vec<girt::TreeEntry>) -> BackendResult<girt::ObjectId> {
         let to_err = |err: Box<dyn std::error::Error + Send + Sync>| BackendError::WriteObject {
@@ -641,12 +756,16 @@ impl GitBackend {
             return Ok(());
         }
 
+        for id in &head_ids {
+            self.validate_git_object_id(*id)?;
+        }
         // Create no-gc ref even if known to the extras table. Concurrent GC
         // process might have deleted the no-gc ref.
-        let locked_repo = self.lock_git_repo();
-        locked_repo
-            .edit_references(head_ids.iter().copied().map(to_no_gc_ref_update))
-            .map_err(|err| BackendError::Other(Box::new(err)))?;
+        let edits = head_ids
+            .iter()
+            .map(|id| self.to_no_gc_ref_update(id))
+            .collect_vec();
+        self.edit_references(&edits)?;
 
         // These commits are imported from Git. Make our change ids persist (otherwise
         // future write_commit() could reassign new change id.)
@@ -656,13 +775,7 @@ impl GitBackend {
         );
         let (table, table_lock) = self.read_extra_metadata_table_locked()?;
         let mut mut_table = table.start_mutation();
-        import_extra_metadata_entries_from_heads(
-            &locked_repo,
-            &mut mut_table,
-            &table_lock,
-            &head_ids,
-            self.shallow_root_ids(&locked_repo)?,
-        )?;
+        self.import_extra_metadata_entries_from_heads(&mut mut_table, &table_lock, &head_ids)?;
         self.save_extra_metadata_table(mut_table, &table_lock)
     }
 
@@ -760,122 +873,10 @@ fn gix_open_opts_from_settings(settings: &UserSettings) -> gix::open::Options {
 }
 
 /// Parses the `jj:conflict-labels` header value if present.
-fn extract_conflict_labels_from_commit(commit: &gix::objs::CommitRef) -> Merge<String> {
-    let Some(value) = commit
-        .extra_headers()
-        .find(JJ_CONFLICT_LABELS_COMMIT_HEADER)
-    else {
-        return Merge::resolved(String::new());
-    };
-
-    str::from_utf8(value)
-        .expect("labels should be valid utf8")
-        .split_terminator('\n')
-        .map(str::to_owned)
-        .collect::<MergeBuilder<_>>()
-        .build()
-}
 
 /// Parses the `jj:trees` header value if present, otherwise returns the
 /// resolved tree ID from Git.
-fn extract_root_tree_from_commit(commit: &gix::objs::CommitRef) -> Result<Merge<TreeId>, ()> {
-    let Some(value) = commit.extra_headers().find(JJ_TREES_COMMIT_HEADER) else {
-        let tree_id = TreeId::from_bytes(commit.tree().as_bytes());
-        return Ok(Merge::resolved(tree_id));
-    };
 
-    let hash_len = commit.tree().kind().len_in_bytes();
-    let mut tree_ids = SmallVec::new();
-    for hex in value.split(|b| *b == b' ') {
-        let tree_id = TreeId::try_from_hex(hex).ok_or(())?;
-        if tree_id.as_bytes().len() != hash_len {
-            return Err(());
-        }
-        tree_ids.push(tree_id);
-    }
-    // It is invalid to use `jj:trees` with a non-conflicted tree. If this were
-    // allowed, it would be possible to construct a commit which appears to have
-    // different contents depending on whether it is viewed using `jj` or `git`.
-    if tree_ids.len() == 1 || tree_ids.len() % 2 == 0 {
-        return Err(());
-    }
-    Ok(Merge::from_vec(tree_ids))
-}
-
-fn commit_from_git_without_root_parent(
-    id: &CommitId,
-    git_object: &gix::Object,
-    is_shallow: bool,
-) -> BackendResult<Commit> {
-    let decode_err = |err: gix::Exn<gix::error::Message>| to_read_object_err(err, id);
-    let commit = git_object
-        .try_to_commit_ref()
-        .map_err(|err| to_read_object_err(err, id))?;
-
-    // If the git header has a change-id field, we attempt to convert that to a
-    // valid JJ Change Id
-    let change_id = extract_change_id_from_commit(&commit)
-        .unwrap_or_else(|| synthetic_change_id_from_git_commit_id(id));
-
-    // shallow commits don't have parents their parents actually fetched, so we
-    // discard them here
-    // TODO: This causes issues when a shallow repository is deepened/unshallowed
-    let parents = if is_shallow {
-        vec![]
-    } else {
-        commit
-            .parents()
-            .map(|oid| CommitId::from_bytes(oid.as_bytes()))
-            .collect_vec()
-    };
-    // If the commit is a conflict, the conflict labels are stored in a commit
-    // header separately from the trees.
-    let conflict_labels = extract_conflict_labels_from_commit(&commit);
-    // Conflicted commits written before we started using the `jj:trees` header
-    // (~March 2024) may have the root trees stored in the extra metadata table
-    // instead. For such commits, we'll update the root tree later when we read the
-    // extra metadata.
-    let root_tree = extract_root_tree_from_commit(&commit)
-        .map_err(|()| to_read_object_err("Invalid jj:trees header", id))?;
-    // Use lossy conversion as commit message with "mojibake" is still better than
-    // nothing.
-    // TODO: what should we do with commit.encoding?
-    let description = String::from_utf8_lossy(commit.message).into_owned();
-    let author = signature_from_git(commit.author().map_err(decode_err)?);
-    let committer = signature_from_git(commit.committer().map_err(decode_err)?);
-
-    // If the commit is signed, extract both the signature and the signed data
-    // (which is the commit buffer with the gpgsig header omitted).
-    // We have to re-parse the raw commit data because gix CommitRef does not give
-    // us the sogned data, only the signature.
-    // Ideally, we could use try_to_commit_ref_iter at the beginning of this
-    // function and extract everything from that. For now, this works
-    let secure_sig = commit
-        .extra_headers
-        .iter()
-        .any(|(k, _)| *k == signature_field_name(git_object.id.kind()))
-        .then(|| CommitRefIter::signature(&git_object.data, git_object.id.kind()))
-        .transpose()
-        .map_err(decode_err)?
-        .flatten()
-        .map(|(sig, data)| SecureSig {
-            data: data.to_bstring().into(),
-            sig: sig.into_owned().into(),
-        });
-
-    Ok(Commit {
-        parents,
-        predecessors: vec![],
-        // If this commit has associated extra metadata, we may reset this later.
-        root_tree,
-        conflict_labels,
-        change_id,
-        description,
-        author,
-        committer,
-        secure_sig,
-    })
-}
 
 /// Extracts change id from commit headers.
 pub fn extract_change_id_from_commit(commit: &gix::objs::CommitRef) -> Option<ChangeId> {
@@ -907,54 +908,7 @@ pub fn synthetic_change_id_from_git_commit_id(id: &CommitId) -> ChangeId {
 
 const EMPTY_STRING_PLACEHOLDER: &str = "JJ_EMPTY_STRING";
 
-fn signature_from_git(signature: gix::actor::SignatureRef) -> Signature {
-    let name = signature.name;
-    let name = if name != EMPTY_STRING_PLACEHOLDER {
-        String::from_utf8_lossy(name).into_owned()
-    } else {
-        "".to_string()
-    };
-    let email = signature.email;
-    let email = if email != EMPTY_STRING_PLACEHOLDER {
-        String::from_utf8_lossy(email).into_owned()
-    } else {
-        "".to_string()
-    };
-    let time = signature.time().unwrap_or_default();
-    let timestamp = MillisSinceEpoch(time.seconds * 1000);
-    let tz_offset = time.offset.div_euclid(60); // in minutes
-    Signature {
-        name,
-        email,
-        timestamp: Timestamp {
-            timestamp,
-            tz_offset,
-        },
-    }
-}
 
-fn signature_to_git(signature: &Signature) -> gix::actor::Signature {
-    // git does not support empty names or emails
-    let name = if !signature.name.is_empty() {
-        &signature.name
-    } else {
-        EMPTY_STRING_PLACEHOLDER
-    };
-    let email = if !signature.email.is_empty() {
-        &signature.email
-    } else {
-        EMPTY_STRING_PLACEHOLDER
-    };
-    let time = gix::date::Time::new(
-        signature.timestamp.timestamp.0.div_euclid(1000),
-        signature.timestamp.tz_offset * 60, // in seconds
-    );
-    gix::actor::Signature {
-        name: name.into(),
-        email: email.into(),
-        time,
-    }
-}
 
 #[allow(dead_code)]
 struct NativeCommitHeaders<'a> {
@@ -1425,38 +1379,6 @@ fn to_invalid_utf8_err(source: Utf8Error, id: &impl ObjectId) -> BackendError {
     }
 }
 
-fn import_extra_metadata_entries_from_heads(
-    git_repo: &gix::Repository,
-    mut_table: &mut MutableTable,
-    _table_lock: &FileLock,
-    head_ids: &HashSet<&CommitId>,
-    shallow_roots: &[CommitId],
-) -> BackendResult<()> {
-    let mut work_ids = head_ids
-        .iter()
-        .filter(|&id| mut_table.get_value(id.as_bytes()).is_none())
-        .map(|&id| id.clone())
-        .collect_vec();
-    while let Some(id) = work_ids.pop() {
-        let git_object = git_repo
-            .try_find_object(validate_git_object_id(git_repo, &id)?)
-            .map_err(|err| to_read_object_err(err, &id))?
-            .ok_or_else(|| not_found_err(&id))?;
-        let is_shallow = shallow_roots.contains(&id);
-        // TODO(#1624): Should we read the root tree here and check if it has a
-        // `.jjconflict-...` entries? That could happen if the user used `git` to e.g.
-        // change the description of a commit with tree-level conflicts.
-        let commit = commit_from_git_without_root_parent(&id, &git_object, is_shallow)?;
-        mut_table.add_entry(id.to_bytes(), serialize_extras(&commit));
-        work_ids.extend(
-            commit
-                .parents
-                .into_iter()
-                .filter(|id| mut_table.get_value(id.as_bytes()).is_none()),
-        );
-    }
-    Ok(())
-}
 
 impl Debug for GitBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -1643,14 +1565,9 @@ impl Backend for GitBackend {
         }
 
         let mut commit = {
-            let locked_repo = self.lock_git_repo();
-            let git_commit_id = validate_git_object_id(&locked_repo, id)?;
-            let git_object = locked_repo
-                .try_find_object(git_commit_id)
-                .map_err(|err| to_read_object_err(err, id))?
-                .ok_or_else(|| not_found_err(id))?;
-            let is_shallow = self.shallow_root_ids(&locked_repo)?.contains(id);
-            commit_from_git_without_root_parent(id, &git_object, is_shallow)?
+            let data = self.read_git_object(id, girt::ObjectKind::Commit)?;
+            let is_shallow = self.shallow_root_ids(&self.git_repo())?.contains(id);
+            native_commit_from_git_without_root_parent(id, self.object_format(), &data, is_shallow)?
         };
         if commit.parents.is_empty() {
             commit.parents.push(self.root_commit_id.clone());
@@ -1680,21 +1597,21 @@ impl Backend for GitBackend {
     ) -> BackendResult<(CommitId, Commit)> {
         assert!(contents.secure_sig.is_none(), "commit.secure_sig was set");
 
-        let locked_repo = self.lock_git_repo();
+        let format = self.object_format();
         let tree_ids = &contents.root_tree;
         let git_tree_id = match tree_ids.as_resolved() {
-            Some(tree_id) => validate_git_object_id(&locked_repo, tree_id)?,
-            None => write_tree_conflict(&locked_repo, tree_ids)?,
+            Some(tree_id) => self.validate_git_object_id(tree_id)?,
+            None => self.write_tree_conflict(tree_ids)?,
         };
-        let author = signature_to_git(&contents.author);
-        let mut committer = signature_to_git(&contents.committer);
+        let author = native_signature_to_git(&contents.author);
+        let mut committer = native_signature_to_git(&contents.committer);
         let message = &contents.description;
         if contents.parents.is_empty() {
             return Err(BackendError::Other(
                 "Cannot write a commit with no parents".into(),
             ));
         }
-        let mut parents = SmallVec::new();
+        let mut parents = vec![];
         for parent_id in &contents.parents {
             if *parent_id == self.root_commit_id {
                 // Git doesn't have a root commit, so if the parent is the root commit, we don't
@@ -1709,10 +1626,10 @@ impl Backend for GitBackend {
                     ));
                 }
             } else {
-                parents.push(validate_git_object_id(&locked_repo, parent_id)?);
+                parents.push(self.validate_git_object_id(parent_id)?);
             }
         }
-        let mut extra_headers: Vec<(BString, BString)> = vec![];
+        let mut extra_headers: Vec<girt::CommitHeader> = vec![];
         if !contents.conflict_labels.is_resolved() {
             // Labels cannot contain '\n' since we use it as a separator in the header.
             assert!(
@@ -1723,35 +1640,42 @@ impl Backend for GitBackend {
             );
             let mut joined_with_newlines = contents.conflict_labels.iter().join("\n");
             joined_with_newlines.push('\n');
-            extra_headers.push((
-                JJ_CONFLICT_LABELS_COMMIT_HEADER.into(),
+            extra_headers.push(native_git_header(
+                JJ_CONFLICT_LABELS_COMMIT_HEADER,
                 joined_with_newlines.into(),
             ));
         }
         if !tree_ids.is_resolved() {
             let value = tree_ids.iter().map(|id| id.hex()).join(" ");
-            extra_headers.push((JJ_TREES_COMMIT_HEADER.into(), value.into()));
+            extra_headers.push(girt::CommitHeader {
+                name: JJ_TREES_COMMIT_HEADER.into(),
+                value: value.into(),
+            });
         }
         if self.write_change_id_header {
-            extra_headers.push((
-                CHANGE_ID_COMMIT_HEADER.into(),
-                contents.change_id.reverse_hex().into(),
-            ));
+            extra_headers.push(girt::CommitHeader {
+                name: CHANGE_ID_COMMIT_HEADER.into(),
+                value: contents.change_id.reverse_hex().into(),
+            });
         }
 
+        let loose = self.native_repo.loose_objects();
         if tree_ids.iter().any(|id| id == &self.empty_tree_id) {
-            let tree = gix::objs::Tree::empty();
-            let tree_id =
-                locked_repo
-                    .write_object(&tree)
-                    .map_err(|err| BackendError::WriteObject {
-                        object_type: "tree",
-                        source: Box::new(err),
-                    })?;
-            assert!(tree_id.is_empty_tree());
+            let tree = girt::Tree::new(format, vec![]).unwrap();
+            loose
+                .write_tree(&tree)
+                .map_err(|err| BackendError::WriteObject {
+                    object_type: "tree",
+                    source: Box::new(err),
+                })?;
         }
 
         let extras = serialize_extras(&contents);
+        let to_write_err =
+            |err: Box<dyn std::error::Error + Send + Sync>| BackendError::WriteObject {
+                object_type: "commit",
+                source: err,
+            };
 
         // If two writers write commits of the same id with different metadata, they
         // will both succeed and the metadata entries will be "merged" later. Since
@@ -1761,39 +1685,30 @@ impl Backend for GitBackend {
         // repository is rsync-ed.
         let (table, table_lock) = self.read_extra_metadata_table_locked()?;
         let id = loop {
-            let mut commit = gix::objs::Commit {
-                message: message.to_owned().into(),
+            let mut fields = girt::CommitFields {
                 tree: git_tree_id,
+                parents: parents.clone(),
                 author: author.clone(),
                 committer: committer.clone(),
-                encoding: None,
-                parents: parents.clone(),
                 extra_headers: extra_headers.clone(),
+                message: message.as_bytes().to_vec(),
             };
 
             if let Some(sign) = &mut sign_with {
-                // we don't use gix pool, but at least use their heuristic
-                let mut data = Vec::with_capacity(512);
-                commit.write_to(&mut data).unwrap();
-
-                let sig = sign(&data).map_err(|err| BackendError::WriteObject {
-                    object_type: "commit",
-                    source: Box::new(err),
-                })?;
-                let field = signature_field_name(git_tree_id.kind());
-                commit
+                let unsigned =
+                    girt::Commit::new(fields.clone()).map_err(|err| to_write_err(err.into()))?;
+                let data = unsigned.as_bytes().to_vec();
+                let sig = sign(&data).map_err(|err| to_write_err(err.into()))?;
+                fields
                     .extra_headers
-                    .push((field.into(), sig.clone().into()));
+                    .push(native_git_header(native_signature_field_name(format)?, sig.clone()));
                 contents.secure_sig = Some(SecureSig { data, sig });
             }
 
-            let git_id =
-                locked_repo
-                    .write_object(&commit)
-                    .map_err(|err| BackendError::WriteObject {
-                        object_type: "commit",
-                        source: Box::new(err),
-                    })?;
+            let commit = girt::Commit::new(fields).map_err(|err| to_write_err(err.into()))?;
+            let git_id = loose
+                .write_commit(&commit)
+                .map_err(|err| to_write_err(err.into()))?;
 
             match table.get_value(git_id.as_bytes()) {
                 Some(existing_extras) if existing_extras != extras => {
@@ -1810,7 +1725,7 @@ impl Backend for GitBackend {
                     // commit had its timestamp set to 0. Moreover, we test that
                     // a commit with a negative timestamp can still be written
                     // and read back by `jj`.
-                    committer.time.seconds -= 1;
+                    committer.seconds -= 1;
                 }
                 _ => break CommitId::from_bytes(git_id.as_bytes()),
             }
@@ -1818,13 +1733,11 @@ impl Backend for GitBackend {
 
         // Everything up to this point had no permanent effect on the repo except
         // GC-able objects
-        locked_repo
-            .edit_reference(to_no_gc_ref_update(&id))
-            .map_err(|err| BackendError::Other(Box::new(err)))?;
+        self.edit_references(&[self.to_no_gc_ref_update(&id)])?;
 
         // Update the signature to match the one that was actually written to the object
         // store
-        contents.committer.timestamp.timestamp = MillisSinceEpoch(committer.time.seconds * 1000);
+        contents.committer.timestamp.timestamp = MillisSinceEpoch(committer.seconds * 1000);
         let mut mut_table = table.start_mutation();
         mut_table.add_entry(id.to_bytes(), extras);
         self.save_extra_metadata_table(mut_table, &table_lock)?;
@@ -1946,72 +1859,6 @@ impl GitBackend {
 /// Also includes a `JJ-CONFLICT-README` file explaining why these trees are
 /// present. The rest of the tree is copied from the first term of the conflict,
 /// which prevents editors with Git support from highlighting all files as new.
-fn write_tree_conflict(
-    repo: &gix::Repository,
-    conflict: &Merge<TreeId>,
-) -> BackendResult<gix::ObjectId> {
-    // Tree entries to be written must be sorted by Entry::filename().
-    let mut entries = itertools::chain(
-        conflict
-            .removes()
-            .enumerate()
-            .map(|(i, tree_id)| (format!(".jjconflict-base-{i}"), tree_id)),
-        conflict
-            .adds()
-            .enumerate()
-            .map(|(i, tree_id)| (format!(".jjconflict-side-{i}"), tree_id)),
-    )
-    .map(|(name, tree_id)| gix::objs::tree::Entry {
-        mode: gix::object::tree::EntryKind::Tree.into(),
-        filename: name.into(),
-        oid: gix::ObjectId::from_bytes_or_panic(tree_id.as_bytes()),
-    })
-    .collect_vec();
-    let readme_id = repo
-        .write_blob(
-            r#"This commit was made by jj, https://jj-vcs.dev/.
-The commit contains file conflicts, and therefore looks wrong when used with
-plain Git or other tools that are unfamiliar with jj.
-
-The .jjconflict-* directories represent the different inputs to the conflict.
-For details, see
-https://docs.jj-vcs.dev/latest/git-compatibility/#format-mapping-details
-
-If you see this file in your working copy, it probably means that you used a
-regular `git` command to check out a conflicted commit. Use `jj abandon` to
-recover.
-"#,
-        )
-        .map_err(|err| {
-            BackendError::Other(format!("Failed to write README for conflict tree: {err}").into())
-        })?
-        .detach();
-    entries.push(gix::objs::tree::Entry {
-        mode: gix::object::tree::EntryKind::Blob.into(),
-        filename: JJ_CONFLICT_README_FILE_NAME.into(),
-        oid: readme_id,
-    });
-    let first_tree_id = conflict.first();
-    let first_tree = repo
-        .find_tree(gix::ObjectId::from_bytes_or_panic(first_tree_id.as_bytes()))
-        .map_err(|err| to_read_object_err(err, first_tree_id))?;
-    for entry in first_tree.iter() {
-        let entry = entry.map_err(|err| to_read_object_err(err, first_tree_id))?;
-        if !entry.filename().starts_with(b".jjconflict")
-            && entry.filename() != JJ_CONFLICT_README_FILE_NAME
-        {
-            entries.push(entry.detach().into());
-        }
-    }
-    entries.sort_unstable();
-    let id = repo
-        .write_object(gix::objs::Tree { entries })
-        .map_err(|err| BackendError::WriteObject {
-            object_type: "tree",
-            source: Box::new(err),
-        })?;
-    Ok(id.detach())
-}
 
 #[cfg(test)]
 mod tests {
@@ -2019,6 +1866,8 @@ mod tests {
 
     use gix::date::parse::TimeBuf;
     use gix::objs::CommitRef;
+    use gix::objs::WriteTo as _;
+    use gix::objs::commit::signature_field_name;
     use indoc::indoc;
     use test_case::test_case;
 
@@ -2028,6 +1877,55 @@ mod tests {
     use crate::hex_util;
     use crate::tests::TestResult;
     use crate::tests::new_temp_dir;
+
+    fn signature_from_git(signature: gix::actor::SignatureRef) -> Signature {
+        let name = signature.name;
+        let name = if name != EMPTY_STRING_PLACEHOLDER {
+            String::from_utf8_lossy(name).into_owned()
+        } else {
+            "".to_string()
+        };
+        let email = signature.email;
+        let email = if email != EMPTY_STRING_PLACEHOLDER {
+            String::from_utf8_lossy(email).into_owned()
+        } else {
+            "".to_string()
+        };
+        let time = signature.time().unwrap_or_default();
+        let timestamp = MillisSinceEpoch(time.seconds * 1000);
+        let tz_offset = time.offset.div_euclid(60); // in minutes
+        Signature {
+            name,
+            email,
+            timestamp: Timestamp {
+                timestamp,
+                tz_offset,
+            },
+        }
+    }
+
+    fn signature_to_git(signature: &Signature) -> gix::actor::Signature {
+        // git does not support empty names or emails
+        let name = if !signature.name.is_empty() {
+            &signature.name
+        } else {
+            EMPTY_STRING_PLACEHOLDER
+        };
+        let email = if !signature.email.is_empty() {
+            &signature.email
+        } else {
+            EMPTY_STRING_PLACEHOLDER
+        };
+        let time = gix::date::Time::new(
+            signature.timestamp.timestamp.0.div_euclid(1000),
+            signature.timestamp.tz_offset * 60, // in seconds
+        );
+        gix::actor::Signature {
+            name: name.into(),
+            email: email.into(),
+            time,
+        }
+    }
 
     const GIT_USER: &str = "Someone";
     const GIT_EMAIL: &str = "someone@example.com";
