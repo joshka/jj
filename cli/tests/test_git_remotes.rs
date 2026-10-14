@@ -90,9 +90,8 @@ fn test_git_remotes() {
     ");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "bar"]
     	url = http://example.com/repo/bar
     	fetch = +refs/heads/*:refs/remotes/bar/*
@@ -356,9 +355,8 @@ fn test_git_remote_set_url() {
     ");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "foo"]
     	url = http://example.com/repo/bar
     	fetch = +refs/heads/*:refs/remotes/foo/*
@@ -375,9 +373,8 @@ fn test_git_remote_set_url() {
     insta::assert_snapshot!(output, @"");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "foo"]
     	url = http://example.com/repo/bar
     	pushurl = https://example.com/repo/bar
@@ -394,9 +391,8 @@ fn test_git_remote_set_url() {
     insta::assert_snapshot!(output, @"");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "foo"]
     	url = http://example.com/repo/bar
     	pushurl = git@example.com:repo/bar
@@ -413,9 +409,8 @@ fn test_git_remote_set_url() {
     insta::assert_snapshot!(output, @"");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "foo"]
     	url = http://example.com/repo/bar2
     	pushurl = git@example.com:repo/bar
@@ -431,9 +426,8 @@ fn test_git_remote_set_url() {
     insta::assert_snapshot!(output, @"");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "foo"]
     	url = http://example.com/repo/bar
     	pushurl = git@example.com:repo/bar
@@ -470,9 +464,8 @@ fn test_git_remote_set_url() {
     insta::assert_snapshot!(output, @"");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "foo"]
     	url = https://example.com/repo/baz
     	pushurl = git@example.com:/repo/baz
@@ -491,9 +484,8 @@ fn test_git_remote_set_url() {
     insta::assert_snapshot!(output, @"");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "foo"]
     	url = https://example.com/repo/bar
     	pushurl = git@example.com:/repo/bar
@@ -575,9 +567,8 @@ fn test_git_remote_rename() {
     ");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "baz"]
     	url = http://example.com/repo/baz
     	fetch = +refs/heads/*:refs/remotes/baz/*
@@ -956,9 +947,8 @@ fn test_git_remote_with_branch_config() -> TestResult {
 
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [branch "test"]
     	remote = bar
     	merge = refs/heads/test
@@ -1012,9 +1002,8 @@ fn test_git_remote_with_global_git_remote_config() {
     insta::assert_snapshot!(output, @"");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "bar"]
     	url = htps://example.com/repo/foo
     	fetch = +refs/heads/*:refs/remotes/bar/*
@@ -1055,9 +1044,8 @@ fn test_git_remote_with_global_git_remote_config() {
     ");
     insta::assert_snapshot!(read_git_config(work_dir.root()), @r#"
     [core]
-    	bare = true
-    	logallrefupdates = false
     	repositoryformatversion = 0
+    	bare = true
     [remote "bar"]
     	url = htps://example.com/repo/foo
     	fetch = +refs/heads/*:refs/remotes/bar/*
