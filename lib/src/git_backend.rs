@@ -29,6 +29,7 @@ use std::process::ExitStatus;
 use std::str::Utf8Error;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::RwLock;
 use std::sync::MutexGuard;
 use std::time::SystemTime;
 
@@ -198,6 +199,8 @@ pub struct GitBackend {
     // cheaper to cache the thread-local instance behind a mutex than creating
     // one for each backend method call. Our GitBackend is most likely to be
     // used in a single-threaded context.
+    native_repo: girt::Repository,
+    objects: RwLock<girt::Objects>,
     base_repo: gix::ThreadSafeRepository,
     repo: Mutex<gix::Repository>,
     root_commit_id: CommitId,
@@ -213,6 +216,86 @@ pub struct GitBackend {
 }
 
 impl GitBackend {
+
+    fn write_tree_entries(&self, entries: Vec<girt::TreeEntry>) -> BackendResult<girt::ObjectId> {
+        let to_err = |err: Box<dyn std::error::Error + Send + Sync>| BackendError::WriteObject {
+            object_type: "tree",
+            source: err,
+        };
+        let tree =
+            girt::Tree::new(self.object_format(), entries).map_err(|err| to_err(err.into()))?;
+        self.native_repo
+            .loose_objects()
+            .write_tree(&tree)
+            .map_err(|err| to_err(err.into()))
+    }
+
+
+    fn refresh_locked(&self, objects: &mut girt::Objects) -> Result<(), girt::ObjectReadError> {
+        objects.refresh(
+            girt::PackLimits::trusted(),
+            girt::AlternateLimits::default(),
+        )?;
+        Ok(())
+    }
+
+
+    fn read_git_object(
+        &self,
+        id: &impl ObjectId,
+        expected: girt::ObjectKind,
+    ) -> BackendResult<Vec<u8>> {
+        let git_id = self.validate_git_object_id(id)?;
+        let read = |objects: &girt::Objects| {
+            objects
+                .read(git_id, girt::ReadLimits::trusted())
+                .map_err(|err| to_read_object_err(err, id))
+        };
+        let mut object = read(&self.objects.read().unwrap())?;
+        if object.is_none() {
+            let mut objects = self.objects.write().unwrap();
+            self.refresh_locked(&mut objects)
+                .map_err(|err| to_read_object_err(err, id))?;
+            object = read(&objects)?;
+        }
+        let Some(object) = object else {
+            return Err(BackendError::ObjectNotFound {
+                object_type: id.object_type(),
+                hash: id.hex(),
+                source: None,
+            });
+        };
+        if object.kind() != expected {
+            return Err(to_read_object_err(
+                format!(
+                    "expected {} but found {}",
+                    expected.as_str(),
+                    object.kind().as_str()
+                ),
+                id,
+            ));
+        }
+        Ok(object.into_data())
+    }
+
+
+    fn validate_git_object_id(&self, id: &impl ObjectId) -> BackendResult<girt::ObjectId> {
+        let format = self.object_format();
+        girt::ObjectId::from_bytes(format, id.as_bytes()).map_err(|_| {
+            BackendError::InvalidHashLength {
+                expected: format.digest_len(),
+                actual: id.as_bytes().len(),
+                object_type: id.object_type(),
+                hash: id.hex(),
+            }
+        })
+    }
+
+
+    pub fn object_format(&self) -> girt::ObjectFormat {
+        self.native_repo.object_format()
+    }
+
 
     pub(crate) fn native_git_repo(&self) -> girt::Repository {
         open_git_repository(self.git_repo_path()).expect("already-open repository")
@@ -265,7 +348,11 @@ impl GitBackend {
         let root_change_id = ChangeId::from_bytes(&[0; CHANGE_ID_LENGTH]);
         let empty_tree_id =
             TreeId::from_bytes(gix::ObjectId::empty_tree(repo.object_hash()).as_bytes());
+        let native_repo = open_git_repository(base_repo.path()).expect("already-open repository");
+        let objects = native_repo.objects(girt::PackLimits::trusted()).expect("readable object store");
         Self {
+            native_repo,
+            objects: RwLock::new(objects),
             base_repo,
             repo: Mutex::new(repo),
             root_commit_id,
@@ -580,15 +667,7 @@ impl GitBackend {
     }
 
     fn read_file_sync(&self, id: &FileId) -> BackendResult<Vec<u8>> {
-        let locked_repo = self.lock_git_repo();
-        let git_blob_id = validate_git_object_id(&locked_repo, id)?;
-        let mut blob = locked_repo
-            .try_find_object(git_blob_id)
-            .map_err(|err| to_read_object_err(err, id))?
-            .ok_or_else(|| not_found_err(id))?
-            .try_into_blob()
-            .map_err(|err| to_read_object_err(err, id))?;
-        Ok(blob.take_data())
+        self.read_git_object(id, girt::ObjectKind::Blob)
     }
 
     fn new_diff_platform(&self) -> BackendResult<gix::diff::blob::Platform> {
@@ -636,35 +715,14 @@ impl GitBackend {
 
     // Similar to gix's write_blob, but compute the hash outside our lock to
     // reduce contention.
-    fn write_blob(
-        &self,
-        bytes: &[u8],
-        object_type: &'static str,
-    ) -> BackendResult<gix::hash::ObjectId> {
-        let oid = gix::objs::compute_hash(
-            self.base_repo.objects.object_hash(),
-            gix::objs::Kind::Blob,
-            bytes,
-        )
-        .map_err(|err| BackendError::WriteObject {
-            object_type,
-            source: err.into(),
-        })?;
-
-        let locked_repo = self.lock_git_repo();
-        if !locked_repo.objects.exists(&oid) {
-            // reuse the precomputed hash, since Gitoxide provides an API for it (otherwise
-            // Gitoxide recomputes it).
-            let write_oid = locked_repo
-                .objects
-                .write_buf_with_known_id(gix::objs::Kind::Blob, bytes, oid)
-                .map_err(|err| BackendError::WriteObject {
-                    object_type,
-                    source: err.into(),
-                })?;
-            assert!(oid == write_oid);
-        }
-        Ok(oid)
+    fn write_blob(&self, bytes: &[u8], object_type: &'static str) -> BackendResult<girt::ObjectId> {
+        self.native_repo
+            .loose_objects()
+            .write_blob(bytes)
+            .map_err(|err| BackendError::WriteObject {
+                object_type,
+                source: Box::new(err),
+            })
     }
 }
 
@@ -1460,16 +1518,9 @@ impl Backend for GitBackend {
     }
 
     async fn read_symlink(&self, _path: &RepoPath, id: &SymlinkId) -> BackendResult<String> {
-        let locked_repo = self.lock_git_repo();
-        let git_blob_id = validate_git_object_id(&locked_repo, id)?;
-        let mut blob = locked_repo
-            .try_find_object(git_blob_id)
-            .map_err(|err| to_read_object_err(err, id))?
-            .ok_or_else(|| not_found_err(id))?
-            .try_into_blob()
-            .map_err(|err| to_read_object_err(err, id))?;
-        let target = String::from_utf8(blob.take_data())
-            .map_err(|err| to_invalid_utf8_err(err.utf8_error(), id))?;
+        let data = self.read_git_object(id, girt::ObjectKind::Blob)?;
+        let target =
+            String::from_utf8(data).map_err(|err| to_invalid_utf8_err(err.utf8_error(), id))?;
         Ok(target)
     }
 
@@ -1501,50 +1552,40 @@ impl Backend for GitBackend {
             return Ok(Tree::default());
         }
 
-        let locked_repo = self.lock_git_repo();
-        let git_tree_id = validate_git_object_id(&locked_repo, id)?;
-        let git_tree = locked_repo
-            .try_find_object(git_tree_id)
-            .map_err(|err| to_read_object_err(err, id))?
-            .ok_or_else(|| not_found_err(id))?
-            .try_into_tree()
+        let data = self.read_git_object(id, girt::ObjectKind::Tree)?;
+        let git_tree = girt::Tree::parse(self.object_format(), &data)
             .map_err(|err| to_read_object_err(err, id))?;
         let mut entries: Vec<_> = git_tree
+            .entries()
             .iter()
             .map(|entry| -> BackendResult<_> {
-                let entry = entry.map_err(|err| to_read_object_err(err, id))?;
                 let name = RepoPathComponentBuf::new(
-                    str::from_utf8(entry.filename()).map_err(|err| to_invalid_utf8_err(err, id))?,
+                    str::from_utf8(&entry.name).map_err(|err| to_invalid_utf8_err(err, id))?,
                 )
                 .unwrap();
-                let value = match entry.mode().kind() {
-                    gix::object::tree::EntryKind::Tree => {
-                        let id = TreeId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::Tree(id)
-                    }
-                    gix::object::tree::EntryKind::Blob => {
-                        let id = FileId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::File {
-                            id,
-                            executable: false,
-                            copy_id: CopyId::placeholder(),
-                        }
-                    }
-                    gix::object::tree::EntryKind::BlobExecutable => {
-                        let id = FileId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::File {
-                            id,
-                            executable: true,
-                            copy_id: CopyId::placeholder(),
-                        }
-                    }
-                    gix::object::tree::EntryKind::Link => {
-                        let id = SymlinkId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::Symlink(id)
-                    }
-                    gix::object::tree::EntryKind::Commit => {
-                        let id = CommitId::from_bytes(entry.oid().as_bytes());
-                        TreeValue::GitSubmodule(id)
+                let oid = entry.id.as_bytes();
+                let value = match entry.mode {
+                    girt::EntryMode::Tree => TreeValue::Tree(TreeId::from_bytes(oid)),
+                    girt::EntryMode::Blob => TreeValue::File {
+                        id: FileId::from_bytes(oid),
+                        executable: false,
+                        copy_id: CopyId::placeholder(),
+                    },
+                    girt::EntryMode::Executable => TreeValue::File {
+                        id: FileId::from_bytes(oid),
+                        executable: true,
+                        copy_id: CopyId::placeholder(),
+                    },
+                    girt::EntryMode::Symlink => TreeValue::Symlink(SymlinkId::from_bytes(oid)),
+                    girt::EntryMode::Gitlink => TreeValue::GitSubmodule(CommitId::from_bytes(oid)),
+                    _ => {
+                        return Err(BackendError::Other(
+                            std::io::Error::new(
+                                std::io::ErrorKind::Unsupported,
+                                format!("unsupported Git tree entry mode: {:?}", entry.mode),
+                            )
+                            .into(),
+                        ));
                     }
                 };
                 Ok((name, value))
@@ -1559,57 +1600,36 @@ impl Backend for GitBackend {
     }
 
     async fn write_tree(&self, _path: &RepoPath, contents: &Tree) -> BackendResult<TreeId> {
-        // Tree entries to be written must be sorted by Entry::filename(), which
-        // is slightly different from the order of our backend::Tree.
+        let format = self.object_format();
         let entries = contents
             .entries()
             .map(|entry| {
-                let filename = BString::from(entry.name().as_internal_str());
-                match entry.value() {
+                let name = entry.name().as_internal_str().as_bytes().to_vec();
+                let (mode, id) = match entry.value() {
                     TreeValue::File {
                         id,
-                        executable: false,
+                        executable,
                         copy_id: _, // TODO: Use the value
-                    } => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::Blob.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
-                    TreeValue::File {
-                        id,
-                        executable: true,
-                        copy_id: _, // TODO: Use the value
-                    } => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::BlobExecutable.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
-                    TreeValue::Symlink(id) => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::Link.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
-                    TreeValue::Tree(id) => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::Tree.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
-                    TreeValue::GitSubmodule(id) => gix::objs::tree::Entry {
-                        mode: gix::object::tree::EntryKind::Commit.into(),
-                        filename,
-                        oid: gix::ObjectId::from_bytes_or_panic(id.as_bytes()),
-                    },
+                    } => {
+                        let mode = if *executable {
+                            girt::EntryMode::Executable
+                        } else {
+                            girt::EntryMode::Blob
+                        };
+                        (mode, id.as_bytes())
+                    }
+                    TreeValue::Symlink(id) => (girt::EntryMode::Symlink, id.as_bytes()),
+                    TreeValue::Tree(id) => (girt::EntryMode::Tree, id.as_bytes()),
+                    TreeValue::GitSubmodule(id) => (girt::EntryMode::Gitlink, id.as_bytes()),
+                };
+                girt::TreeEntry {
+                    mode,
+                    name,
+                    id: girt::ObjectId::from_bytes(format, id).expect("valid object id"),
                 }
             })
-            .sorted_unstable()
             .collect();
-        let locked_repo = self.lock_git_repo();
-        let oid = locked_repo
-            .write_object(gix::objs::Tree { entries })
-            .map_err(|err| BackendError::WriteObject {
-                object_type: "tree",
-                source: Box::new(err),
-            })?;
+        let oid = self.write_tree_entries(entries)?;
         Ok(TreeId::from_bytes(oid.as_bytes()))
     }
 
