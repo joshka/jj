@@ -14,8 +14,6 @@
 
 //! Fetching from and pushing to Git remotes.
 
-#![allow(dead_code)]
-
 use std::io;
 use std::num::NonZeroU32;
 
@@ -57,7 +55,7 @@ impl GitTransportError {
         error: girt::workflow::TransferError,
     ) -> Self {
         let url = || {
-            crate::git::native_try_find_active_remote(repo, remote)
+            crate::git::try_find_active_remote(repo, remote)
                 .ok()
                 .flatten()
                 .and_then(|remote| remote.fetch_url().map(|url| url.to_string()))
@@ -114,7 +112,7 @@ impl GitTransport {
             environment = environment.with(name, value);
         }
         Self {
-            repo: git_backend.native_git_repo(),
+            repo: git_backend.git_repo(),
             committer: git_backend.committer_signature(),
             environment,
         }
