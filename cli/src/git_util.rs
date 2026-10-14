@@ -572,10 +572,9 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
 pub fn unlink_git_worktree(
     ui: &Ui,
     store: &Arc<Store>,
-    subprocess_options: GitTransportOptions,
     worktree_path: &Path,
 ) -> Result<(), CommandError> {
-    match git::unlink_worktree(store, subprocess_options, worktree_path) {
+    match git::unlink_worktree(store, worktree_path) {
         Ok(false) => {}
         Ok(true) => writeln!(
             ui.status(),

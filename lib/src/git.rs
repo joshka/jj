@@ -2310,8 +2310,10 @@ fn update_git_head(
 
 #[derive(Debug, Error)]
 pub enum GitCreateWorktreeError {
-    #[error(transparent)]
-    Subprocess(#[from] GitSubprocessError),
+    #[error("Failed to create Git worktree")]
+    Create(#[source] girt::CreateWorktreeError),
+    #[error("Failed to repair Git worktree links")]
+    Repair(#[source] girt::WorktreeAdminError),
     #[error("Failed to inspect the Git worktree destination")]
     Destination(#[source] PathError),
     #[error("Failed to create temporary directory for Git worktree")]
@@ -2332,6 +2334,10 @@ impl GitCreateWorktreeError {
     }
 }
 
+/// Maximum number of registration names tried when the destination's name is
+/// already used by another worktree.
+const MAX_WORKTREE_NAMES: usize = 1000;
+
 /// Creates a Git worktree at `destination` to back a jj workspace.
 ///
 /// Nothing is checked out: the worktree is created with HEAD unborn, so jj
@@ -2343,85 +2349,105 @@ impl GitCreateWorktreeError {
 /// points HEAD at the parent of the new working-copy commit. Git is only
 /// responsible for the `.git` gitlink and the worktree bookkeeping under
 /// `.git/worktrees/`.
-pub fn create_worktree(
-    store: &Store,
-    subprocess_options: GitSubprocessOptions,
-    destination: &Path,
-) -> Result<(), GitCreateWorktreeError> {
+pub fn create_worktree(store: &Store, destination: &Path) -> Result<(), GitCreateWorktreeError> {
     let git_backend = get_git_backend(store)?;
+    let git_repo = git_backend.native_git_repo();
 
-    // The unborn branch `git worktree add --orphan` insists on naming gets a
-    // random name: any name we could derive from the destination may already
-    // be taken by an exported bookmark.
-    let branch_name = format!("jj-worktree-{:016x}", rand::random::<u64>());
-    let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
+    // Worktree registration requires an unborn branch name. It gets a random
+    // name: any name we could derive from the destination may already be
+    // taken by an exported bookmark.
+    let branch_name = format!("refs/heads/jj-worktree-{:016x}", rand::random::<u64>());
+    let branch = git_ref_name(&branch_name).expect("valid ref name");
 
-    let destination_is_populated = destination.exists()
+    let destination_exists = destination.exists();
+    let destination_is_populated = destination_exists
         && !is_empty_dir(destination).map_err(GitCreateWorktreeError::Destination)?;
-    if destination_is_populated {
-        add_worktree_to_populated_dir(&git_ctx, destination, &branch_name)?;
+    let worktree_repo = if destination_is_populated {
+        add_worktree_to_populated_dir(&git_repo, destination, &branch)?
     } else {
-        git_ctx.spawn_worktree_add(destination, &branch_name)?;
-    }
+        if destination_exists {
+            // Creation requires an absent destination.
+            std::fs::remove_dir(destination)
+                .context(destination)
+                .map_err(GitCreateWorktreeError::Destination)?;
+        }
+        create_orphan_worktree(&git_repo, destination, &branch)?
+    };
 
-    // Must run after the gitlink at `destination` resolves, i.e. after any
-    // `git worktree repair` above.
-    //
     // Nullifying HEAD puts the worktree in the same "HEAD has no commit yet"
     // state jj uses everywhere else, so that a `git commit` in the new
     // worktree can't materialize the branch nobody asked for. If the
     // working-copy commit turns out to have a real parent, the HEAD export
     // replaces this with a detached HEAD.
-    let git_repo = git_backend
-        .open_git_repo_at_workdir(destination)
-        .map_err(GitCreateWorktreeError::from_git)?;
-    let unborn_branch = gix::refs::Target::Symbolic(
-        format!("refs/heads/{branch_name}")
-            .try_into()
-            .expect("valid ref name"),
-    );
-    update_git_head(
-        &git_repo,
-        gix::refs::transaction::PreviousValue::MustExistAndMatch(unborn_branch),
+    native_update_git_head(
+        &worktree_repo,
+        girt::refs::Expected::Value(girt::refs::Target::Symbolic(branch)),
         None,
+        &git_backend.committer_signature(),
     )
-    .map_err(GitCreateWorktreeError::from_git)
+    .map_err(GitCreateWorktreeError::Git)
+}
+
+fn create_orphan_worktree(
+    git_repo: &girt::Repository,
+    destination: &Path,
+    branch: &girt::refs::RefName,
+) -> Result<girt::Repository, GitCreateWorktreeError> {
+    // Use relative paths to match jj's convention for portable repositories.
+    git_repo
+        .create_orphan_worktree_with_link_style(
+            destination,
+            branch,
+            MAX_WORKTREE_NAMES,
+            girt::WorktreeLinkStyle::Relative,
+        )
+        .map_err(GitCreateWorktreeError::Create)
 }
 
 /// Adds a worktree for a directory that already has contents.
 ///
-/// `git worktree add` refuses to use a non-empty directory, so the worktree is
-/// created in a temporary directory inside `destination`, its gitlink moved
-/// into place, and the recorded paths repaired.
+/// Worktree creation requires an absent directory, so the worktree is created
+/// in a temporary directory inside `destination`, its gitlink moved into
+/// place, and the recorded paths repaired.
 fn add_worktree_to_populated_dir(
-    git_ctx: &GitSubprocessContext,
+    git_repo: &girt::Repository,
     destination: &Path,
-    branch_name: &str,
-) -> Result<(), GitCreateWorktreeError> {
+    branch: &girt::refs::RefName,
+) -> Result<girt::Repository, GitCreateWorktreeError> {
     let dot_git = destination.join(".git");
     if dot_git.exists() {
         return Err(GitCreateWorktreeError::ExistingGitLink);
     }
     let tmp_dir = TempDir::new_in(destination).map_err(GitCreateWorktreeError::TempDir)?;
-    let tmp_path = tmp_dir.path();
-    git_ctx.spawn_worktree_add(tmp_path, branch_name)?;
+    // The temporary directory's own name becomes the registration name.
+    let tmp_path = tmp_dir.path().join(
+        destination
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("worktree")),
+    );
+    let tmp_repo = create_orphan_worktree(git_repo, &tmp_path, branch)?;
+    let registration = tmp_repo.git_dir().to_owned();
 
     std::fs::rename(tmp_path.join(".git"), &dot_git)
         .context(&dot_git)
         .map_err(GitCreateWorktreeError::MoveGitLink)?;
-    if let Err(err) = git_ctx.spawn_worktree_repair(destination) {
+    if let Err(err) = git_repo.repair_worktree_with_link_style(
+        &registration,
+        destination,
+        girt::WorktreeLinkStyle::Relative,
+    ) {
         std::fs::remove_file(&dot_git).ok();
-        return Err(err.into());
+        return Err(GitCreateWorktreeError::Repair(err));
     }
-    Ok(())
+    crate::git_backend::open_git_repository(destination).map_err(GitCreateWorktreeError::from_git)
 }
 
 #[derive(Debug, Error)]
 pub enum GitUnlinkWorktreeError {
     #[error("Failed to remove .git gitlink file")]
     RemoveGitLink(#[source] PathError),
-    #[error(transparent)]
-    Subprocess(#[from] GitSubprocessError),
+    #[error("Failed to remove Git worktree metadata")]
+    Prune(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     UnexpectedBackend(#[from] UnexpectedGitBackendError),
 }
@@ -2440,7 +2466,6 @@ pub enum GitUnlinkWorktreeError {
 /// so callers may treat all errors as non-fatal.
 pub fn unlink_worktree(
     store: &Store,
-    subprocess_options: GitSubprocessOptions,
     worktree_path: &Path,
 ) -> Result<bool, GitUnlinkWorktreeError> {
     let dot_git = worktree_path.join(".git");
@@ -2448,16 +2473,28 @@ pub fn unlink_worktree(
         return Ok(false);
     }
     let git_backend = get_git_backend(store)?;
-    // `git worktree remove` isn't used because it deletes the directory
-    // contents, and forgetting a workspace should preserve its files.
+    let git_repo = git_backend.native_git_repo();
+    // Identify this worktree's registration before removing its gitlink.
+    let registration = girt::RepositoryLocation::at_git_dir(&dot_git)
+        .ok()
+        .map(|location| location.git_dir().to_owned())
+        .filter(|path| path.starts_with(git_repo.common_dir().join("worktrees")));
+    // `git worktree remove` semantics aren't used because they delete the
+    // directory contents, and forgetting a workspace should preserve its files.
     std::fs::remove_file(&dot_git)
         .context(&dot_git)
         .map_err(GitUnlinkWorktreeError::RemoveGitLink)?;
-    // TODO: `git worktree prune` removes metadata for all worktrees whose
-    // working directories are missing, not just the one we removed. Ideally
-    // we'd target only the specific worktree.
-    let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
-    git_ctx.spawn_worktree_prune()?;
+    // Unlike `git worktree prune`, only this worktree's registration is
+    // removed. Its gitlink is gone, so Git would consider it stale anyway.
+    if let Some(registration) = registration {
+        git_repo
+            .prune_worktree(
+                &registration,
+                std::time::SystemTime::now() + std::time::Duration::from_secs(1),
+                girt::WorktreeRetirement::Confirmed,
+            )
+            .map_err(|err| GitUnlinkWorktreeError::Prune(err.into()))?;
+    }
     Ok(true)
 }
 
@@ -2468,7 +2505,7 @@ pub enum GitResetHeadError {
     #[error(transparent)]
     Git(Box<dyn std::error::Error + Send + Sync>),
     #[error("Failed to update Git HEAD ref")]
-    UpdateHeadRef(#[source] gix::Error),
+    UpdateHeadRef(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     UnexpectedBackend(#[from] UnexpectedGitBackendError),
 }
@@ -2489,7 +2526,7 @@ pub async fn reset_head(
 ) -> Result<(), GitResetHeadError> {
     let git_backend = get_git_backend(mut_repo.store())?;
     let git_repo = git_backend
-        .open_git_repo_at_workdir(workspace_root)
+        .open_native_git_repo_at_workdir(workspace_root)
         .map_err(GitResetHeadError::from_git)?;
 
     let first_parent_id = &wc_commit.parent_ids()[0];
@@ -2505,36 +2542,44 @@ pub async fn reset_head(
         let expected_ref = if let Some(id) = old_head_target.as_normal() {
             // We have to check the actual HEAD state because we don't record a
             // symbolic ref as such.
-            let actual_head = git_repo.head().map_err(GitResetHeadError::from_git)?;
-            if actual_head.is_detached() {
-                let id = owned_oid_from_commit_id(id);
-                gix::refs::transaction::PreviousValue::MustExistAndMatch(id.into())
+            let head = git_ref_name("HEAD").unwrap();
+            let actual_head = git_repo
+                .references()
+                .and_then(|refs| refs.read(&head))
+                .map_err(GitResetHeadError::from_git)?;
+            if let Some(girt::refs::Target::Direct(_)) = actual_head {
+                let id = oid_from_commit_id(&git_repo, id);
+                girt::refs::Expected::Value(girt::refs::Target::Direct(id))
             } else {
                 // Just overwrite symbolic ref, which is unusual. Alternatively,
                 // maybe we can test the target ref by issuing noop edit.
-                gix::refs::transaction::PreviousValue::MustExist
+                girt::refs::Expected::Exists
             }
         } else {
             // Just overwrite if unborn (or conflict), which is also unusual.
-            gix::refs::transaction::PreviousValue::MustExist
+            girt::refs::Expected::Exists
         };
-        let new_oid = new_head_target.as_normal().map(owned_oid_from_commit_id);
-        update_git_head(&git_repo, expected_ref, new_oid)
-            .map_err(GitResetHeadError::UpdateHeadRef)?;
+        let new_oid = new_head_target
+            .as_normal()
+            .map(|id| oid_from_commit_id(&git_repo, id));
+        native_update_git_head(
+            &git_repo,
+            expected_ref,
+            new_oid,
+            &git_backend.committer_signature(),
+        )
+        .map_err(GitResetHeadError::UpdateHeadRef)?;
         mut_repo.set_git_head_target(workspace_name, new_head_target);
     }
 
     // If there is an ongoing operation (merge, rebase, etc.), we need to clean it
     // up.
-    if git_repo.state().is_some() {
-        clear_operation_state(&git_repo)?;
-    }
+    clear_operation_state(&git_repo)?;
 
     reset_index(mut_repo, &git_repo, wc_commit).await
 }
 
-// TODO: Polish and upstream this to `gix`.
-fn clear_operation_state(git_repo: &gix::Repository) -> Result<(), GitResetHeadError> {
+fn clear_operation_state(git_repo: &girt::Repository) -> Result<(), GitResetHeadError> {
     // Based on the files `git2::Repository::cleanup_state` deletes; when
     // upstreaming this logic should probably become more elaborate to match
     // `git(1)` behavior.
@@ -2552,13 +2597,13 @@ fn clear_operation_state(git_repo: &gix::Repository) -> Result<(), GitResetHeadE
         _ => Err(GitResetHeadError::from_git(err)),
     };
     for file_name in STATE_FILE_NAMES {
-        let path = git_repo.path().join(file_name);
+        let path = git_repo.git_dir().join(file_name);
         std::fs::remove_file(&path)
             .context(&path)
             .or_else(handle_err)?;
     }
     for dir_name in STATE_DIR_NAMES {
-        let path = git_repo.path().join(dir_name);
+        let path = git_repo.git_dir().join(dir_name);
         std::fs::remove_dir_all(&path)
             .context(&path)
             .or_else(handle_err)?;
@@ -2566,109 +2611,89 @@ fn clear_operation_state(git_repo: &gix::Repository) -> Result<(), GitResetHeadE
     Ok(())
 }
 
+/// Git index entry for a tree value, or `None` for values that aren't
+/// represented in the index.
+fn to_index_entry(
+    format: girt::ObjectFormat,
+    path: &RepoPath,
+    value: &TreeValue,
+    stage: girt::index::Stage,
+) -> Option<girt::index::Entry> {
+    let (id, mode) = match value {
+        TreeValue::File {
+            id,
+            executable,
+            copy_id: _,
+        } => {
+            if *executable {
+                (id.as_bytes(), girt::index::Mode::Executable)
+            } else {
+                (id.as_bytes(), girt::index::Mode::Regular)
+            }
+        }
+        TreeValue::Symlink(id) => (id.as_bytes(), girt::index::Mode::Symlink),
+        TreeValue::Tree(_) => {
+            // This case is only possible if there is a file-directory conflict, since
+            // `MergedTree::entries` handles the recursion otherwise. We only materialize a
+            // file in the working copy for file-directory conflicts, so we don't add the
+            // tree to the index here either.
+            return None;
+        }
+        TreeValue::GitSubmodule(id) => (id.as_bytes(), girt::index::Mode::Gitlink),
+    };
+    let id = girt::ObjectId::from_bytes(format, id).expect("valid object id");
+    let mut entry =
+        girt::index::Entry::new(path.as_internal_file_string().as_bytes().to_vec(), mode, id);
+    entry.stage = stage;
+    Some(entry)
+}
+
+fn sort_index_entries(entries: &mut [girt::index::Entry]) {
+    entries.sort_by(|a, b| a.path.cmp(&b.path).then(a.stage.cmp(&b.stage)));
+}
+
 async fn reset_index(
     repo: &dyn Repo,
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
     wc_commit: &Commit,
 ) -> Result<(), GitResetHeadError> {
     let parent_tree = wc_commit.parent_tree(repo).await?;
     // Use the merged parent tree as the Git index, allowing `git diff` to show the
     // same changes as `jj diff`. If the merged parent tree has conflicts, then the
     // Git index will also be conflicted.
-    let mut index = if let Some(tree_id) = parent_tree.tree_ids().as_resolved() {
-        if tree_id == repo.store().empty_tree_id() {
-            // If the tree is empty, gix can fail to load the object (since Git doesn't
-            // require the empty tree to actually be present in the object database), so we
-            // just use an empty index directly.
-            gix::index::File::from_state(
-                gix::index::State::new(git_repo.object_hash()),
-                git_repo.index_path(),
-            )
-        } else {
-            // If the parent tree is resolved, we can use gix's `index_from_tree` method.
-            // This is more efficient than iterating over the tree and adding each entry.
-            git_repo
-                .index_from_tree(&gix::ObjectId::from_bytes_or_panic(tree_id.as_bytes()))
-                .map_err(GitResetHeadError::from_git)?
-        }
-    } else {
-        build_index_from_merged_tree(git_repo, &parent_tree)?
-    };
+    let mut entries = build_index_from_merged_tree(git_repo, &parent_tree)?;
 
     let wc_tree = wc_commit.tree();
-    update_intent_to_add_impl(git_repo, &mut index, &parent_tree, &wc_tree).await?;
+    update_intent_to_add_impl(git_repo, &mut entries, &parent_tree, &wc_tree).await?;
 
-    // Match entries in the new index with entries in the old index, and copy stat
-    // information if the entry didn't change.
-    if let Some(old_index) = git_repo.try_index().map_err(GitResetHeadError::from_git)? {
-        index
-            .entries_mut_with_paths()
-            .merge_join_by(old_index.entries(), |(entry, path), old_entry| {
-                gix::index::Entry::cmp_filepaths(path, old_entry.path(&old_index))
-                    .then_with(|| entry.stage().cmp(&old_entry.stage()))
-            })
-            .filter_map(|merged| merged.both())
-            .map(|((entry, _), old_entry)| (entry, old_entry))
-            .filter(|(entry, old_entry)| entry.id == old_entry.id && entry.mode == old_entry.mode)
-            .for_each(|(entry, old_entry)| entry.stat = old_entry.stat);
-    }
-
-    debug_assert!(index.verify_entries().is_ok());
-
-    index
-        .write(gix::index::write::Options::default())
-        .map_err(GitResetHeadError::from_git)
+    // Entries in the new index that match entries in the old index keep their
+    // cached stat information, so Git doesn't need to rehash unchanged files.
+    let mut edit = git_repo
+        .edit_index(girt::index::Limits::trusted())
+        .map_err(GitResetHeadError::from_git)?;
+    // Optional extensions (e.g. resolve-undo, untracked cache) describe the
+    // old index contents.
+    edit.make_standalone()
+        .map_err(GitResetHeadError::from_git)?;
+    edit.replace_entries_reusing_stat(entries)
+        .map_err(GitResetHeadError::from_git)?;
+    edit.commit().map_err(GitResetHeadError::from_git)
 }
 
 fn build_index_from_merged_tree(
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
     merged_tree: &MergedTree,
-) -> Result<gix::index::File, GitResetHeadError> {
-    let mut index = gix::index::File::from_state(
-        gix::index::State::new(git_repo.object_hash()),
-        git_repo.index_path(),
-    );
-
+) -> Result<Vec<girt::index::Entry>, GitResetHeadError> {
+    let format = git_repo.object_format();
+    let mut entries = Vec::new();
     let mut push_index_entry =
-        |path: &RepoPath, maybe_entry: &Option<TreeValue>, stage: gix::index::entry::Stage| {
-            let Some(entry) = maybe_entry else {
-                return;
-            };
-
-            let (id, mode) = match entry {
-                TreeValue::File {
-                    id,
-                    executable,
-                    copy_id: _,
-                } => {
-                    if *executable {
-                        (id.as_bytes(), gix::index::entry::Mode::FILE_EXECUTABLE)
-                    } else {
-                        (id.as_bytes(), gix::index::entry::Mode::FILE)
-                    }
-                }
-                TreeValue::Symlink(id) => (id.as_bytes(), gix::index::entry::Mode::SYMLINK),
-                TreeValue::Tree(_) => {
-                    // This case is only possible if there is a file-directory conflict, since
-                    // `MergedTree::entries` handles the recursion otherwise. We only materialize a
-                    // file in the working copy for file-directory conflicts, so we don't add the
-                    // tree to the index here either.
-                    return;
-                }
-                TreeValue::GitSubmodule(id) => (id.as_bytes(), gix::index::entry::Mode::COMMIT),
-            };
-
-            let path = BStr::new(path.as_internal_file_string());
-
-            // It is safe to push the entry because we ensure that we only add each path to
-            // a stage once, and we sort the entries after we finish adding them.
-            index.dangerously_push_entry(
-                gix::index::entry::Stat::default(),
-                gix::ObjectId::from_bytes_or_panic(id),
-                gix::index::entry::Flags::from_stage(stage),
-                mode,
-                path,
-            );
+        |path: &RepoPath, maybe_entry: &Option<TreeValue>, stage: girt::index::Stage| {
+            if let Some(entry) = maybe_entry
+                .as_ref()
+                .and_then(|value| to_index_entry(format, path, value, stage))
+            {
+                entries.push(entry);
+            }
         };
 
     let mut has_many_sided_conflict = false;
@@ -2676,16 +2701,16 @@ fn build_index_from_merged_tree(
     for (path, entry) in merged_tree.entries() {
         let entry = entry?;
         if let Some(resolved) = entry.as_resolved() {
-            push_index_entry(&path, resolved, gix::index::entry::Stage::Unconflicted);
+            push_index_entry(&path, resolved, girt::index::Stage::Normal);
             continue;
         }
 
         let conflict = entry.simplify();
         if let [left, base, right] = conflict.as_slice() {
             // 2-sided conflicts can be represented in the Git index
-            push_index_entry(&path, left, gix::index::entry::Stage::Ours);
-            push_index_entry(&path, base, gix::index::entry::Stage::Base);
-            push_index_entry(&path, right, gix::index::entry::Stage::Theirs);
+            push_index_entry(&path, left, girt::index::Stage::Ours);
+            push_index_entry(&path, base, girt::index::Stage::Base);
+            push_index_entry(&path, right, girt::index::Stage::Theirs);
         } else {
             // We can't represent many-sided conflicts in the Git index, so just add the
             // first side as staged. This is preferable to adding the first 2 sides as a
@@ -2695,43 +2720,34 @@ fn build_index_from_merged_tree(
             // a file named ".jj-do-not-resolve-this-conflict" to prevent the user from
             // accidentally committing the conflict markers.
             has_many_sided_conflict = true;
-            push_index_entry(
-                &path,
-                conflict.first(),
-                gix::index::entry::Stage::Unconflicted,
-            );
+            push_index_entry(&path, conflict.first(), girt::index::Stage::Normal);
         }
     }
-
-    // Required after `dangerously_push_entry` for correctness. We use do a lookup
-    // in the index after this, so it must be sorted before we do the lookup.
-    index.sort_entries();
 
     // If the conflict had an unrepresentable conflict and the dummy file path isn't
     // already added in the index, add a dummy file as a conflict.
     if has_many_sided_conflict
-        && index
-            .entry_index_by_path(INDEX_DUMMY_CONFLICT_FILE.into())
-            .is_err()
+        && !entries
+            .iter()
+            .any(|entry| entry.path == INDEX_DUMMY_CONFLICT_FILE.as_bytes())
     {
         let file_blob = git_repo
+            .loose_objects()
             .write_blob(
                 b"The working copy commit contains conflicts which cannot be resolved using Git.\n",
             )
             .map_err(GitResetHeadError::from_git)?;
-        index.dangerously_push_entry(
-            gix::index::entry::Stat::default(),
-            file_blob.detach(),
-            gix::index::entry::Flags::from_stage(gix::index::entry::Stage::Ours),
-            gix::index::entry::Mode::FILE,
+        let mut entry = girt::index::Entry::new(
             INDEX_DUMMY_CONFLICT_FILE.into(),
+            girt::index::Mode::Regular,
+            file_blob,
         );
-        // We need to sort again for correctness before writing the index file since we
-        // added a new entry.
-        index.sort_entries();
+        entry.stage = girt::index::Stage::Ours;
+        entries.push(entry);
     }
 
-    Ok(index)
+    sort_index_entries(&mut entries);
+    Ok(entries)
 }
 
 /// Diff `old_tree` to `new_tree` and mark added files as intent-to-add in the
@@ -2748,27 +2764,31 @@ pub async fn update_intent_to_add(
 ) -> Result<(), GitResetHeadError> {
     let git_backend = get_git_backend(repo.store())?;
     let git_repo = git_backend
-        .open_git_repo_at_workdir(workspace_root)
+        .open_native_git_repo_at_workdir(workspace_root)
         .map_err(GitResetHeadError::from_git)?;
-    let mut index = git_repo
-        .index_or_empty()
+    let mut edit = git_repo
+        .edit_index(girt::index::Limits::trusted())
         .map_err(GitResetHeadError::from_git)?;
-    let mut_index = Arc::make_mut(&mut index);
-    update_intent_to_add_impl(&git_repo, mut_index, old_tree, new_tree).await?;
-    debug_assert!(mut_index.verify_entries().is_ok());
-    mut_index
-        .write(gix::index::write::Options::default())
+    let mut entries = edit.index().entries().to_vec();
+    let changed = update_intent_to_add_impl(&git_repo, &mut entries, old_tree, new_tree).await?;
+    if !changed {
+        return edit.abort().map_err(GitResetHeadError::from_git);
+    }
+    // Replacing entries invalidates the cache-tree (TREE) extension, which
+    // would otherwise describe stale entry counts.
+    edit.replace_entries(entries)
         .map_err(GitResetHeadError::from_git)?;
-
-    Ok(())
+    edit.commit().map_err(GitResetHeadError::from_git)
 }
 
+/// Returns whether `entries` changed.
 async fn update_intent_to_add_impl(
-    git_repo: &gix::Repository,
-    index: &mut gix::index::File,
+    git_repo: &girt::Repository,
+    entries: &mut Vec<girt::index::Entry>,
     old_tree: &MergedTree,
     new_tree: &MergedTree,
-) -> Result<(), GitResetHeadError> {
+) -> Result<bool, GitResetHeadError> {
+    let existing_paths: HashSet<Vec<u8>> = entries.iter().map(|entry| entry.path.clone()).collect();
     let mut diff_stream = old_tree.diff_stream(new_tree, &EverythingMatcher);
     let mut added_paths = vec![];
     let mut removed_paths = HashSet::new();
@@ -2786,65 +2806,43 @@ async fn update_intent_to_add_impl(
                     continue;
                 }
             };
-            if index
-                .entry_index_by_path(BStr::new(path.as_internal_file_string()))
-                .is_err()
-            {
-                added_paths.push((BString::from(path.into_internal_string()), executable));
+            let path = path.into_internal_string().into_bytes();
+            if !existing_paths.contains(&path) {
+                added_paths.push((path, executable));
             }
         } else if values.after.is_absent() {
-            removed_paths.insert(BString::from(path.into_internal_string()));
+            removed_paths.insert(path.into_internal_string().into_bytes());
         }
     }
 
     if added_paths.is_empty() && removed_paths.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
 
     if !added_paths.is_empty() {
         // We need to write the empty blob, otherwise `jj util gc` will report an error.
         let empty_blob = git_repo
+            .loose_objects()
             .write_blob(b"")
-            .map_err(GitResetHeadError::from_git)?
-            .detach();
+            .map_err(GitResetHeadError::from_git)?;
         for (path, executable) in added_paths {
             // We have checked that the index doesn't have this entry
-            index.dangerously_push_entry(
-                gix::index::entry::Stat::default(),
-                empty_blob,
-                gix::index::entry::Flags::INTENT_TO_ADD | gix::index::entry::Flags::EXTENDED,
-                if executable {
-                    gix::index::entry::Mode::FILE_EXECUTABLE
-                } else {
-                    gix::index::entry::Mode::FILE
-                },
-                path.as_ref(),
-            );
+            let mode = if executable {
+                girt::index::Mode::Executable
+            } else {
+                girt::index::Mode::Regular
+            };
+            let mut entry = girt::index::Entry::new(path, mode, empty_blob);
+            entry.intent_to_add = true;
+            entries.push(entry);
         }
     }
     if !removed_paths.is_empty() {
-        index.remove_entries(|_size, path, entry| {
-            entry
-                .flags
-                .contains(gix::index::entry::Flags::INTENT_TO_ADD)
-                && removed_paths.contains(path)
-        });
+        entries.retain(|entry| !(entry.intent_to_add && removed_paths.contains(&entry.path)));
     }
 
-    index.sort_entries();
-
-    // The entry mutations above (`dangerously_push_entry`, `remove_entries`,
-    // `sort_entries`) do not invalidate the cache-tree (TREE) extension loaded
-    // from disk, and `gix::index::File::write()` re-emits it as-is. Its own
-    // docs prescribe this discard: "Until the tree-cache is updated on write
-    // (see gitoxide#2421), remove it with `State::remove_tree()` before writing
-    // whenever entries were changed." Otherwise the written index carries a
-    // stale, under-counted cache-tree; an external `git add` that later
-    // rebuilds it trusts those child counts and emits a doubled subtree entry,
-    // which `git fsck` reports as duplicateEntries.
-    index.remove_tree();
-
-    Ok(())
+    sort_index_entries(entries);
+    Ok(true)
 }
 
 #[derive(Debug, Error)]
