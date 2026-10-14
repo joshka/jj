@@ -39,7 +39,7 @@ use futures::AsyncReadExt as _;
 use futures::StreamExt as _;
 use futures::io::Cursor;
 use futures::stream::BoxStream;
-use gix::bstr::BString;
+pub use girt::ObjectFormat;
 use bstr::ByteSlice as _;
 use itertools::Itertools as _;
 use once_cell::sync::OnceCell as OnceLock;
@@ -171,7 +171,7 @@ impl From<GitBackendError> for BackendError {
 #[derive(Debug, Error)]
 pub enum GitRepoAtWorkdirError {
     #[error("No Git repository found at {path}")]
-    NotFound { path: PathBuf, source: gix::Error },
+    NotFound { path: PathBuf, source: girt::OpenError },
     #[error("Unrelated Git repository found at {path}")]
     Unrelated { path: PathBuf },
     #[error("Failed to open Git repository")]
@@ -332,7 +332,7 @@ impl GitBackend {
         _table_lock: &FileLock,
         head_ids: &HashSet<&CommitId>,
     ) -> BackendResult<()> {
-        let shallow_roots = self.shallow_root_ids(&self.git_repo())?;
+        let shallow_roots = self.shallow_root_ids();
         let mut work_ids = head_ids
             .iter()
             .filter(|&id| mut_table.get_value(id.as_bytes()).is_none())
@@ -511,12 +511,9 @@ impl GitBackend {
     }
 
 
-    pub(crate) fn native_git_repo(&self) -> girt::Repository {
-        open_git_repository(self.git_repo_path()).expect("already-open repository")
-    }
-    pub(crate) fn open_native_git_repo_at_workdir(&self, path: &Path) -> Result<girt::Repository, Box<dyn std::error::Error + Send + Sync>> {
-        self.open_git_repo_at_workdir(path)?;
-        Ok(open_git_repository(path)?)
+    pub(crate) fn native_git_repo(&self) -> girt::Repository { self.git_repo() }
+    pub(crate) fn open_native_git_repo_at_workdir(&self, path: &Path) -> Result<girt::Repository, GitRepoAtWorkdirError> {
+        self.open_git_repo_at_workdir(path)
     }
     pub(crate) fn objects_generation(&self) -> u64 { 0 }
     pub(crate) fn peel(&self, id: girt::ObjectId, _generation: u64) -> Result<Option<girt::PeeledObject>, Box<dyn std::error::Error + Send + Sync>> {
@@ -586,9 +583,8 @@ impl GitBackend {
     pub fn init_internal(
         settings: &UserSettings,
         store_path: &Path,
-        object_hash: gix::hash::Kind,
+        object_hash: girt::ObjectFormat,
     ) -> Result<Self, Box<GitBackendInitError>> {
-        let object_hash = native_format(object_hash);
         let git_repo_path = Path::new("git");
         girt::Repository::init_with_options(
             store_path.join(git_repo_path),
@@ -606,9 +602,8 @@ impl GitBackend {
         settings: &UserSettings,
         store_path: &Path,
         workspace_root: &Path,
-        object_hash: gix::hash::Kind,
+        object_hash: girt::ObjectFormat,
     ) -> Result<Self, Box<GitBackendInitError>> {
-        let object_hash = native_format(object_hash);
         let canonical_workspace_root = {
             let path = store_path.join(workspace_root);
             dunce::canonicalize(&path)
@@ -707,18 +702,11 @@ impl GitBackend {
     /// Returns a new thread-local handle for the underlying Git repository.
     ///
     /// Use [`Self::open_git_repo_at_workdir()`] for worktree operations.
-    pub fn git_repo(&self) -> gix::Repository {
-        let options = gix::open::Options::default()
-            .config_overrides([
-                format!("author.name={}", self.user_name),
-                format!("author.email={}", self.user_email),
-                format!("committer.name={}", self.user_name),
-                format!("committer.email={}", self.user_email),
-            ])
-            .open_path_as_is(true)
-            .strict_config(true);
-        gix::ThreadSafeRepository::open_opts(self.git_repo_path(), options)
-            .expect("already-open repository").to_thread_local()
+    pub fn git_repo(&self) -> girt::Repository {
+        open_git_repository(self.native_repo.git_dir()).unwrap_or_else(|err| {
+            tracing::warn!(?err, "failed to reopen Git repository");
+            self.native_repo.clone()
+        })
     }
 
     /// Reopens the repository at the given workspace path. Returns a new
@@ -726,34 +714,32 @@ impl GitBackend {
     pub fn open_git_repo_at_workdir(
         &self,
         path: &Path,
-    ) -> Result<gix::Repository, GitRepoAtWorkdirError> {
+    ) -> Result<girt::Repository, GitRepoAtWorkdirError> {
         // Try the open repository first.
         let open_repo = self.git_repo();
-        if let Some(workdir) = open_repo.workdir()
+        if let Some(workdir) = open_repo.worktree()
             && (workdir == path || dunce::canonicalize(path).is_ok_and(|path| workdir == path))
         {
             return Ok(open_repo);
         }
 
         // The input path doesn't include ".git".
-        let opts = open_repo.open_options().clone().open_path_as_is(false);
-        let work_repo = gix::ThreadSafeRepository::open_opts(path, opts)
-            .map_err(|source| {
-                if source.is_not_found() {
-                    let path = path.to_owned();
-                    GitRepoAtWorkdirError::NotFound { path, source }
-                } else {
-                    GitRepoAtWorkdirError::Other(source.into())
+        // A `.git` that isn't a valid repository means there's no repository here.
+        let work_repo = open_git_repository(path).map_err(|err| match err {
+            err @ (girt::OpenError::NotFound(_) | girt::OpenError::Malformed { .. }) => {
+                GitRepoAtWorkdirError::NotFound {
+                    path: path.to_owned(),
+                    source: err,
                 }
-            })?
-            .to_thread_local();
+            }
+            err => GitRepoAtWorkdirError::Other(err.into()),
+        })?;
         let canonicalize = |path: &Path| {
             dunce::canonicalize(path).map_err(|err| GitRepoAtWorkdirError::Other(err.into()))
         };
         if open_repo.common_dir() == work_repo.common_dir()
             || canonicalize(open_repo.common_dir())? == canonicalize(work_repo.common_dir())?
         {
-            // The last (path, work_repo) can be cached if needed.
             Ok(work_repo)
         } else {
             let path = path.to_owned();
@@ -771,16 +757,16 @@ impl GitBackend {
         self.native_repo.worktree()
     }
 
-    fn shallow_root_ids(&self, _repo: &gix::Repository) -> BackendResult<&[CommitId]> {
+    fn shallow_root_ids(&self) -> &[CommitId] {
         // Shallow roots are read once when the repository is opened. Refreshing
         // them on every read would be expensive and bad for consistency.
-        Ok(self.shallow_root_ids.get_or_init(|| {
+        self.shallow_root_ids.get_or_init(|| {
             self.native_repo
                 .shallow_roots()
                 .iter()
                 .map(|oid| CommitId::from_bytes(oid.as_bytes()))
                 .collect()
-        }))
+        })
     }
 
     fn cached_extra_metadata_table(&self) -> BackendResult<Arc<ReadonlyTable>> {
@@ -909,12 +895,8 @@ pub fn canonicalize_git_repo_path(path: &Path) -> io::Result<PathBuf> {
 
 
 /// Extracts change id from commit headers.
-pub fn extract_change_id_from_commit(commit: &gix::objs::CommitRef) -> Option<ChangeId> {
-    commit
-        .extra_headers()
-        .find(CHANGE_ID_COMMIT_HEADER)
-        .and_then(ChangeId::try_from_reverse_hex)
-        .filter(|val| val.as_bytes().len() == CHANGE_ID_LENGTH)
+pub fn extract_change_id_from_commit(commit_data: &[u8]) -> Option<ChangeId> {
+    native_extract_change_id_from_headers(&NativeCommitHeaders::new(commit_data))
 }
 
 /// Deterministically creates a change id based on the commit id
@@ -1484,7 +1466,7 @@ impl Backend for GitBackend {
 
         let mut commit = {
             let data = self.read_git_object(id, girt::ObjectKind::Commit)?;
-            let is_shallow = self.shallow_root_ids(&self.git_repo())?.contains(id);
+            let is_shallow = self.shallow_root_ids().contains(id);
             native_commit_from_git_without_root_parent(id, self.object_format(), &data, is_shallow)?
         };
         if commit.parents.is_empty() {
@@ -1760,11 +1742,9 @@ impl GitBackend {
 #[cfg(test)]
 mod tests {
     use std::assert_matches;
+    use std::process::Command;
 
     use gix::date::parse::TimeBuf;
-    use gix::objs::CommitRef;
-    use gix::objs::WriteTo as _;
-    use gix::objs::commit::signature_field_name;
     use indoc::indoc;
     use test_case::test_case;
 
@@ -1774,55 +1754,6 @@ mod tests {
     use crate::hex_util;
     use crate::tests::TestResult;
     use crate::tests::new_temp_dir;
-
-    fn signature_from_git(signature: gix::actor::SignatureRef) -> Signature {
-        let name = signature.name;
-        let name = if name != EMPTY_STRING_PLACEHOLDER {
-            String::from_utf8_lossy(name).into_owned()
-        } else {
-            "".to_string()
-        };
-        let email = signature.email;
-        let email = if email != EMPTY_STRING_PLACEHOLDER {
-            String::from_utf8_lossy(email).into_owned()
-        } else {
-            "".to_string()
-        };
-        let time = signature.time().unwrap_or_default();
-        let timestamp = MillisSinceEpoch(time.seconds * 1000);
-        let tz_offset = time.offset.div_euclid(60); // in minutes
-        Signature {
-            name,
-            email,
-            timestamp: Timestamp {
-                timestamp,
-                tz_offset,
-            },
-        }
-    }
-
-    fn signature_to_git(signature: &Signature) -> gix::actor::Signature {
-        // git does not support empty names or emails
-        let name = if !signature.name.is_empty() {
-            &signature.name
-        } else {
-            EMPTY_STRING_PLACEHOLDER
-        };
-        let email = if !signature.email.is_empty() {
-            &signature.email
-        } else {
-            EMPTY_STRING_PLACEHOLDER
-        };
-        let time = gix::date::Time::new(
-            signature.timestamp.timestamp.0.div_euclid(1000),
-            signature.timestamp.tz_offset * 60, // in seconds
-        );
-        gix::actor::Signature {
-            name: name.into(),
-            email: email.into(),
-            time,
-        }
-    }
 
     const GIT_USER: &str = "Someone";
     const GIT_EMAIL: &str = "someone@example.com";
@@ -1841,8 +1772,16 @@ mod tests {
             .strict_config(true)
     }
 
+    /// Opens the backend's repository with gix, an independent implementation.
     fn gix_repo(backend: &GitBackend) -> gix::Repository {
         gix::open_opts(backend.git_repo_path(), open_options()).unwrap()
+    }
+
+    fn to_format(kind: gix::hash::Kind) -> ObjectFormat {
+        match kind {
+            gix::hash::Kind::Sha1 => ObjectFormat::Sha1,
+            _ => ObjectFormat::Sha256,
+        }
     }
 
     fn git_init(directory: impl AsRef<Path>, object_hash: gix::hash::Kind) -> gix::Repository {
@@ -1883,11 +1822,12 @@ mod tests {
 
         assert_matches!(
             backend.open_git_repo_at_workdir(&git_repo_path),
-            Ok(repo) if repo.workdir() == Some(gix_repo(&backend).workdir().unwrap())
+            Ok(repo) if repo.worktree() == gix_repo(&backend).workdir()
         );
+        let canonical_worktree = dunce::canonicalize(&worktree_dir).unwrap();
         assert_matches!(
             backend.open_git_repo_at_workdir(&worktree_dir),
-            Ok(repo) if repo.workdir() == Some(worktree_dir.as_ref())
+            Ok(repo) if repo.worktree() == Some(canonical_worktree.as_path())
         );
         assert_matches!(
             backend.open_git_repo_at_workdir(&temp_dir.path().join("unknown")),
@@ -1981,8 +1921,7 @@ mod tests {
         // Import the head commit and its ancestors
         backend.import_head_commits([&commit_id2])?;
         // Ref should be created only for the head commit
-        let git_refs = backend
-            .git_repo()
+        let git_refs = gix_repo(&backend)
             .references()?
             .prefixed("refs/jj/keep/")?
             .map(|git_ref| git_ref.unwrap().id().detach())
@@ -2140,10 +2079,10 @@ mod tests {
         };
 
         let mut commit_buf = Vec::new();
-        commit.write_to(&mut commit_buf)?;
+        gix::objs::WriteTo::write_to(&commit, &mut commit_buf)?;
         let commit_str = str::from_utf8(&commit_buf)?;
 
-        let field = signature_field_name(object_hash);
+        let field = native_signature_field_name(to_format(object_hash)).unwrap();
         commit.extra_headers.push((field.into(), secure_sig.into()));
 
         let git_commit_id = git_repo.write_object(&commit)?;
@@ -2164,11 +2103,7 @@ mod tests {
 
     #[test]
     fn change_id_parsing() {
-        let id = |commit_object_bytes: &[u8]| {
-            extract_change_id_from_commit(
-                &CommitRef::from_bytes(commit_object_bytes, gix::hash::Kind::Sha1).unwrap(),
-            )
-        };
+        let id = |commit_object_bytes: &[u8]| extract_change_id_from_commit(commit_object_bytes);
 
         let commit_with_id = indoc! {b"
             tree 126799bf8058d1b5c531e93079f4fe79733920dd
@@ -2286,20 +2221,15 @@ mod tests {
 
     #[test]
     fn read_empty_string_placeholder() {
-        let git_signature1 = gix::actor::Signature {
-            name: EMPTY_STRING_PLACEHOLDER.into(),
-            email: "git.author@example.com".into(),
-            time: gix::date::Time::new(1000, 60 * 60),
-        };
-        let signature1 = signature_from_git(git_signature1.to_ref(&mut TimeBuf::default()));
+        let git_signature1 =
+            format!("{EMPTY_STRING_PLACEHOLDER} <git.author@example.com> 1000 +0100");
+        let signature1 =
+            native_signature_from_git(girt::IdentityRef::parse(git_signature1.as_bytes()).unwrap());
         assert!(signature1.name.is_empty());
         assert_eq!(signature1.email, "git.author@example.com");
-        let git_signature2 = gix::actor::Signature {
-            name: "git committer".into(),
-            email: EMPTY_STRING_PLACEHOLDER.into(),
-            time: gix::date::Time::new(2000, -480 * 60),
-        };
-        let signature2 = signature_from_git(git_signature2.to_ref(&mut TimeBuf::default()));
+        let git_signature2 = format!("git committer <{EMPTY_STRING_PLACEHOLDER}> 2000 -0800");
+        let signature2 =
+            native_signature_from_git(girt::IdentityRef::parse(git_signature2.as_bytes()).unwrap());
         assert_eq!(signature2.name, "git committer");
         assert!(signature2.email.is_empty());
     }
@@ -2314,9 +2244,9 @@ mod tests {
                 tz_offset: 0,
             },
         };
-        let git_signature1 = signature_to_git(&signature1);
-        assert_eq!(git_signature1.name, EMPTY_STRING_PLACEHOLDER);
-        assert_eq!(git_signature1.email, "someone@example.com");
+        let git_signature1 = native_signature_to_git(&signature1);
+        assert_eq!(git_signature1.name, EMPTY_STRING_PLACEHOLDER.as_bytes());
+        assert_eq!(git_signature1.email, b"someone@example.com");
         let signature2 = Signature {
             name: "Someone".to_string(),
             email: "".to_string(),
@@ -2325,9 +2255,9 @@ mod tests {
                 tz_offset: 0,
             },
         };
-        let git_signature2 = signature_to_git(&signature2);
-        assert_eq!(git_signature2.name, "Someone");
-        assert_eq!(git_signature2.email, EMPTY_STRING_PLACEHOLDER);
+        let git_signature2 = native_signature_to_git(&signature2);
+        assert_eq!(git_signature2.name, b"Someone");
+        assert_eq!(git_signature2.email, EMPTY_STRING_PLACEHOLDER.as_bytes());
     }
 
     /// Test that parents get written correctly
@@ -2526,7 +2456,8 @@ mod tests {
     fn commit_has_ref(object_hash: gix::hash::Kind) -> TestResult {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
-        let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
+        let backend =
+            GitBackend::init_internal(&settings, temp_dir.path(), to_format(object_hash))?;
         let git_repo = gix_repo(&backend);
         let signature = Signature {
             name: "Someone".to_string(),
@@ -2575,7 +2506,8 @@ mod tests {
     fn import_head_commits_duplicates(object_hash: gix::hash::Kind) -> TestResult {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
-        let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
+        let backend =
+            GitBackend::init_internal(&settings, temp_dir.path(), to_format(object_hash))?;
         let git_repo = gix_repo(&backend);
 
         let signature = gix::actor::Signature {
@@ -2612,7 +2544,8 @@ mod tests {
     fn overlapping_git_commit_id(object_hash: gix::hash::Kind) -> TestResult {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
-        let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
+        let backend =
+            GitBackend::init_internal(&settings, temp_dir.path(), to_format(object_hash))?;
         let commit1 = Commit {
             parents: vec![backend.root_commit_id().clone()],
             predecessors: vec![],
@@ -2707,7 +2640,8 @@ mod tests {
     fn write_signed_commit(object_hash: gix::hash::Kind) -> TestResult<(String, SecureSig)> {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
-        let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
+        let backend =
+            GitBackend::init_internal(&settings, temp_dir.path(), to_format(object_hash))?;
 
         let commit = Commit {
             parents: vec![backend.root_commit_id().clone()],

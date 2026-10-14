@@ -110,16 +110,15 @@ fn test_git_remotes() {
         "#},
     );
     let output = work_dir.run_jj(["git", "remote", "list"]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
-    Error: Unexpected Git error when managing remotes
+    Error: Git remote named 'foo' has invalid configuration
     Caused by:
-    1: The fetch url under `remote.foo` was invalid, "input"="foo"
-    2: Could not parse URL, "input"="https://", "key"="remote.<name>.url"
-    3: URL can not be parsed as valid URL, "input"="https://"
+    1: invalid remote url (value 1)
+    2: invalid remote URL authority
     [EOF]
     [exit status: 1]
-    "#);
+    ");
 }
 
 #[test]

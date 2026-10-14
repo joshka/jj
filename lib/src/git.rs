@@ -577,7 +577,69 @@ pub fn get_native_git_repo(store: &Store) -> Result<girt::Repository, Unexpected
     get_git_backend(store).map(|backend| backend.native_git_repo())
 }
 
-pub fn get_git_repo(store: &Store) -> Result<gix::Repository, UnexpectedGitBackendError> {
+pub fn global_git_config() -> Option<girt::Config> {
+    girt::Config::resolve(&crate::git_backend::git_config_inputs()).ok()
+}
+
+pub fn configured_remote_names(git_repo: &girt::Repository) -> Vec<RemoteNameBuf> {
+    girt::remote::Remote::names(git_repo.config())
+        .into_iter()
+        // ignore non-UTF-8 remote names which we don't support
+        .filter_map(|name| String::from_utf8(name.to_vec()).ok())
+        .map(RemoteNameBuf::from)
+        .sorted()
+        .dedup()
+        .collect()
+}
+
+pub fn try_find_remote_without_url_rewrite(
+    git_repo: &girt::Repository,
+    name: &RemoteName,
+) -> Result<Option<GitRemote>, GitRemoteManagementError> {
+    let record =
+        girt::remote::ConfiguredRemoteRecord::find(git_repo.config(), name.as_str().as_bytes())
+            .map_err(|source| GitRemoteManagementError::InvalidRemote {
+                name: name.to_owned(),
+                source,
+            })?;
+    Ok(record.map(|record| {
+        let fetch_url = record.fetch_urls().next().map(BString::from);
+        let push_url = record
+            .push_urls()
+            .next()
+            .map(BString::from)
+            .or_else(|| fetch_url.clone());
+        GitRemote {
+            fetch_url,
+            push_url,
+            fetch_refspecs: record.fetch_refspecs().to_vec(),
+            push_refspecs: record.push_refspecs().to_vec(),
+        }
+    }))
+}
+
+pub fn set_git_config_value(
+    path: &Path,
+    section: &str,
+    name: &str,
+    value: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut edit = girt::config::ConfigEdit::open(path, MAX_CONFIG_BYTES)?;
+    let document = edit.document_mut();
+    let last = document.config().entries().iter().rposition(|entry| {
+        entry.section.eq_ignore_ascii_case(section.as_bytes())
+            && entry.subsection.is_none()
+            && entry.name.eq_ignore_ascii_case(name.as_bytes())
+    });
+    match last {
+        Some(index) => document.set_value(index, value.as_bytes())?,
+        None => document.append(section, None, name, value.as_bytes())?,
+    }
+    edit.commit()?;
+    Ok(())
+}
+
+pub fn get_git_repo(store: &Store) -> Result<girt::Repository, UnexpectedGitBackendError> {
     get_git_backend(store).map(|backend| backend.git_repo())
 }
 
@@ -3413,53 +3475,59 @@ pub fn get_all_remote_names(
     Ok(iter_remote_names(&git_repo).collect())
 }
 
-fn iter_remote_names(git_repo: &gix::Repository) -> impl Iterator<Item = RemoteNameBuf> {
-    git_repo
-        .remote_names()
+fn iter_remote_names(git_repo: &girt::Repository) -> impl Iterator<Item = RemoteNameBuf> {
+    configured_remote_names(git_repo)
         .into_iter()
-        // ignore non-UTF-8 remote names which we don't support
-        .filter_map(|name| String::from_utf8(name.into()).ok())
-        .map(RemoteNameBuf::from)
         // exclude empty [remote "<name>"] section
         .filter(|name| try_find_active_remote_inner(git_repo, name).is_some())
 }
 
 /// Finds a configured remote with the given `name`. Returns `None` if it
 /// doesn't exist or has no fetch or push URLs.
-pub fn try_find_active_remote<'a>(
-    git_repo: &'a gix::Repository,
+pub fn try_find_active_remote(
+    git_repo: &girt::Repository,
     name: &RemoteName,
-) -> Result<Option<gix::Remote<'a>>, GitRemoteManagementError> {
+) -> Result<Option<GitRemote>, GitRemoteManagementError> {
     try_find_active_remote_inner(git_repo, name)
         .transpose()
-        .map_err(GitRemoteManagementError::from_git)
+        .map_err(|source| GitRemoteManagementError::InvalidRemote {
+            name: name.to_owned(),
+            source,
+        })
 }
 
-fn try_find_active_remote_inner<'a>(
-    git_repo: &'a gix::Repository,
+fn try_find_active_remote_inner(
+    git_repo: &girt::Repository,
     name: &RemoteName,
-) -> Option<gix::Result<gix::Remote<'a>>> {
-    // Since gix v0.86.0, try_find_remote() no longer filters out remotes
-    // without configured URLs.
-    git_repo
-        .try_find_remote(name.as_str())
-        .filter(|result| match result {
-            Ok(remote) => {
-                remote.url(gix::remote::Direction::Fetch).is_some()
-                    || remote.url(gix::remote::Direction::Push).is_some()
-            }
-            Err(_) => true,
-        })
+) -> Option<Result<GitRemote, girt::remote::ConfiguredRemoteError>> {
+    let config = git_repo.config();
+    let name_bytes = name.as_str().as_bytes();
+    let record = match girt::remote::ConfiguredRemoteRecord::find(config, name_bytes) {
+        Ok(Some(record)) => record,
+        Ok(None) => return None,
+        Err(err) => return Some(Err(err)),
+    };
+    if record.fetch_urls().len() == 0 && record.push_urls().len() == 0 {
+        return None;
+    }
+    let remote = match girt::remote::ConfiguredRemote::find(config, name_bytes) {
+        Ok(Some(remote)) => remote,
+        Ok(None) => return None,
+        Err(err) => return Some(Err(err)),
+    };
+    Some(Ok(GitRemote {
+        fetch_url: remote.fetch_url().map(BString::from),
+        push_url: remote.push_url().map(BString::from),
+        fetch_refspecs: remote.fetch_refspecs().to_vec(),
+        push_refspecs: remote.push_refspecs().to_vec(),
+    }))
 }
 
 /// Returns the explicitly configured push remote, or `origin` if it exists.
 /// A sole unrelated remote is not evidence that it accepts pushes.
-pub fn default_push_remote_name(git_repo: &gix::Repository) -> Option<RemoteNameBuf> {
-    let config = git_repo.config_snapshot();
-    if let Some(name) = config.string("remote.pushDefault") {
-        return std::str::from_utf8(name.as_ref())
-            .ok()
-            .map(RemoteNameBuf::from);
+pub fn default_push_remote_name(git_repo: &girt::Repository) -> Option<RemoteNameBuf> {
+    if let Some(name) = git_repo.config().string("remote", None, "pushdefault") {
+        return str::from_utf8(name).ok().map(RemoteNameBuf::from);
     }
     let origin = RemoteName::new("origin");
     try_find_active_remote_inner(git_repo, origin).map(|_| origin.to_owned())
@@ -3801,7 +3869,10 @@ pub enum GitDefaultRefspecError {
     #[error("No git remote named '{}'", .0.as_symbol())]
     NoSuchRemote(RemoteNameBuf),
     #[error("Invalid configuration for remote `{}`", .0.as_symbol())]
-    InvalidRemoteConfiguration(RemoteNameBuf, #[source] gix::Error),
+    InvalidRemoteConfiguration(
+        RemoteNameBuf,
+        #[source] Box<girt::remote::ConfiguredRemoteError>,
+    ),
 }
 
 struct FetchedRefs {
@@ -4046,20 +4117,19 @@ enum FetchRefSpecKind {
 /// Loads the remote's fetch branch or bookmark patterns from Git config.
 pub fn load_default_fetch_bookmarks(
     remote_name: &RemoteName,
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
 ) -> Result<(IgnoredRefspecs, StringExpression), GitDefaultRefspecError> {
     let remote = try_find_active_remote_inner(git_repo, remote_name)
         .ok_or_else(|| GitDefaultRefspecError::NoSuchRemote(remote_name.to_owned()))?
         .map_err(|e| {
-            GitDefaultRefspecError::InvalidRemoteConfiguration(remote_name.to_owned(), e)
+            GitDefaultRefspecError::InvalidRemoteConfiguration(remote_name.to_owned(), Box::new(e))
         })?;
 
-    let remote_refspecs = remote.refspecs(gix::remote::Direction::Fetch);
+    let remote_refspecs = remote.fetch_refspecs();
     let mut ignored_refspecs = Vec::with_capacity(remote_refspecs.len());
     let mut positive_bookmarks = Vec::with_capacity(remote_refspecs.len());
     let mut negative_bookmarks = Vec::new();
     for refspec in remote_refspecs {
-        let refspec = refspec.to_ref();
         match parse_fetch_refspec(remote_name, refspec) {
             Ok((FetchRefSpecKind::Positive, bookmark)) => {
                 positive_bookmarks.push(StringExpression::pattern(bookmark));
@@ -4068,7 +4138,7 @@ pub fn load_default_fetch_bookmarks(
                 negative_bookmarks.push(StringExpression::pattern(bookmark));
             }
             Err(reason) => {
-                let refspec = refspec.to_bstring();
+                let refspec = refspec.to_bytes().into();
                 ignored_refspecs.push(IgnoredRefspec { refspec, reason });
             }
         }
@@ -4086,28 +4156,31 @@ pub fn load_default_fetch_bookmarks(
 
 fn parse_fetch_refspec(
     remote_name: &RemoteName,
-    refspec: gix::refspec::RefSpecRef<'_>,
+    refspec: &girt::remote::ConfiguredRefspec,
 ) -> Result<(FetchRefSpecKind, StringPattern), &'static str> {
     let ensure_utf8 = |s| str::from_utf8(s).map_err(|_| "invalid UTF-8");
 
-    let (src, positive_dst) = match refspec.instruction() {
-        Instruction::Push(_) => panic!("push refspec should be filtered out by caller"),
-        Instruction::Fetch(fetch) => match fetch {
-            gix::refspec::instruction::Fetch::Only { src: _ } => {
-                return Err("fetch-only refspecs are not supported");
+    let (src, positive_dst) = match refspec.kind() {
+        girt::remote::ConfiguredRefspecKind::Selection => {
+            return Err("fetch-only refspecs are not supported");
+        }
+        girt::remote::ConfiguredRefspecKind::Mapping => {
+            if !refspec.force() {
+                return Err("non-forced refspecs are not supported");
             }
-            gix::refspec::instruction::Fetch::AndUpdate {
-                src,
-                dst,
-                allow_non_fast_forward,
-            } => {
-                if !allow_non_fast_forward {
-                    return Err("non-forced refspecs are not supported");
-                }
-                (ensure_utf8(src)?, Some(ensure_utf8(dst)?))
-            }
-            gix::refspec::instruction::Fetch::Exclude { src } => (ensure_utf8(src)?, None),
-        },
+            (
+                ensure_utf8(refspec.source().unwrap_or_default())?,
+                Some(ensure_utf8(refspec.destination().unwrap_or_default())?),
+            )
+        }
+        girt::remote::ConfiguredRefspecKind::Exclusion => {
+            (ensure_utf8(refspec.source().unwrap_or_default())?, None)
+        }
+        girt::remote::ConfiguredRefspecKind::AllMatching
+        | girt::remote::ConfiguredRefspecKind::Deletion => {
+            return Err("push refspecs are not supported");
+        }
+        _ => return Err("unknown refspec kinds are not supported"),
     };
 
     let src_branch = src
@@ -4565,7 +4638,11 @@ mod tests {
                 format!("[core]\nbare = true\n{config}"),
             )
             .unwrap();
-            let git_repo = testutils::git::open(repo.path());
+            let git_repo = girt::Repository::open_with_config(
+                repo.path(),
+                &girt::config::ConfigInputs::default(),
+            )
+            .unwrap();
             assert_eq!(
                 default_push_remote_name(&git_repo).as_deref(),
                 expected.map(RemoteName::new)

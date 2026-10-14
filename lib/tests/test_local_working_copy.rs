@@ -83,6 +83,7 @@ use testutils::commit_with_tree;
 use testutils::create_tree;
 use testutils::create_tree_with;
 use testutils::empty_snapshot_options;
+use testutils::git::GixRepoExt as _;
 use testutils::repo_path;
 use testutils::repo_path_buf;
 use testutils::repo_path_component;

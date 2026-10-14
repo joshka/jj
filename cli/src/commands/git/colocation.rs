@@ -169,10 +169,7 @@ async fn cmd_git_colocation_enable(
     let op_id = workspace_command.repo().op_id().clone();
 
     if is_child_workspace(&workspace_command) {
-        git::create_worktree(
-            workspace_command.repo().store(),
-            &workspace_root,
-        )?;
+        git::create_worktree(workspace_command.repo().store(), &workspace_root)?;
         drop(workspace_command);
     } else {
         let jj_repo_path = workspace_command.repo_path();
@@ -182,7 +179,7 @@ async fn cmd_git_colocation_enable(
         let git_repo_path = git_backend.git_repo_path().to_owned();
 
         // Release the Git repository before moving it. The workspace helper
-        // keeps it open (gix memory-maps pack files), and Windows refuses to
+        // keeps pack files open, and Windows refuses to
         // rename a directory while any file in it is open, failing with
         // "Access is denied".
         drop(workspace_command);
@@ -254,11 +251,7 @@ async fn cmd_git_colocation_disable(
     let op_id = workspace_command.repo().op_id().clone();
 
     if is_child_workspace(&workspace_command) {
-        unlink_git_worktree(
-            ui,
-            workspace_command.repo().store(),
-            &workspace_root,
-        )?;
+        unlink_git_worktree(ui, workspace_command.repo().store(), &workspace_root)?;
         drop(workspace_command);
     } else {
         let git_store_path = workspace_command.repo_path().join("store").join("git");
@@ -305,23 +298,10 @@ async fn cmd_git_colocation_disable(
 fn set_git_repo_bare(path: &std::path::Path, bare: bool) -> Result<(), CommandError> {
     let bare_str = if bare { "true" } else { "false" };
     let config_path = path.join("config");
-    let mut config_file =
-        gix::config::File::from_path_no_includes(config_path.clone(), gix::config::Source::Local)
-            .map_err(|err| user_error_with_message("Failed to open Git config file.", err))?;
-
-    config_file
-        .set_raw_value("core.bare", bare_str)
-        .map_err(|err| {
-            user_error_with_message(
-                format!("Failed to set core.bare to {bare_str} in Git config."),
-                err,
-            )
-        })?;
-
-    git::save_git_config(&config_file).map_err(|err| {
+    git::set_git_config_value(&config_path, "core", "bare", bare_str).map_err(|err| {
         user_error_with_message(
             format!(
-                "Failed to write to Git config file at {}.",
+                "Failed to set core.bare to {bare_str} in Git config file at {}.",
                 config_path.display()
             ),
             err,

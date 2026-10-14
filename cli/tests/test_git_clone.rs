@@ -196,22 +196,21 @@ fn test_git_clone_bad_source() {
     let root_dir = test_env.work_dir("");
 
     let output = root_dir.run_jj(["git", "clone", "", "dest"]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
-    Error: local path is empty and does not specify a path to a repository, "input"=""
+    Error: local path does not specify a repository
     [EOF]
     [exit status: 2]
-    "#);
+    ");
 
     // Invalid URL unparsable by gitoxide
     let output = root_dir.run_jj(["git", "clone", "https://", "dest"]);
-    insta::assert_snapshot!(output, @r#"
+    insta::assert_snapshot!(output, @"
     ------- stderr -------
-    Error: URL can not be parsed as valid URL, "input"="https://"
-    Caused by: Scheme requires host
+    Error: repository URL has no host
     [EOF]
     [exit status: 2]
-    "#);
+    ");
 }
 
 #[test]

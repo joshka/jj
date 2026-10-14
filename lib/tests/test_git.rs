@@ -103,6 +103,7 @@ use testutils::base_user_config;
 use testutils::commit_transactions;
 use testutils::create_random_commit;
 use testutils::create_tree;
+use testutils::git::GixRepoExt as _;
 use testutils::repo_path;
 use testutils::write_random_commit;
 use testutils::write_random_commit_with_parents;
@@ -2534,7 +2535,7 @@ fn test_import_refs_missing_git_commit() -> TestResult {
     fs::rename(&object_file, &backup_object_file)?;
     let mut tx = repo.start_transaction();
     let result = git::import_refs(tx.repo_mut(), &import_options).block_on();
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "{result:?}");
 
     // Missing commit is pointed to by HEAD: the ref is ignored as we don't know
     // if the missing object is a commit or not.
@@ -2605,7 +2606,8 @@ fn test_import_export_head_bare_and_worktree() -> TestResult {
         "wt".into(),
     )
     .block_on()?;
-    let work_git_repo = get_git_backend(&repo).open_git_repo_at_workdir(&workspace_root)?;
+    get_git_backend(&repo).open_git_repo_at_workdir(&workspace_root)?;
+    let work_git_repo = testutils::git::open(&workspace_root);
 
     // Git HEAD shouldn't be imported yet
     assert_eq!(
@@ -4478,6 +4480,8 @@ fn test_fetch_environment_options() -> TestResult {
     Ok(())
 }
 
+/// Transport options whose `GIT_SSH_COMMAND` creates the returned marker file
+/// and fails.
 fn ssh_marker_environment(temp_dir: &TempDir) -> (GitTransportOptions, PathBuf) {
     let marker_path = temp_dir.path().join("ssh-invoked");
     let mut options = GitTransportOptions::default();
@@ -4538,11 +4542,11 @@ fn test_load_default_fetch_bookmarks() -> TestResult {
     test_repo.repo = test_repo
         .env
         .load_repo_at_head(&testutils::user_settings(), test_repo.repo_path());
-    let git_repo = get_git_repo(&test_repo.repo);
-
-    let (IgnoredRefspecs(ignored_refspecs), bookmark_expr) =
-        load_default_fetch_bookmarks("origin".as_ref(), &git_repo)
-            .expect("failed to load refspecs");
+    let (IgnoredRefspecs(ignored_refspecs), bookmark_expr) = load_default_fetch_bookmarks(
+        "origin".as_ref(),
+        &get_git_backend(&test_repo.repo).git_repo(),
+    )
+    .expect("failed to load refspecs");
 
     let mut warnings = String::new();
     for IgnoredRefspec { refspec, reason } in ignored_refspecs {
@@ -4553,28 +4557,28 @@ fn test_load_default_fetch_bookmarks() -> TestResult {
     }
 
     insta::assert_snapshot!(warnings, @"
-    fetch-only refspecs are not supported: refs/heads/non-forced
     fetch-only refspecs are not supported: refs/heads/src-only
-    only refs/heads/ is supported for refspec sources: ^refs/tags/unsupported
+    fetch-only refspecs are not supported: refs/heads/non-forced
     non-forced refspecs are not supported: refs/heads/non-forced:refs/remotes/origin/non-forced
     remote renaming not supported: +refs/heads/wrong-dst:refs/remotes/tags/wrong-dst
     remote renaming not supported: +refs/heads/wrong-remote:refs/remotes/origin2/wrong-remote
     only refs/heads/ is supported for refspec sources: +refs/tags/wrong-src:refs/remotes/origin/wrong-src
+    only refs/heads/ is supported for refspec sources: ^refs/tags/unsupported
     ");
 
     insta::assert_debug_snapshot!(bookmark_expr, @r#"
     Intersection(
         Union(
             Pattern(
+                Exact(
+                    "main",
+                ),
+            ),
+            Pattern(
                 Glob(
                     GlobPattern(
                         "foo*",
                     ),
-                ),
-            ),
-            Pattern(
-                Exact(
-                    "main",
                 ),
             ),
         ),
@@ -4595,9 +4599,11 @@ fn test_load_default_fetch_bookmarks() -> TestResult {
     )
     "#);
 
-    let (IgnoredRefspecs(ignored_refspecs), bookmark_expr) =
-        load_default_fetch_bookmarks("positive-only".as_ref(), &git_repo)
-            .expect("failed to load refspecs");
+    let (IgnoredRefspecs(ignored_refspecs), bookmark_expr) = load_default_fetch_bookmarks(
+        "positive-only".as_ref(),
+        &get_git_backend(&test_repo.repo).git_repo(),
+    )
+    .expect("failed to load refspecs");
     assert!(ignored_refspecs.is_empty());
     insta::assert_debug_snapshot!(bookmark_expr, @r#"
     Pattern(
@@ -4648,46 +4654,52 @@ fn test_load_default_fetch_bookmarks_invalid_configuration() -> TestResult {
     test_repo.repo = test_repo
         .env
         .load_repo_at_head(&testutils::user_settings(), test_repo.repo_path());
-    let git_repo = get_git_repo(&test_repo.repo);
-
-    let first_err = load_default_fetch_bookmarks("first".as_ref(), &git_repo).unwrap_err();
-    let second_err = load_default_fetch_bookmarks("second".as_ref(), &git_repo).unwrap_err();
-    let third_err = load_default_fetch_bookmarks("third".as_ref(), &git_repo).unwrap_err();
+    let first_err = load_default_fetch_bookmarks(
+        "first".as_ref(),
+        &get_git_backend(&test_repo.repo).git_repo(),
+    )
+    .unwrap_err();
+    let second_err = load_default_fetch_bookmarks(
+        "second".as_ref(),
+        &get_git_backend(&test_repo.repo).git_repo(),
+    )
+    .unwrap_err();
+    let third_err = load_default_fetch_bookmarks(
+        "third".as_ref(),
+        &get_git_backend(&test_repo.repo).git_repo(),
+    )
+    .unwrap_err();
 
     insta::assert_snapshot!(format!("{first_err:#?}\n{second_err:#?}\n{third_err:#?}"), @r#"
     InvalidRemoteConfiguration(
         RemoteNameBuf(
             "first",
         ),
-        fetch ref-spec under `remote.first` was invalid, "input"="first"
-        |
-        └─ Could not parse refspec, "input"="+refs/heads/bad*pattern*:refs/remotes/heads/bad*pattern*", "key"="remote.<name>.fetch"
-        |
-        └─ refspec patterns may only contain a single '*' character, "input"="refs/heads/bad*pattern*",
+        Refspec {
+            key: "fetch",
+            occurrence: 1,
+            source: Pattern,
+        },
     )
     InvalidRemoteConfiguration(
         RemoteNameBuf(
             "second",
         ),
-        fetch ref-spec under `remote.second` was invalid, "input"="second"
-        |
-        └─ Could not parse refspec, "input"="+refs/heads/badpattern?:refs/remotes/heads/badpattern?", "key"="remote.<name>.fetch"
-        |
-        └─ Reference name contains invalid byte: "?"
-        |
-        └─ Reference name contains invalid byte: "?",
+        Refspec {
+            key: "fetch",
+            occurrence: 1,
+            source: Name,
+        },
     )
     InvalidRemoteConfiguration(
         RemoteNameBuf(
             "third",
         ),
-        fetch ref-spec under `remote.third` was invalid, "input"="third"
-        |
-        └─ Could not parse refspec, "input"="+refs/heads/bad[pat]:refs/remotes/heads/bad[pat]", "key"="remote.<name>.fetch"
-        |
-        └─ Reference name contains invalid byte: "["
-        |
-        └─ Reference name contains invalid byte: "[",
+        Refspec {
+            key: "fetch",
+            occurrence: 1,
+            source: Name,
+        },
     )
     "#);
     Ok(())
@@ -7148,3 +7160,4 @@ fn test_remote_name_validation() -> TestResult {
 
     Ok(())
 }
+

@@ -272,8 +272,8 @@ fn calculate_push_remote(
     settings: &UserSettings,
     remote: Option<&str>,
 ) -> Result<String, CommandError> {
-    let git_repo = git::get_native_git_repo(store)?; // will fail if not a git repo
-    let remotes = git::native_configured_remote_names(&git_repo);
+    let git_repo = git::get_git_repo(store)?; // will fail if not a git repo
+    let remotes = git::configured_remote_names(&git_repo);
     let has_remote = |name: &str| remotes.iter().any(|remote| remote.as_str() == name);
 
     // If --remote was provided, use that
@@ -297,7 +297,7 @@ fn calculate_push_remote(
     }
 
     // If a general push remote was configured, use that
-    if let Some(remote) = git::native_default_push_remote_name(&git_repo) {
+    if let Some(remote) = git::default_push_remote_name(&git_repo) {
         return Ok(remote.as_str().to_owned());
     }
 

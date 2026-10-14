@@ -51,6 +51,7 @@ use testutils::commit_with_tree;
 use testutils::create_random_commit;
 use testutils::create_single_tree;
 use testutils::create_tree;
+use testutils::git::GixRepoExt as _;
 use testutils::is_external_tool_installed;
 use testutils::repo_path;
 use testutils::repo_path_buf;
