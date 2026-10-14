@@ -2606,6 +2606,19 @@ fn try_find_active_remote_inner<'a>(
         })
 }
 
+/// Returns the explicitly configured push remote, or `origin` if it exists.
+/// A sole unrelated remote is not evidence that it accepts pushes.
+pub fn default_push_remote_name(git_repo: &gix::Repository) -> Option<RemoteNameBuf> {
+    let config = git_repo.config_snapshot();
+    if let Some(name) = config.string("remote.pushDefault") {
+        return std::str::from_utf8(name.as_ref())
+            .ok()
+            .map(RemoteNameBuf::from);
+    }
+    let origin = RemoteName::new("origin");
+    try_find_active_remote_inner(git_repo, origin).map(|_| origin.to_owned())
+}
+
 pub fn add_remote(
     mut_repo: &mut MutableRepo,
     remote_name: &RemoteName,
@@ -3679,6 +3692,34 @@ mod tests {
     use super::*;
     use crate::revset;
     use crate::revset::RevsetDiagnostics;
+
+    #[test]
+    fn test_default_push_remote_name() {
+        let temp = testutils::new_temp_dir();
+        let repo = testutils::git::init_bare(temp.path());
+        let cases = [
+            ("", None),
+            ("[remote \"other\"]\nurl = /other\n", None),
+            ("[remote \"origin\"]\nurl = /origin\n", Some("origin")),
+            ("[remote \"origin\"]\n", None),
+            (
+                "[remote]\npushDefault = other\n[remote \"origin\"]\nurl = /origin\n",
+                Some("other"),
+            ),
+        ];
+        for (config, expected) in cases {
+            std::fs::write(
+                repo.path().join("config"),
+                format!("[core]\nbare = true\n{config}"),
+            )
+            .unwrap();
+            let git_repo = testutils::git::open(repo.path());
+            assert_eq!(
+                default_push_remote_name(&git_repo).as_deref(),
+                expected.map(RemoteName::new)
+            );
+        }
+    }
 
     #[test]
     fn test_split_positive_negative_patterns() {

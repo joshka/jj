@@ -297,8 +297,8 @@ fn calculate_push_remote(
     }
 
     // If a general push remote was configured, use that
-    if let Some(remote) = git_repo.remote_default_name(gix::remote::Direction::Push) {
-        return Ok(remote.to_string());
+    if let Some(remote) = git::default_push_remote_name(&git_repo) {
+        return Ok(remote.as_str().to_owned());
     }
 
     // If there is a Git remote called "gerrit", use that
