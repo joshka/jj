@@ -2820,6 +2820,12 @@ pub enum GitRemoteManagementError {
     NonstandardConfiguration(RemoteNameBuf),
     #[error("Error saving Git configuration")]
     GitConfigSaveError(#[source] std::io::Error),
+    #[error("Git remote named '{}' has invalid configuration", name.as_symbol())]
+    InvalidRemote {
+        name: RemoteNameBuf,
+        #[source]
+        source: girt::remote::ConfiguredRemoteError,
+    },
     #[error("Unexpected Git error when managing remotes")]
     InternalGitError(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
@@ -2832,6 +2838,358 @@ impl GitRemoteManagementError {
     fn from_git(source: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> Self {
         Self::InternalGitError(source.into())
     }
+}
+
+/// Maximum size of a Git config file edited by jj.
+const MAX_CONFIG_BYTES: usize = 64 * 1024 * 1024;
+
+/// A configured Git remote.
+#[derive(Clone, Debug)]
+pub struct GitRemote {
+    fetch_url: Option<BString>,
+    push_url: Option<BString>,
+    fetch_refspecs: Vec<girt::remote::ConfiguredRefspec>,
+    push_refspecs: Vec<girt::remote::ConfiguredRefspec>,
+}
+
+impl GitRemote {
+    /// First fetch URL.
+    pub fn fetch_url(&self) -> Option<&BStr> {
+        self.fetch_url.as_ref().map(|url| url.as_ref())
+    }
+
+    /// First push URL, falling back to the fetch URL.
+    pub fn push_url(&self) -> Option<&BStr> {
+        self.push_url.as_ref().map(|url| url.as_ref())
+    }
+
+    /// Configured fetch refspecs, in order.
+    pub fn fetch_refspecs(&self) -> &[girt::remote::ConfiguredRefspec] {
+        &self.fetch_refspecs
+    }
+
+    /// Configured push refspecs, in order.
+    pub fn push_refspecs(&self) -> &[girt::remote::ConfiguredRefspec] {
+        &self.push_refspecs
+    }
+}
+
+pub fn native_configured_remote_names(git_repo: &girt::Repository) -> Vec<RemoteNameBuf> {
+    girt::remote::Remote::names(git_repo.config())
+        .into_iter()
+        // ignore non-UTF-8 remote names which we don't support
+        .filter_map(|name| String::from_utf8(name.to_vec()).ok())
+        .map(RemoteNameBuf::from)
+        .sorted()
+        .dedup()
+        .collect()
+}
+
+fn native_iter_remote_names(git_repo: &girt::Repository) -> impl Iterator<Item = RemoteNameBuf> {
+    native_configured_remote_names(git_repo)
+        .into_iter()
+        // exclude empty [remote "<name>"] section
+        .filter(|name| native_try_find_active_remote_inner(git_repo, name).is_some())
+}
+
+pub fn native_try_find_active_remote(
+    git_repo: &girt::Repository,
+    name: &RemoteName,
+) -> Result<Option<GitRemote>, GitRemoteManagementError> {
+    native_try_find_active_remote_inner(git_repo, name)
+        .transpose()
+        .map_err(|source| GitRemoteManagementError::InvalidRemote {
+            name: name.to_owned(),
+            source,
+        })
+}
+
+fn native_try_find_active_remote_inner(
+    git_repo: &girt::Repository,
+    name: &RemoteName,
+) -> Option<Result<GitRemote, girt::remote::ConfiguredRemoteError>> {
+    let config = git_repo.config();
+    let name_bytes = name.as_str().as_bytes();
+    let record = match girt::remote::ConfiguredRemoteRecord::find(config, name_bytes) {
+        Ok(Some(record)) => record,
+        Ok(None) => return None,
+        Err(err) => return Some(Err(err)),
+    };
+    if record.fetch_urls().len() == 0 && record.push_urls().len() == 0 {
+        return None;
+    }
+    let remote = match girt::remote::ConfiguredRemote::find(config, name_bytes) {
+        Ok(Some(remote)) => remote,
+        Ok(None) => return None,
+        Err(err) => return Some(Err(err)),
+    };
+    Some(Ok(GitRemote {
+        fetch_url: remote.fetch_url().map(BString::from),
+        push_url: remote.push_url().map(BString::from),
+        fetch_refspecs: remote.fetch_refspecs().to_vec(),
+        push_refspecs: remote.push_refspecs().to_vec(),
+    }))
+}
+
+pub fn native_try_find_remote_without_url_rewrite(
+    git_repo: &girt::Repository,
+    name: &RemoteName,
+) -> Result<Option<GitRemote>, GitRemoteManagementError> {
+    let record =
+        girt::remote::ConfiguredRemoteRecord::find(git_repo.config(), name.as_str().as_bytes())
+            .map_err(|source| GitRemoteManagementError::InvalidRemote {
+                name: name.to_owned(),
+                source,
+            })?;
+    Ok(record.map(|record| {
+        let fetch_url = record.fetch_urls().next().map(BString::from);
+        let push_url = record
+            .push_urls()
+            .next()
+            .map(BString::from)
+            .or_else(|| fetch_url.clone());
+        GitRemote {
+            fetch_url,
+            push_url,
+            fetch_refspecs: record.fetch_refspecs().to_vec(),
+            push_refspecs: record.push_refspecs().to_vec(),
+        }
+    }))
+}
+
+pub fn native_default_push_remote_name(git_repo: &girt::Repository) -> Option<RemoteNameBuf> {
+    if let Some(name) = git_repo.config().string("remote", None, "pushdefault") {
+        return str::from_utf8(name).ok().map(RemoteNameBuf::from);
+    }
+    let origin = RemoteName::new("origin");
+    native_try_find_active_remote_inner(git_repo, origin).map(|_| origin.to_owned())
+}
+
+fn native_edit_local_config(
+    git_repo: &girt::Repository,
+) -> Result<girt::config::ConfigEdit, GitRemoteManagementError> {
+    git_repo
+        .edit_config(MAX_CONFIG_BYTES)
+        .map_err(GitRemoteManagementError::from_git)
+}
+
+fn native_commit_config(edit: girt::config::ConfigEdit) -> Result<(), GitRemoteManagementError> {
+    edit.commit()
+        .map_err(|err| GitRemoteManagementError::GitConfigSaveError(std::io::Error::other(err)))
+}
+
+pub fn native_set_git_config_value(
+    path: &Path,
+    section: &str,
+    name: &str,
+    value: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut edit = girt::config::ConfigEdit::open(path, MAX_CONFIG_BYTES)?;
+    let document = edit.document_mut();
+    let last = document.config().entries().iter().rposition(|entry| {
+        entry.section.eq_ignore_ascii_case(section.as_bytes())
+            && entry.subsection.is_none()
+            && entry.name.eq_ignore_ascii_case(name.as_bytes())
+    });
+    match last {
+        Some(index) => document.set_value(index, value.as_bytes())?,
+        None => document.append(section, None, name, value.as_bytes())?,
+    }
+    edit.commit()?;
+    Ok(())
+}
+
+fn native_git_config_branch_section_ordinals_by_remote(
+    document: &girt::config::Document,
+    remote_name: &RemoteName,
+) -> Result<Vec<usize>, GitRemoteManagementError> {
+    let entries = document.config().entries();
+    document
+        .sections()
+        .filter(|section| section.name().eq_ignore_ascii_case(b"branch"))
+        .filter_map(|section| {
+            let section_entries = &entries[section.entry_range()];
+            let values = |key: &str| {
+                section_entries
+                    .iter()
+                    .filter(|entry| entry.name.eq_ignore_ascii_case(key.as_bytes()))
+                    .map(|entry| entry.value.as_deref().unwrap_or_default())
+                    .collect_vec()
+            };
+            let native_remote_values = values("remote");
+            let push_remote_values = values("pushRemote");
+            if !native_remote_values
+                .iter()
+                .chain(push_remote_values.iter())
+                .any(|branch_remote_name| *branch_remote_name == remote_name.as_str().as_bytes())
+            {
+                return None;
+            }
+            // https://github.com/jj-vcs/jj/issues/6984#issuecomment-3073761797
+            let is_supported_key = |name: &[u8]| -> bool {
+                name.eq_ignore_ascii_case(b"remote")
+                    || name.eq_ignore_ascii_case(b"merge")
+                    || name.eq_ignore_ascii_case(b"rebase")
+            };
+            if native_remote_values.len() > 1
+                || push_remote_values.len() > 1
+                || !section_entries
+                    .iter()
+                    .all(|entry| is_supported_key(&entry.name))
+            {
+                return Some(Err(GitRemoteManagementError::NonstandardConfiguration(
+                    remote_name.to_owned(),
+                )));
+            }
+            Some(Ok(section.ordinal()))
+        })
+        .collect()
+}
+
+fn native_rename_remote_in_git_branch_config_sections(
+    document: &mut girt::config::Document,
+    old_remote_name: &RemoteName,
+    new_remote_name: &RemoteName,
+) -> Result<(), GitRemoteManagementError> {
+    let ordinals = native_git_config_branch_section_ordinals_by_remote(document, old_remote_name)?;
+    let indices = document
+        .sections()
+        .filter(|section| ordinals.contains(&section.ordinal()))
+        .flat_map(|section| section.entry_range())
+        .filter(|&index| {
+            let entry = &document.config().entries()[index];
+            entry.name.eq_ignore_ascii_case(b"remote")
+                && entry.value.as_deref() == Some(old_remote_name.as_str().as_bytes())
+        })
+        .collect_vec();
+    for index in indices {
+        document
+            .set_value(index, new_remote_name.as_str().as_bytes())
+            .map_err(GitRemoteManagementError::from_git)?;
+    }
+    Ok(())
+}
+
+fn native_remove_remote_git_branch_config_sections(
+    document: &mut girt::config::Document,
+    remote_name: &RemoteName,
+) -> Result<(), GitRemoteManagementError> {
+    let ordinals = native_git_config_branch_section_ordinals_by_remote(document, remote_name)?;
+    document
+        .remove_sections(&ordinals)
+        .map_err(GitRemoteManagementError::from_git)
+}
+
+fn native_remove_remote_git_config_sections(
+    document: &mut girt::config::Document,
+    remote_name: &RemoteName,
+) -> Result<(), GitRemoteManagementError> {
+    let entries = document.config().entries();
+    let ordinals: Vec<_> = document
+        .sections()
+        .filter(|section| {
+            section.name().eq_ignore_ascii_case(b"remote")
+                && section.subsection() == Some(remote_name.as_str().as_bytes())
+        })
+        .map(|section| {
+            if entries[section.entry_range()].iter().any(|entry| {
+                !entry.name.eq_ignore_ascii_case(b"url")
+                    && !entry.name.eq_ignore_ascii_case(b"fetch")
+                    && !entry.name.eq_ignore_ascii_case(b"tagOpt")
+            }) {
+                return Err(GitRemoteManagementError::NonstandardConfiguration(
+                    remote_name.to_owned(),
+                ));
+            }
+            Ok(section.ordinal())
+        })
+        .try_collect()?;
+    document
+        .remove_sections(&ordinals)
+        .map_err(GitRemoteManagementError::from_git)
+}
+
+fn native_remote_values(config: &girt::Config, remote_name: &RemoteName, key: &str) -> Vec<Vec<u8>> {
+    config
+        .values("remote", Some(remote_name.as_str().as_bytes()), key)
+        .map(|value| value.unwrap_or_default().to_vec())
+        .collect()
+}
+
+fn native_append_remote_section(
+    document: &mut girt::config::Document,
+    remote_name: &RemoteName,
+    urls: &[Vec<u8>],
+    push_urls: &[Vec<u8>],
+    fetch_refspecs: &[Vec<u8>],
+    tag_opts: &[Vec<u8>],
+) -> Result<(), GitRemoteManagementError> {
+    let entries = itertools::chain!(
+        urls.iter().map(|value| ("url", value.as_slice())),
+        push_urls.iter().map(|value| ("pushurl", value.as_slice())),
+        fetch_refspecs
+            .iter()
+            .map(|value| ("fetch", value.as_slice())),
+        tag_opts.iter().map(|value| ("tagOpt", value.as_slice())),
+    )
+    .collect_vec();
+    document
+        .append_section("remote", Some(remote_name.as_str().as_bytes()), &entries)
+        .map_err(GitRemoteManagementError::from_git)
+}
+
+fn native_append_after_remote_urls(
+    document: &mut girt::config::Document,
+    remote_name: &RemoteName,
+    key: &str,
+    value: &[u8],
+) -> Result<(), GitRemoteManagementError> {
+    let name = remote_name.as_str().as_bytes();
+    let section = document
+        .sections()
+        .filter(|section| {
+            section.name().eq_ignore_ascii_case(b"remote") && section.subsection() == Some(name)
+        })
+        .last()
+        .map(|section| section.entry_range());
+    // Rebuild the section's entries with the new value inserted after URLs.
+    let Some(range) = section else {
+        return document
+            .append("remote", Some(name), key, value)
+            .map_err(GitRemoteManagementError::from_git);
+    };
+    let entries = document.config().entries()[range.clone()]
+        .iter()
+        .map(|entry| (entry.name.clone(), entry.value.clone().unwrap_or_default()))
+        .collect_vec();
+    let split = entries
+        .iter()
+        .rposition(|(name, _)| {
+            name.eq_ignore_ascii_case(b"url") || name.eq_ignore_ascii_case(b"pushurl")
+        })
+        .map_or(0, |i| i + 1);
+    for index in range.rev() {
+        document
+            .remove(index)
+            .map_err(GitRemoteManagementError::from_git)?;
+    }
+    let rebuilt = itertools::chain!(
+        entries[..split]
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
+        [(key.as_bytes().to_vec(), value.to_vec())],
+        entries[split..]
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
+    )
+    .collect_vec();
+    for (entry_name, entry_value) in rebuilt {
+        let entry_name = String::from_utf8(entry_name).expect("config names are ASCII");
+        document
+            .append("remote", Some(name), &entry_name, &entry_value)
+            .map_err(GitRemoteManagementError::from_git)?;
+    }
+    Ok(())
 }
 
 fn default_fetch_refspec(remote: &RemoteName) -> String {
