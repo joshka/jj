@@ -752,19 +752,26 @@ pub async fn import_some_refs(
     options: &GitImportOptions,
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<GitImportStats, GitImportError> {
-    let git_repo = get_git_repo(mut_repo.store())?;
+    let store = mut_repo.store().clone();
+    let git_backend = get_git_backend(&store)?;
+    let git_repo = git_backend.native_git_repo();
 
     // Allocate views for new remotes configured externally. There may be
     // remotes with no refs, but the user might still want to "track" absent
     // remote refs.
-    for remote_name in iter_remote_names(&git_repo) {
+    for remote_name in iter_remote_names(&git_backend.git_repo()) {
         mut_repo.ensure_remote(&remote_name);
     }
 
     // Exclude real remote tags, which should never be updated by Git.
     let all_remote_tags = false;
-    let refs_to_import =
-        diff_refs_to_import(mut_repo.view(), &git_repo, all_remote_tags, git_ref_filter)?;
+    let refs_to_import = diff_refs_to_import(
+        mut_repo.view(),
+        &git_repo,
+        git_backend,
+        all_remote_tags,
+        git_ref_filter,
+    )?;
     import_refs_inner(mut_repo, refs_to_import, options).await
 }
 
@@ -1044,7 +1051,8 @@ async fn record_synthetic_predecessors(
 /// Calculates diff of git refs to be imported.
 fn diff_refs_to_import(
     view: &View,
-    git_repo: &gix::Repository,
+    git_repo: &girt::Repository,
+    git_backend: &GitBackend,
     all_remote_tags: bool,
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<RefsToImport, GitImportError> {
@@ -1085,9 +1093,12 @@ fn diff_refs_to_import(
     let mut changed_remote_bookmarks = Vec::new();
     let mut changed_remote_tags = Vec::new();
     let mut failed_ref_names = Vec::new();
-    let actual = git_repo.references().map_err(GitImportError::from_git)?;
+    let actual = GitRefs::new(git_repo, git_backend).map_err(GitImportError::Git)?;
     collect_changed_refs_to_import(
-        actual.local_branches().map_err(GitImportError::from_git)?,
+        &actual,
+        actual
+            .list_prefixed("refs/heads/")
+            .map_err(GitImportError::Git)?,
         &mut known_git_refs,
         &mut known_remote_bookmarks,
         &mut changed_git_refs,
@@ -1096,7 +1107,10 @@ fn diff_refs_to_import(
         &git_ref_filter,
     )?;
     collect_changed_refs_to_import(
-        actual.remote_branches().map_err(GitImportError::from_git)?,
+        &actual,
+        actual
+            .list_prefixed("refs/remotes/")
+            .map_err(GitImportError::Git)?,
         &mut known_git_refs,
         &mut known_remote_bookmarks,
         &mut changed_git_refs,
@@ -1105,7 +1119,10 @@ fn diff_refs_to_import(
         &git_ref_filter,
     )?;
     collect_changed_refs_to_import(
-        actual.tags().map_err(GitImportError::from_git)?,
+        &actual,
+        actual
+            .list_prefixed("refs/tags/")
+            .map_err(GitImportError::Git)?,
         &mut known_git_refs,
         &mut known_remote_tags,
         &mut changed_git_refs,
@@ -1115,9 +1132,10 @@ fn diff_refs_to_import(
     )?;
     if all_remote_tags {
         collect_changed_remote_tags_to_import(
+            &actual,
             actual
-                .prefixed(REMOTE_TAG_REF_NAMESPACE)
-                .map_err(GitImportError::from_git)?,
+                .list_prefixed(REMOTE_TAG_REF_NAMESPACE)
+                .map_err(GitImportError::Git)?,
             &mut known_remote_tags,
             &mut changed_remote_tags,
             &mut failed_ref_names,
@@ -1161,7 +1179,8 @@ fn diff_refs_to_import(
 }
 
 fn collect_changed_refs_to_import(
-    actual_git_refs: gix::reference::iter::Iter,
+    git_refs: &GitRefs,
+    actual_git_refs: Vec<girt::refs::ReferenceObservation>,
     known_git_refs: &mut HashMap<&GitRefName, &RefTarget>,
     known_remote_refs: &mut HashMap<RemoteRefKey<'_>, &RemoteRef>,
     changed_git_refs: &mut Vec<(GitRefNameBuf, RefTarget)>,
@@ -1170,15 +1189,14 @@ fn collect_changed_refs_to_import(
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<(), GitImportError> {
     for git_ref in actual_git_refs {
-        let git_ref = git_ref.map_err(GitImportError::from_git)?;
-        let full_name_bytes = git_ref.name().as_bstr();
+        let full_name_bytes = git_ref.name.as_bytes();
         let Ok(full_name) = str::from_utf8(full_name_bytes) else {
             // Non-utf8 refs cannot be imported.
-            failed_ref_names.push(full_name_bytes.to_owned());
+            failed_ref_names.push(full_name_bytes.into());
             continue;
         };
         if full_name.starts_with(RESERVED_REMOTE_REF_NAMESPACE) {
-            failed_ref_names.push(full_name_bytes.to_owned());
+            failed_ref_names.push(full_name_bytes.into());
             continue;
         }
         let full_name = GitRefName::new(full_name);
@@ -1190,8 +1208,13 @@ fn collect_changed_refs_to_import(
             continue;
         }
         let old_git_target = known_git_refs.get(full_name).copied().flatten();
-        let old_git_oid = old_git_target.as_normal().map(gix_oid_from_commit_id);
-        let Some(oid) = resolve_git_ref_to_commit_id(&git_ref, old_git_oid) else {
+        let old_git_oid = old_git_target
+            .as_normal()
+            .map(|id| oid_from_commit_id(git_refs.repo, id));
+        let Some(oid) = git_refs
+            .resolve_to_commit_id(&git_ref, old_git_oid)
+            .map_err(GitImportError::Git)?
+        else {
             // Skip (or remove existing) invalid refs.
             continue;
         };
@@ -1219,18 +1242,18 @@ fn collect_changed_refs_to_import(
 /// Similar to [`collect_changed_refs_to_import()`], but doesn't track Git ref
 /// changes. Remote tags should be managed solely by jj.
 fn collect_changed_remote_tags_to_import(
-    actual_git_refs: gix::reference::iter::Iter,
+    git_refs: &GitRefs,
+    actual_git_refs: Vec<girt::refs::ReferenceObservation>,
     known_remote_refs: &mut HashMap<RemoteRefKey<'_>, &RemoteRef>,
     changed_remote_refs: &mut Vec<GitImportRefUpdate>,
     failed_ref_names: &mut Vec<BString>,
     git_ref_filter: impl Fn(GitRefKind, RemoteRefSymbol<'_>) -> bool,
 ) -> Result<(), GitImportError> {
     for git_ref in actual_git_refs {
-        let git_ref = git_ref.map_err(GitImportError::from_git)?;
-        let full_name_bytes = git_ref.name().as_bstr();
+        let full_name_bytes = git_ref.name.as_bytes();
         let Ok(full_name) = str::from_utf8(full_name_bytes) else {
             // Non-utf8 refs cannot be imported.
-            failed_ref_names.push(full_name_bytes.to_owned());
+            failed_ref_names.push(full_name_bytes.into());
             continue;
         };
         let full_name = GitRefName::new(full_name);
@@ -1245,8 +1268,14 @@ fn collect_changed_remote_tags_to_import(
             .get(&symbol)
             .copied()
             .unwrap_or(&ABSENT_REMOTE_REF);
-        let old_git_oid = old_remote_ref.target.as_normal().map(gix_oid_from_commit_id);
-        let Some(oid) = resolve_git_ref_to_commit_id(&git_ref, old_git_oid) else {
+        let old_git_oid = old_remote_ref
+            .target
+            .as_normal()
+            .map(|id| oid_from_commit_id(git_refs.repo, id));
+        let Some(oid) = git_refs
+            .resolve_to_commit_id(&git_ref, old_git_oid)
+            .map_err(GitImportError::Git)?
+        else {
             // Skip (or remove existing) invalid refs.
             continue;
         };
@@ -1328,15 +1357,12 @@ pub async fn import_head(
     let store = mut_repo.store();
     let git_backend = get_git_backend(store)?;
     let git_repo = git_backend
-        .open_git_repo_at_workdir(workspace_root)
+        .open_native_git_repo_at_workdir(workspace_root)
         .map_err(GitImportError::from_git)?;
 
     let old_git_head = mut_repo.view().git_head(workspace_name);
-    let new_git_head_id = if let Ok(oid) = git_repo.head_id() {
-        Some(CommitId::from_bytes(oid.as_bytes()))
-    } else {
-        None
-    };
+    let new_git_head_id =
+        native_head_id(&git_repo, git_backend).map(|oid| CommitId::from_bytes(oid.as_bytes()));
     if old_git_head.as_resolved() == Some(&new_git_head_id) {
         return Ok(());
     }
@@ -1368,9 +1394,9 @@ pub async fn import_head_commit(
 ) -> Result<Option<Commit>, GitImportError> {
     let store = mut_repo.store();
     let git_backend = get_git_backend(store)?;
-    let git_repo = git_backend.git_repo();
+    let git_repo = git_backend.native_git_repo();
 
-    let Ok(oid) = git_repo.head_id() else {
+    let Some(oid) = native_head_id(&git_repo, git_backend) else {
         return Ok(None);
     };
     let head_id = CommitId::from_bytes(oid.as_bytes());
@@ -1494,58 +1520,65 @@ pub fn export_some_refs(
         &git_ref_filter,
     );
 
-    let check_and_detach_head = |git_repo: &gix::Repository| -> Result<(), GitExportError> {
-        let Ok(head_ref) = git_repo.find_reference("HEAD") else {
+    let git_backend = get_git_backend(mut_repo.store())?;
+    let committer = git_backend.committer_signature();
+    let check_and_detach_head = |git_repo: &girt::Repository| -> Result<(), GitExportError> {
+        let git_refs = GitRefs::new(git_repo, git_backend).map_err(GitExportError::Git)?;
+        let Some(head_ref) = git_refs.find("HEAD").map_err(GitExportError::Git)? else {
             return Ok(());
         };
-        let old_target = head_ref.inner.target;
-        if let Some(target_name) = old_target.try_name()
-            && let Ok(target_name_str) = str::from_utf8(target_name.as_bstr())
-            && let Some((kind, symbol)) = parse_git_ref(target_name_str.as_ref())
+        let girt::refs::Target::Symbolic(target_name) = &head_ref.target else {
+            return Ok(());
+        };
+        if let Some((kind, symbol)) = str::from_utf8(target_name.as_bytes())
+            .ok()
+            .and_then(|name| parse_git_ref(name.as_ref()))
         {
-            // Unborn ref is mapped to None (= absent)
-            let maybe_target_ref = git_repo
-                .try_find_reference(target_name)
-                .map_err(GitExportError::from_git)?;
-            let current_oid = maybe_target_ref
-                .map(|target_ref| target_ref.into_fully_peeled_id())
-                .transpose()
+            // Unborn ref should be considered absent
+            let current_oid = git_refs
+                .refs()
+                .resolve(target_name, 5)
                 .map_err(GitExportError::from_git)?
-                .map(|id| id.detach());
+                .id;
             let refs = match kind {
                 GitRefKind::Bookmark => &bookmarks,
                 GitRefKind::Tag => &tags,
             };
             let new_oid = if let Some((_old_oid, new_oid)) = get(&refs.to_update, symbol) {
-                Some(new_oid)
+                Some(oid_from_commit_id(git_repo, &CommitId::from_bytes(new_oid.as_bytes())))
             } else if get(&refs.to_delete, symbol).is_some() {
                 None
             } else {
-                current_oid.as_ref()
+                current_oid
             };
-            if new_oid != current_oid.as_ref() {
-                update_git_head(
+            if new_oid != current_oid {
+                native_update_git_head(
                     git_repo,
-                    gix::refs::transaction::PreviousValue::MustExistAndMatch(old_target),
+                    girt::refs::Expected::Value(head_ref.target.clone()),
                     current_oid,
+                    &committer,
                 )
-                .map_err(GitExportError::from_git)?;
+                .map_err(GitExportError::Git)?;
             }
         }
         Ok(())
     };
 
-    let git_repo = get_git_repo(mut_repo.store())?;
+    let git_repo = get_native_git_repo(mut_repo.store())?;
 
     check_and_detach_head(&git_repo)?;
-    for worktree in git_repo.worktrees().map_err(GitExportError::from_git)? {
-        if let Ok(worktree_repo) = worktree.into_repo_with_possibly_inaccessible_worktree() {
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    for worktree in git_repo
+        .worktrees(usize::MAX, &cancel)
+        .map_err(GitExportError::from_git)?
+    {
+        if let Ok(worktree_repo) = crate::git_backend::open_git_repository(&worktree.git_dir) {
             check_and_detach_head(&worktree_repo)?;
         }
     }
 
-    let failed_bookmarks = export_refs_to_git(mut_repo, &git_repo, GitRefKind::Bookmark, bookmarks);
-    let failed_tags = export_refs_to_git(mut_repo, &git_repo, GitRefKind::Tag, tags);
+    let failed_bookmarks = native_export_refs_to_git(mut_repo, &git_repo, GitRefKind::Bookmark, bookmarks);
+    let failed_tags = native_export_refs_to_git(mut_repo, &git_repo, GitRefKind::Tag, tags);
 
     copy_exportable_local_bookmarks_to_remote_view(
         mut_repo,
@@ -4208,7 +4241,8 @@ impl<'a> GitFetch<'a> {
         let all_remote_tags = true;
         let refs_to_import = diff_refs_to_import(
             self.mut_repo.view(),
-            &self.git_repo,
+            &get_native_git_repo(self.mut_repo.store())?,
+            get_git_backend(self.mut_repo.store())?,
             all_remote_tags,
             |kind, symbol| match kind {
                 GitRefKind::Bookmark => self
