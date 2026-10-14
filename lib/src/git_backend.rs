@@ -1698,6 +1698,10 @@ mod tests {
             .strict_config(true)
     }
 
+    fn gix_repo(backend: &GitBackend) -> gix::Repository {
+        gix::open_opts(backend.git_repo_path(), open_options()).unwrap()
+    }
+
     fn git_init(directory: impl AsRef<Path>, object_hash: gix::hash::Kind) -> gix::Repository {
         gix::ThreadSafeRepository::init_opts(
             directory,
@@ -1736,7 +1740,7 @@ mod tests {
 
         assert_matches!(
             backend.open_git_repo_at_workdir(&git_repo_path),
-            Ok(repo) if repo.workdir() == Some(backend.git_repo().workdir().unwrap())
+            Ok(repo) if repo.workdir() == Some(gix_repo(&backend).workdir().unwrap())
         );
         assert_matches!(
             backend.open_git_repo_at_workdir(&worktree_dir),
@@ -2380,7 +2384,7 @@ mod tests {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
         let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
-        let git_repo = backend.git_repo();
+        let git_repo = gix_repo(&backend);
         let signature = Signature {
             name: "Someone".to_string(),
             email: "someone@example.com".to_string(),
@@ -2429,7 +2433,7 @@ mod tests {
         let settings = user_settings();
         let temp_dir = new_temp_dir();
         let backend = GitBackend::init_internal(&settings, temp_dir.path(), object_hash)?;
-        let git_repo = backend.git_repo();
+        let git_repo = gix_repo(&backend);
 
         let signature = gix::actor::Signature {
             name: GIT_USER.into(),
@@ -2588,7 +2592,7 @@ mod tests {
         let sig = commit.secure_sig.expect("failed to read the signature");
         assert_eq!(&sig, &returned_sig);
 
-        let git_repo = backend.git_repo();
+        let git_repo = gix_repo(&backend);
         let obj = git_repo.find_object(gix::ObjectId::from_bytes_or_panic(id.as_bytes()))?;
         Ok((String::from_utf8(obj.data.clone())?, sig))
     }
