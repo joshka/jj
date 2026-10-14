@@ -413,6 +413,11 @@ impl GitBackend {
         self.base_repo.path()
     }
 
+    /// Path to the working tree of the underlying Git repository, if any.
+    pub fn git_workdir(&self) -> Option<&Path> {
+        self.base_repo.work_dir()
+    }
+
     fn shallow_root_ids(&self, git_repo: &gix::Repository) -> BackendResult<&[CommitId]> {
         // The list of shallow roots is cached by gix, but it's still expensive
         // to stat file on every read_object() call. Refreshing shallow roots is
