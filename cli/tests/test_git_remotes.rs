@@ -1073,7 +1073,7 @@ fn test_git_remote_name_validation() {
     ------- stderr -------
     Error: Invalid Git remote name
     Caused by:
-    1: remote names must be valid within refspecs for fetching, "input"="my remote"
+    1: remote names must be valid within refspecs for fetching: "my remote"
     2: Reference name contains invalid byte: " "
     [EOF]
     [exit status: 1]
