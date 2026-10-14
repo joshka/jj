@@ -41,6 +41,7 @@ use jj_lib::transaction::Transaction;
 use maplit::hashmap;
 use maplit::hashset;
 use pollster::FutureExt as _;
+use testutils::git::GixRepoExt as _;
 use testutils::CommitBuilderExt as _;
 use testutils::TestRepo;
 use testutils::TestRepoBackend;
@@ -414,7 +415,7 @@ fn test_jj_trees_header_with_one_tree() -> TestResult {
     let test_repo = TestRepo::init_with_backend(TestRepoBackend::Git);
     let repo = test_repo.repo;
     let git_backend = get_git_backend(&repo);
-    let git_repo = git_backend.git_repo();
+    let git_repo = git_backend.gix_repo();
 
     let tree_1 = create_single_tree(&repo, &[(repo_path("file"), "aaa")]);
     let tree_2 = create_single_tree(&repo, &[(repo_path("file"), "bbb")]);

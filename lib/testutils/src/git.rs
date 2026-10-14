@@ -41,6 +41,19 @@ pub fn open(directory: impl Into<PathBuf>) -> gix::Repository {
     gix::open_opts(directory, open_options()).unwrap()
 }
 
+/// Test-only access to a jj Git backend's repository through gix, which serves
+/// as an independent implementation for building fixtures and checking results.
+pub trait GixRepoExt {
+    /// Opens the backend's Git repository with gix.
+    fn gix_repo(&self) -> gix::Repository;
+}
+
+impl GixRepoExt for jj_lib::git_backend::GitBackend {
+    fn gix_repo(&self) -> gix::Repository {
+        open(self.git_repo_path())
+    }
+}
+
 pub fn init(directory: impl AsRef<Path>) -> gix::Repository {
     gix::ThreadSafeRepository::init_opts(
         directory,

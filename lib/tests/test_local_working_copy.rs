@@ -72,6 +72,7 @@ use jj_lib::workspace::Workspace;
 use pollster::FutureExt as _;
 use prost::Message as _;
 use test_case::test_case;
+use testutils::git::GixRepoExt as _;
 use testutils::CommitBuilderExt as _;
 use testutils::TestRepo;
 use testutils::TestRepoBackend;
@@ -3177,7 +3178,7 @@ fn test_snapshot_and_update_valid_symlink(
 fn test_always_store_empty_tree() -> TestResult {
     let mut test_workspace = TestWorkspace::init_with_backend(TestRepoBackend::Git);
     let git_backend = get_git_backend(test_workspace.repo.store())?;
-    let git_repo = git_backend.git_repo();
+    let git_repo = git_backend.gix_repo();
     let empty_tree_id = gix::ObjectId::empty_tree(gix::hash::Kind::Sha1);
 
     test_workspace.snapshot()?;

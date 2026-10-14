@@ -92,6 +92,7 @@ use maplit::hashset;
 use pollster::FutureExt as _;
 use tempfile::TempDir;
 use test_case::test_case;
+use testutils::git::GixRepoExt as _;
 use testutils::CommitBuilderExt as _;
 use testutils::TestRepo;
 use testutils::TestRepoBackend;
@@ -173,7 +174,7 @@ fn get_git_backend(repo: &Arc<ReadonlyRepo>) -> &GitBackend {
 }
 
 fn get_git_repo(repo: &Arc<ReadonlyRepo>) -> gix::Repository {
-    get_git_backend(repo).git_repo()
+    get_git_backend(repo).gix_repo()
 }
 
 fn init_external_git_repo(test_repo: &TestRepo, name: &Path) -> TestResult<Arc<ReadonlyRepo>> {
@@ -6607,7 +6608,7 @@ fn test_shallow_commits_lack_parents() -> TestResult {
     testutils::git::set_symbolic_reference(&git_repo, "HEAD", "refs/heads/main");
 
     let make_shallow = |repo, mut shallow_commits: Vec<_>| {
-        let shallow_file = get_git_backend(repo).git_repo().shallow_file();
+        let shallow_file = get_git_backend(repo).gix_repo().shallow_file();
         shallow_commits.sort();
         let mut buf = Vec::<u8>::new();
         for commit in shallow_commits {
