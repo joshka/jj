@@ -44,6 +44,7 @@ use gix::objs::Exists as _;
 use gix::objs::Write as _;
 use gix::objs::WriteTo as _;
 use gix::objs::commit::signature_field_name;
+use bstr::ByteSlice as _;
 use itertools::Itertools as _;
 use once_cell::sync::OnceCell as OnceLock;
 use pollster::FutureExt as _;
@@ -835,6 +836,274 @@ fn signature_to_git(signature: &Signature) -> gix::actor::Signature {
         time,
     }
 }
+
+#[allow(dead_code)]
+struct NativeCommitHeaders<'a> {
+    payload: girt::CommitPayload<'a>,
+}
+
+impl<'a> NativeCommitHeaders<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self {
+            payload: girt::CommitPayload::from_bytes(data),
+        }
+    }
+
+    /// Returns the first header value with the given name.
+    fn find(&self, name: &str) -> Option<Vec<u8>> {
+        self.payload
+            .headers()
+            .find(|header| header.name == name.as_bytes())
+            .map(|header| header.unfolded_value())
+    }
+
+    /// Returns the index of the first header with the given name.
+    fn position(&self, name: &str) -> Option<usize> {
+        self.payload
+            .headers()
+            .position(|header| header.name == name.as_bytes())
+    }
+}
+
+/// Parses the `jj:conflict-labels` header value if present.
+#[allow(dead_code)]
+fn native_extract_conflict_labels_from_commit(headers: &NativeCommitHeaders) -> Merge<String> {
+    let Some(mut value) = headers.find(JJ_CONFLICT_LABELS_COMMIT_HEADER) else {
+        return Merge::resolved(String::new());
+    };
+    // As in Git, each line of the value ends in a newline.
+    value.push(b'\n');
+
+    str::from_utf8(&value)
+        .expect("labels should be valid utf8")
+        .split_terminator('\n')
+        .map(str::to_owned)
+        .collect::<MergeBuilder<_>>()
+        .build()
+}
+
+/// Parses the `jj:trees` header value if present, otherwise returns the
+/// resolved tree ID from Git.
+#[allow(dead_code)]
+fn native_extract_root_tree_from_commit(
+    commit: &girt::Commit,
+    headers: &NativeCommitHeaders,
+) -> Result<Merge<TreeId>, ()> {
+    let Some(value) = headers.find(JJ_TREES_COMMIT_HEADER) else {
+        let tree_id = TreeId::from_bytes(commit.tree().as_bytes());
+        return Ok(Merge::resolved(tree_id));
+    };
+
+    let hash_len = commit.object_format().digest_len();
+    let mut tree_ids = SmallVec::new();
+    for hex in value.split(|b| *b == b' ') {
+        let tree_id = TreeId::try_from_hex(hex).ok_or(())?;
+        if tree_id.as_bytes().len() != hash_len {
+            return Err(());
+        }
+        tree_ids.push(tree_id);
+    }
+    // It is invalid to use `jj:trees` with a non-conflicted tree. If this were
+    // allowed, it would be possible to construct a commit which appears to have
+    // different contents depending on whether it is viewed using `jj` or `git`.
+    if tree_ids.len() == 1 || tree_ids.len() % 2 == 0 {
+        return Err(());
+    }
+    Ok(Merge::from_vec(tree_ids))
+}
+
+/// Builds a commit header the way Git writes one: a value's final newline
+/// terminates its last line rather than adding an empty continuation line.
+#[allow(dead_code)]
+fn native_git_header(name: &str, mut value: Vec<u8>) -> girt::CommitHeader {
+    if value.ends_with(b"\n") {
+        value.pop();
+    }
+    girt::CommitHeader {
+        name: name.into(),
+        value,
+    }
+}
+
+/// Name of the commit header that carries a signature over the rest of the
+/// commit, for the given object format.
+#[allow(dead_code)]
+fn native_signature_field_name(format: girt::ObjectFormat) -> BackendResult<&'static str> {
+    match format {
+        girt::ObjectFormat::Sha1 => Ok("gpgsig"),
+        girt::ObjectFormat::Sha256 => Ok("gpgsig-sha256"),
+        _ => Err(BackendError::Other(
+            std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                format!("unsupported Git signature format: {format}"),
+            )
+            .into(),
+        )),
+    }
+}
+
+#[allow(dead_code)]
+fn native_commit_from_git_without_root_parent(
+    id: &CommitId,
+    format: girt::ObjectFormat,
+    data: &[u8],
+    is_shallow: bool,
+) -> BackendResult<Commit> {
+    let commit = girt::Commit::parse(format, data).map_err(|err| to_read_object_err(err, id))?;
+    let headers = NativeCommitHeaders::new(data);
+
+    // If the git header has a change-id field, we attempt to convert that to a
+    // valid JJ Change Id
+    let change_id = native_extract_change_id_from_headers(&headers)
+        .unwrap_or_else(|| synthetic_change_id_from_git_commit_id(id));
+
+    // shallow commits don't have parents their parents actually fetched, so we
+    // discard them here
+    // TODO: This causes issues when a shallow repository is deepened/unshallowed
+    let parents = if is_shallow {
+        vec![]
+    } else {
+        commit
+            .parents()
+            .iter()
+            .map(|oid| CommitId::from_bytes(oid.as_bytes()))
+            .collect_vec()
+    };
+    // If the commit is a conflict, the conflict labels are stored in a commit
+    // header separately from the trees.
+    let conflict_labels = native_extract_conflict_labels_from_commit(&headers);
+    // Conflicted commits written before we started using the `jj:trees` header
+    // (~March 2024) may have the root trees stored in the extra metadata table
+    // instead. For such commits, we'll update the root tree later when we read the
+    // extra metadata.
+    let root_tree = native_extract_root_tree_from_commit(&commit, &headers)
+        .map_err(|()| to_read_object_err("Invalid jj:trees header", id))?;
+    // Use lossy conversion as commit message with "mojibake" is still better than
+    // nothing.
+    // TODO: what should we do with commit.encoding?
+    let description = String::from_utf8_lossy(commit.message()).into_owned();
+    let author = commit
+        .author()
+        .map_err(|err| to_read_object_err(err, id))?
+        .ok_or_else(|| to_read_object_err("missing author", id))?;
+    let committer = commit
+        .committer()
+        .map_err(|err| to_read_object_err(err, id))?
+        .ok_or_else(|| to_read_object_err("missing committer", id))?;
+    let author = native_signature_from_git(author);
+    let committer = native_signature_from_git(committer);
+
+    // If the commit is signed, extract both the signature and the signed data
+    // (which is the commit buffer with the signature header omitted).
+    let secure_sig = headers
+        .position(native_signature_field_name(format)?)
+        .map(|index| {
+            let header = headers.payload.headers().nth(index).unwrap();
+            let data = headers
+                .payload
+                .without_headers(&[index])
+                .ok_or_else(|| to_read_object_err("malformed signature header", id))?;
+            // As in Git, the value's lines each end in a newline.
+            let mut sig = header.unfolded_value();
+            sig.push(b'\n');
+            Ok::<_, BackendError>(SecureSig { data, sig })
+        })
+        .transpose()?;
+
+    Ok(Commit {
+        parents,
+        predecessors: vec![],
+        // If this commit has associated extra metadata, we may reset this later.
+        root_tree,
+        conflict_labels,
+        change_id,
+        description,
+        author,
+        committer,
+        secure_sig,
+    })
+}
+
+#[allow(dead_code)]
+fn native_extract_change_id_from_headers(headers: &NativeCommitHeaders) -> Option<ChangeId> {
+    headers
+        .find(CHANGE_ID_COMMIT_HEADER)
+        .and_then(ChangeId::try_from_reverse_hex)
+        .filter(|val| val.as_bytes().len() == CHANGE_ID_LENGTH)
+}
+
+/// Extracts change id from the headers of a raw Git commit object.
+#[allow(dead_code)]
+pub fn native_extract_change_id_from_commit(commit_data: &[u8]) -> Option<ChangeId> {
+    native_extract_change_id_from_headers(&NativeCommitHeaders::new(commit_data))
+}
+
+#[allow(dead_code)]
+fn native_signature_from_git(signature: girt::IdentityRef) -> Signature {
+    let name = signature.name;
+    let name = if name != EMPTY_STRING_PLACEHOLDER.as_bytes() {
+        String::from_utf8_lossy(name).into_owned()
+    } else {
+        "".to_string()
+    };
+    let email = signature.email;
+    let email = if email != EMPTY_STRING_PLACEHOLDER.as_bytes() {
+        String::from_utf8_lossy(email).into_owned()
+    } else {
+        "".to_string()
+    };
+    let time = signature.date().unwrap_or(girt::IdentityDate {
+        seconds: 0,
+        offset_minutes: 0,
+    });
+    let timestamp = MillisSinceEpoch(time.seconds.saturating_mul(1000));
+    Signature {
+        name,
+        email,
+        timestamp: Timestamp {
+            timestamp,
+            tz_offset: time.offset_minutes.into(),
+        },
+    }
+}
+
+/// Removes bytes that cannot be represented in a Git identity. Git itself
+/// drops angle brackets and newlines, and trims surrounding whitespace.
+#[allow(dead_code)]
+fn native_sanitize_identity(value: &str) -> Vec<u8> {
+    let value: Vec<u8> = value
+        .bytes()
+        .filter(|b| !matches!(b, b'<' | b'>' | b'\n' | b'\r' | 0))
+        .collect();
+    let value = value.trim_ascii().to_vec();
+    if value.is_empty() {
+        EMPTY_STRING_PLACEHOLDER.into()
+    } else {
+        value
+    }
+}
+
+#[allow(dead_code)]
+fn native_signature_to_git(signature: &Signature) -> girt::Signature {
+    // git does not support empty names or emails
+    let name = if !signature.name.is_empty() {
+        &signature.name
+    } else {
+        EMPTY_STRING_PLACEHOLDER
+    };
+    let email = if !signature.email.is_empty() {
+        &signature.email
+    } else {
+        EMPTY_STRING_PLACEHOLDER
+    };
+    girt::Signature {
+        name: native_sanitize_identity(name),
+        email: native_sanitize_identity(email),
+        seconds: signature.timestamp.timestamp.0.div_euclid(1000),
+        offset_minutes: signature.timestamp.tz_offset.clamp(-1439, 1439) as i16,
+    }
+}
+
 
 fn serialize_extras(commit: &Commit) -> Vec<u8> {
     let mut proto = crate::protos::git_store::Commit {
