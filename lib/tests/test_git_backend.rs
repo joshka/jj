@@ -41,7 +41,6 @@ use jj_lib::transaction::Transaction;
 use maplit::hashmap;
 use maplit::hashset;
 use pollster::FutureExt as _;
-use testutils::git::GixRepoExt as _;
 use testutils::CommitBuilderExt as _;
 use testutils::TestRepo;
 use testutils::TestRepoBackend;

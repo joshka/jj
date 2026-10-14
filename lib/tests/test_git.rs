@@ -93,7 +93,6 @@ use maplit::hashset;
 use pollster::FutureExt as _;
 use tempfile::TempDir;
 use test_case::test_case;
-use testutils::git::GixRepoExt as _;
 use testutils::CommitBuilderExt as _;
 use testutils::TestRepo;
 use testutils::TestRepoBackend;

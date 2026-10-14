@@ -3054,7 +3054,6 @@ dependencies = [
  "futures 0.3.34",
  "girt",
  "gix",
- "gix-ignore",
  "globset",
  "indexmap",
  "indoc",

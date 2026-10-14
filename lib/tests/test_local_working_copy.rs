@@ -72,7 +72,6 @@ use jj_lib::workspace::Workspace;
 use pollster::FutureExt as _;
 use prost::Message as _;
 use test_case::test_case;
-use testutils::git::GixRepoExt as _;
 use testutils::CommitBuilderExt as _;
 use testutils::TestRepo;
 use testutils::TestRepoBackend;
