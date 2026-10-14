@@ -243,7 +243,7 @@ fn fetch_import_all(mut_repo: &mut MutableRepo, remote: &RemoteName) -> GitImpor
     let import_options = default_import_options();
     let mut fetcher = GitFetch::new(
         mut_repo,
-        git_settings.to_subprocess_options(),
+        git_settings.to_transport_options(),
         &import_options,
     )
     .unwrap();
@@ -6891,7 +6891,7 @@ fn test_push_updates_with_options() -> TestResult {
 
     let result = git::push_updates(
         setup.jj_repo.as_ref(),
-        git_settings.to_subprocess_options(),
+        git_settings.to_transport_options(),
         "origin".as_ref(),
         &[GitRefUpdate {
             qualified_name: "refs/heads/main".into(),

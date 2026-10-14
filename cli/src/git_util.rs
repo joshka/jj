@@ -41,7 +41,7 @@ use jj_lib::git::GitRefKind;
 use jj_lib::git::GitSettings;
 use jj_lib::git::GitSidebandLineTerminator;
 use jj_lib::git::GitSubprocessCallback;
-use jj_lib::git::GitSubprocessOptions;
+use jj_lib::git::GitTransportOptions;
 use jj_lib::git_backend::GitRepoAtWorkdirError;
 use jj_lib::op_store::RemoteRefState;
 use jj_lib::repo::ReadonlyRepo;
@@ -572,7 +572,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
 pub fn unlink_git_worktree(
     ui: &Ui,
     store: &Arc<Store>,
-    subprocess_options: GitSubprocessOptions,
+    subprocess_options: GitTransportOptions,
     worktree_path: &Path,
 ) -> Result<(), CommandError> {
     match git::unlink_worktree(store, subprocess_options, worktree_path) {

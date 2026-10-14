@@ -262,6 +262,10 @@ impl GitSettings {
             environment: HashMap::new(),
         }
     }
+    pub fn to_transport_options(&self) -> GitTransportOptions {
+        self.to_subprocess_options()
+    }
+
 }
 
 /// Configuration for a Git subprocess
@@ -283,6 +287,8 @@ impl GitSubprocessOptions {
         })
     }
 }
+
+pub type GitTransportOptions = GitSubprocessOptions;
 
 #[derive(Debug, Error)]
 pub enum GitRemoteNameError {
@@ -374,8 +380,8 @@ pub(crate) struct RefSpec {
     forced: bool,
     // Source and destination may be fully-qualified ref name, glob pattern, or
     // object ID. The GitRefNameBuf type shouldn't be used.
-    source: Option<String>,
-    destination: String,
+    pub(crate) source: Option<String>,
+    pub(crate) destination: String,
 }
 
 impl RefSpec {
@@ -2892,7 +2898,7 @@ fn native_iter_remote_names(git_repo: &girt::Repository) -> impl Iterator<Item =
         .filter(|name| native_try_find_active_remote_inner(git_repo, name).is_some())
 }
 
-pub fn native_try_find_active_remote(
+pub(crate) fn native_try_find_active_remote(
     git_repo: &girt::Repository,
     name: &RemoteName,
 ) -> Result<Option<GitRemote>, GitRemoteManagementError> {

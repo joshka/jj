@@ -17,8 +17,279 @@
 #![allow(dead_code)]
 
 use std::io;
-use bstr::ByteSlice as _;
+use std::num::NonZeroU32;
 
+use bstr::ByteSlice as _;
+use thiserror::Error;
+
+use crate::git::GitPushOptions;
+use crate::git::GitPushStats;
+use crate::git::GitSubprocessOptions as GitTransportOptions;
+use crate::git::NegativeRefSpec;
+use crate::git::RefSpec;
+use crate::git::RefToPush;
+use crate::git_backend::GitBackend;
+use crate::ref_name::GitRefNameBuf;
+use crate::ref_name::RefNameBuf;
+use crate::ref_name::RemoteName;
+
+/// Error from communicating with a Git remote.
+#[derive(Error, Debug)]
+pub enum GitTransportError {
+    /// The remote has no URL, or its repository couldn't be found.
+    #[error("Could not find repository at '{0}'")]
+    NoSuchRepository(String),
+    /// Authentication failed or was cancelled.
+    #[error("Authentication failed for '{0}'")]
+    Authentication(String),
+    /// The remote URL uses a transport that isn't supported.
+    #[error("Unsupported transport for remote '{0}'")]
+    UnsupportedTransport(String),
+    /// The transfer failed.
+    #[error(transparent)]
+    Transfer(#[from] girt::workflow::TransferError),
+}
+
+impl GitTransportError {
+    fn from_transfer(
+        repo: &girt::Repository,
+        remote: &RemoteName,
+        error: girt::workflow::TransferError,
+    ) -> Self {
+        let url = || {
+            crate::git::native_try_find_active_remote(repo, remote)
+                .ok()
+                .flatten()
+                .and_then(|remote| remote.fetch_url().map(|url| url.to_string()))
+                .unwrap_or_else(|| remote.as_str().to_owned())
+        };
+        let source_missing = matches!(
+            &error,
+            girt::workflow::TransferError::Fetch(error)
+                if matches!(
+                    error.as_ref(),
+                    girt::fetch::FetchWorkflowError::Transfer(girt::fetch::FetchError::Source(_))
+                )
+        );
+        let destination_missing = matches!(
+            &error,
+            girt::workflow::TransferError::Push(error)
+                if matches!(
+                    error.as_ref(),
+                    girt::push::PushError::NotSent(girt::push::PushFailure::Destination(_))
+                )
+        );
+        if source_missing || destination_missing {
+            return Self::NoSuchRepository(url());
+        }
+        match error {
+            girt::workflow::TransferError::NoSuchRemote(_) => Self::NoSuchRepository(url()),
+            girt::workflow::TransferError::Authentication(url) => Self::Authentication(url),
+            girt::workflow::TransferError::UnsupportedTransport(_) => {
+                Self::UnsupportedTransport(remote.as_str().to_owned())
+            }
+            error => Self::Transfer(error),
+        }
+    }
+}
+
+/// Result of a fetch.
+#[derive(Debug, Default)]
+pub(crate) struct GitFetchOutcome {
+    /// Exact source refs that the remote doesn't have.
+    pub missing_sources: Vec<String>,
+}
+
+/// Fetches from and pushes to the remotes of a Git repository.
+pub(crate) struct GitTransport {
+    repo: girt::Repository,
+    committer: girt::Signature,
+    environment: girt::workflow::Environment,
+}
+
+impl GitTransport {
+    pub(crate) fn from_git_backend(git_backend: &GitBackend, options: GitTransportOptions) -> Self {
+        let mut environment = girt::workflow::Environment::from_process();
+        for (name, value) in options.environment {
+            environment = environment.with(name, value);
+        }
+        Self {
+            repo: git_backend.native_git_repo(),
+            committer: git_backend.committer_signature(),
+            environment,
+        }
+    }
+
+    /// Fetches `refspecs` (except `negative_refspecs`) from the remote,
+    /// pruning remote-tracking refs whose sources were deleted.
+    pub(crate) fn fetch(
+        &self,
+        remote_name: &RemoteName,
+        refspecs: &[RefSpec],
+        negative_refspecs: &[NegativeRefSpec],
+        callback: &mut dyn GitSubprocessCallback,
+        depth: Option<NonZeroU32>,
+        tag_namespace: &str,
+    ) -> Result<GitFetchOutcome, GitTransportError> {
+        if refspecs.is_empty() {
+            return Ok(GitFetchOutcome::default());
+        }
+        let mut options = girt::workflow::FetchOptions::new(
+            refspecs
+                .iter()
+                .map(|refspec| refspec.to_git_format())
+                .chain(
+                    negative_refspecs
+                        .iter()
+                        .map(|refspec| refspec.to_git_format()),
+                ),
+        )
+        .prune(true)
+        .depth(depth)
+        .reflog(
+            self.committer.clone(),
+            format!("fetch {}", remote_name.as_str()),
+        );
+        let namespace = tag_namespace.trim_end_matches('/');
+        if let Ok(namespace) = girt::refs::RefName::new(namespace) {
+            options = options.tag_namespace(namespace);
+        }
+        let mut callbacks = Callbacks::new(callback);
+        let outcome = girt::workflow::fetch(
+            &self.repo,
+            remote_name.as_str(),
+            &options,
+            &self.environment,
+            &mut callbacks,
+        )
+        .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
+        Ok(GitFetchOutcome {
+            missing_sources: outcome
+                .missing_sources
+                .iter()
+                .map(|source| source.to_str_lossy().into_owned())
+                .collect(),
+        })
+    }
+
+    /// Queries the remote's default branch (the branch its HEAD points to).
+    pub(crate) fn default_branch(
+        &self,
+        remote_name: &RemoteName,
+    ) -> Result<Option<RefNameBuf>, GitTransportError> {
+        let mut callbacks = girt::workflow::NoCallbacks;
+        let head = girt::workflow::remote_head(
+            &self.repo,
+            remote_name.as_str(),
+            &self.environment,
+            &mut callbacks,
+        )
+        .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
+        // Like `git remote show`, an unborn HEAD has no default branch.
+        let (girt::fetch::RemoteHead::Symbolic { branch, .. }
+        | girt::fetch::RemoteHead::Inferred { branch, .. }) = head
+        else {
+            return Ok(None);
+        };
+        Ok(branch
+            .as_bytes()
+            .strip_prefix(b"refs/heads/")
+            .and_then(|name| str::from_utf8(name).ok())
+            .map(RefNameBuf::from))
+    }
+
+    /// Pushes references, each conditional on the remote's current value
+    /// matching the expected location (like `--force-with-lease`).
+    pub(crate) fn push(
+        &self,
+        remote_name: &RemoteName,
+        references: &[RefToPush],
+        callback: &mut dyn GitSubprocessCallback,
+        options: &GitPushOptions,
+    ) -> Result<GitPushStats, GitTransportError> {
+        let format = self.repo.object_format();
+        let mut commands = Vec::with_capacity(references.len());
+        for reference in references {
+            let name = girt::refs::RefName::new(&reference.refspec.destination).map_err(|_| {
+                GitTransportError::Transfer(girt::workflow::TransferError::Configuration(format!(
+                    "invalid ref name: {}",
+                    reference.refspec.destination
+                )))
+            })?;
+            let new = match &reference.refspec.source {
+                Some(source) => girt::ObjectId::from_hex(format, source).map_err(|_| {
+                    GitTransportError::Transfer(girt::workflow::TransferError::Configuration(
+                        format!("invalid push source: {source}"),
+                    ))
+                })?,
+                None => girt::ObjectId::null(format),
+            };
+            commands.push(
+                girt::push::PushCommand::new(name, reference.expected_location.map(|id| girt::ObjectId::from_bytes(format, id.as_bytes()).unwrap()), new)
+                    .with_force(girt::push::ForcePolicy::Allow),
+            );
+        }
+        let mut push_options =
+            girt::workflow::PushOptions::default().identity(self.committer.clone());
+        for option in &options.remote_push_options {
+            push_options = push_options.push_option(option.as_bytes());
+        }
+        let mut callbacks = Callbacks::new(callback);
+        let report = girt::workflow::push(
+            &self.repo,
+            remote_name.as_str(),
+            commands,
+            &push_options,
+            &self.environment,
+            &mut callbacks,
+        )
+        .map_err(|error| GitTransportError::from_transfer(&self.repo, remote_name, error))?;
+        Ok(push_stats_from_report(&report))
+    }
+}
+
+fn push_stats_from_report(report: &girt::push::PushReport) -> GitPushStats {
+    let mut stats = GitPushStats::default();
+    let unpack_error = match &report.unpack {
+        Some(girt::push::Status::Rejected(reason)) => Some(reason.to_str_lossy().into_owned()),
+        Some(girt::push::Status::Ok) | None => None,
+        _ => Some("unsupported unpack status reported by the remote".to_owned()),
+    };
+    for status in &report.refs {
+        let name = GitRefNameBuf::from(status.command.name.as_bytes().to_str_lossy().into_owned());
+        match (&status.status, status.rejection_origin) {
+            (Some(girt::push::Status::Ok), _) if unpack_error.is_none() => stats.pushed.push(name),
+            (Some(girt::push::Status::Ok), _) => {
+                stats.remote_rejected.push((name, unpack_error.clone()));
+            }
+            (
+                Some(girt::push::Status::Rejected(_)),
+                Some(girt::push::RejectionOrigin::ExpectedValue),
+            ) => {
+                // The remote ref didn't match the expected location.
+                stats.rejected.push((name, Some("stale info".to_owned())));
+            }
+            (Some(girt::push::Status::Rejected(reason)), _) => {
+                let reason = (!reason.is_empty()).then(|| reason.to_str_lossy().into_owned());
+                stats.remote_rejected.push((name, reason));
+            }
+            (None, _) => {
+                stats
+                    .remote_rejected
+                    .push((name, Some("no status reported by the remote".to_owned())));
+            }
+            _ => {
+                stats.remote_rejected.push((
+                    name,
+                    Some("unsupported status reported by the remote".to_owned()),
+                ));
+            }
+        }
+    }
+    stats
+}
+
+/// Adapts girt transfer callbacks to jj's progress and sideband callbacks.
 struct Callbacks<'a> {
     callback: &'a mut dyn GitSubprocessCallback,
     progress: GitProgress,

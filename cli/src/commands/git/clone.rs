@@ -380,7 +380,7 @@ async fn fetch_new_remote(
     let settings = workspace_command.settings();
     let git_settings = GitSettings::from_settings(settings)?;
     let remote_settings = settings.remote_settings()?;
-    let subprocess_options = git_settings.to_subprocess_options();
+    let subprocess_options = git_settings.to_transport_options();
     let import_options = GitImportOptions {
         // There may be a large number of new commits. Don't record synthetic
         // predecessors.
