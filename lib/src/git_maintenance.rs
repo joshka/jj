@@ -14,7 +14,6 @@
 
 //! Git object-store garbage collection.
 
-#![allow(dead_code)]
 //!
 //! This follows the safety model of `git gc --prune=<cutoff>`: a `gc.pid`
 //! lock excludes concurrent collectors, and every object reachable from refs,

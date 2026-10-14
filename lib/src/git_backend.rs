@@ -1915,15 +1915,8 @@ impl GitBackend {
             .gc(&table, keep_newer)
             .map_err(|err| BackendError::Other(err.into()))?;
 
-        run_git_gc(
-            self.git_executable.as_ref(),
-            self.git_repo_path(),
-            keep_newer,
-        )
-        .map_err(|err| BackendError::Other(err.into()))?;
-        // Since "git gc" will move loose refs into packed refs, in-memory
-        // packed-refs cache should be invalidated without relying on mtime.
-        git_repo.refs.force_refresh_packed_buffer().ok();
+        crate::git_maintenance::collect_garbage(&self.native_git_repo(), keep_newer)
+            .map_err(|err| BackendError::Other(err.into()))?;
         Ok(())
     }
 }
