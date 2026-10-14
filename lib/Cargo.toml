@@ -35,6 +35,7 @@ digest = { workspace = true }
 dunce = { workspace = true }
 either = { workspace = true }
 futures = { workspace = true }
+girt = { workspace = true }
 gix = { workspace = true, optional = true }
 gix-ignore = { workspace = true }
 globset = { workspace = true }
@@ -85,7 +86,7 @@ nix = { workspace = true, features = [ "fs" ] }
 
 [features]
 default = ["git"]
-git = ["dep:gix"]
+git = ["dep:gix", "girt/http", "girt/ssh", "dep:tokio"]
 watchman = ["dep:watchman_client", "dep:tokio"]
 testing = ["git"]
 

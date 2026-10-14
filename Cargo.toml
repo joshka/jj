@@ -69,6 +69,7 @@ gix = { version = "0.88.0", default-features = false, features = [
     "sha256",
 ] }
 gix-ignore = { version = "0.23.0" }
+girt = { git = "https://github.com/joshka/girt", rev = "9606037b182281b59774e861c933c8f6d490a2b6" }
 globset = "0.4.18"
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more"] }
 indexmap = { version = "2.14.0", features = ["serde"] }
