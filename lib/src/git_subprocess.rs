@@ -737,47 +737,9 @@ fn parse_git_push_output(output: Output) -> Result<GitPushStats, GitSubprocessEr
     }
 }
 
-/// Handles Git command outputs.
-pub trait GitSubprocessCallback {
-    /// Whether to request progress information.
-    fn needs_progress(&self) -> bool;
-
-    /// Progress of local and remote operations.
-    fn progress(&mut self, progress: &GitProgress) -> io::Result<()>;
-
-    /// Single-line message that doesn't look like remote sideband or error.
-    ///
-    /// This may include authentication request from credential helpers.
-    fn local_sideband(
-        &mut self,
-        message: &[u8],
-        term: Option<GitSidebandLineTerminator>,
-    ) -> io::Result<()>;
-
-    /// Single-line sideband message received from remote.
-    fn remote_sideband(
-        &mut self,
-        message: &[u8],
-        term: Option<GitSidebandLineTerminator>,
-    ) -> io::Result<()>;
-}
-
-/// Newline character that terminates sideband message line.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(u8)]
-pub enum GitSidebandLineTerminator {
-    /// CR to remain on the same line.
-    Cr = b'\r',
-    /// LF to move to the next line.
-    Lf = b'\n',
-}
-
-impl GitSidebandLineTerminator {
-    /// Returns byte representation.
-    pub fn as_byte(self) -> u8 {
-        self as u8
-    }
-}
+pub use crate::git_transport::GitProgress;
+pub use crate::git_transport::GitSidebandLineTerminator;
+pub use crate::git_transport::GitSubprocessCallback;
 
 fn wait_with_output(child: Child) -> Result<Output, GitSubprocessError> {
     child.wait_with_output().map_err(GitSubprocessError::Wait)
@@ -824,39 +786,6 @@ fn wait_with_progress(
         stdout,
         stderr,
     })
-}
-
-/// Progress of underlying `git` command operation.
-#[derive(Clone, Debug, Default)]
-pub struct GitProgress {
-    /// `(frac, total)` of "Resolving deltas".
-    pub deltas: (u64, u64),
-    /// `(frac, total)` of "Receiving objects".
-    pub objects: (u64, u64),
-    /// `(frac, total)` of remote "Counting objects".
-    pub counted_objects: (u64, u64),
-    /// `(frac, total)` of remote "Compressing objects".
-    pub compressed_objects: (u64, u64),
-}
-
-// TODO: maybe let callers print each field separately and remove overall()?
-impl GitProgress {
-    /// Overall progress normalized to 0 to 1 range.
-    pub fn overall(&self) -> f32 {
-        if self.total() != 0 {
-            self.fraction() as f32 / self.total() as f32
-        } else {
-            0.0
-        }
-    }
-
-    fn fraction(&self) -> u64 {
-        self.objects.0 + self.deltas.0 + self.counted_objects.0 + self.compressed_objects.0
-    }
-
-    fn total(&self) -> u64 {
-        self.objects.1 + self.deltas.1 + self.counted_objects.1 + self.compressed_objects.1
-    }
 }
 
 fn read_to_end_with_progress<R: Read>(
