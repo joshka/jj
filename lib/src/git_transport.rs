@@ -24,7 +24,7 @@ use thiserror::Error;
 
 use crate::git::GitPushOptions;
 use crate::git::GitPushStats;
-use crate::git::GitSubprocessOptions as GitTransportOptions;
+use crate::git::GitTransportOptions;
 use crate::git::NegativeRefSpec;
 use crate::git::RefSpec;
 use crate::git::RefToPush;
@@ -225,7 +225,7 @@ impl GitTransport {
                 None => girt::ObjectId::null(format),
             };
             commands.push(
-                girt::push::PushCommand::new(name, reference.expected_location.map(|id| girt::ObjectId::from_bytes(format, id.as_bytes()).unwrap()), new)
+                girt::push::PushCommand::new(name, reference.expected_location.copied(), new)
                     .with_force(girt::push::ForcePolicy::Allow),
             );
         }

@@ -35,6 +35,7 @@ use jj_lib::git::GitExportStats;
 use jj_lib::git::GitImportOptions;
 use jj_lib::git::GitImportRefUpdate;
 use jj_lib::git::GitImportStats;
+use jj_lib::git::GitCredentialPrompt;
 use jj_lib::git::GitProgress;
 use jj_lib::git::GitPushStats;
 use jj_lib::git::GitRefKind;
@@ -199,6 +200,16 @@ impl GitSubprocessCallback for GitSubprocessUi<'_> {
     ) -> io::Result<()> {
         self.write_sideband(b"remote: ", message, term)
     }
+    fn credential(&mut self, url: &str, prompt: GitCredentialPrompt) -> Option<String> {
+        let result = match prompt {
+            GitCredentialPrompt::Username => self.ui.prompt(&format!("Username for '{url}'")),
+            GitCredentialPrompt::Password => {
+                self.ui.prompt_password(&format!("Password for '{url}': "))
+            }
+        };
+        result.ok()
+    }
+
 }
 
 pub fn load_git_import_options(

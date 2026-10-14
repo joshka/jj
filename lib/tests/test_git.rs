@@ -16,6 +16,7 @@ use std::assert_matches;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::fs;
 use std::io;
 use std::io::Write as _;
@@ -59,7 +60,7 @@ use jj_lib::git::GitResetHeadError;
 use jj_lib::git::GitSettings;
 use jj_lib::git::GitSidebandLineTerminator;
 use jj_lib::git::GitSubprocessCallback;
-use jj_lib::git::GitSubprocessOptions;
+use jj_lib::git::GitTransportOptions;
 use jj_lib::git::IgnoredRefspec;
 use jj_lib::git::IgnoredRefspecs;
 use jj_lib::git::expand_fetch_refspecs;
@@ -156,6 +157,14 @@ fn jj_id(id: gix::ObjectId) -> CommitId {
 
 fn git_id(commit: &Commit) -> gix::ObjectId {
     gix::ObjectId::from_bytes_or_panic(commit.id().as_bytes())
+}
+
+fn girt_id(commit: &Commit) -> girt::ObjectId {
+    let format = match commit.id().as_bytes().len() {
+        20 => girt::ObjectFormat::Sha1,
+        _ => girt::ObjectFormat::Sha256,
+    };
+    girt::ObjectId::from_bytes(format, commit.id().as_bytes()).unwrap()
 }
 
 fn remote_symbol<'a, N, M>(name: &'a N, remote: &'a M) -> RemoteRefSymbol<'a>
@@ -4180,7 +4189,7 @@ fn test_init() -> TestResult {
 #[test]
 fn test_fetch_empty_repo() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
 
     let mut tx = test_data.repo.start_transaction();
@@ -4200,7 +4209,7 @@ fn test_fetch_empty_repo() -> TestResult {
 #[test]
 fn test_fetch_initial_commit_head_is_not_set() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     let initial_git_commit = empty_git_commit(&test_data.origin_repo, "refs/heads/main", &[]);
 
@@ -4245,7 +4254,7 @@ fn test_fetch_initial_commit_head_is_not_set() -> TestResult {
 #[test]
 fn test_fetch_initial_commit_head_is_set() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     let initial_git_commit = empty_git_commit(&test_data.origin_repo, "refs/heads/main", &[]);
     testutils::git::set_symbolic_reference(&test_data.origin_repo, "HEAD", "refs/heads/main");
@@ -4276,7 +4285,7 @@ fn test_fetch_initial_commit_head_is_set() -> TestResult {
 #[test]
 fn test_fetch_success() -> TestResult {
     let mut test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = auto_track_import_options();
     let initial_git_commit = empty_git_commit(&test_data.origin_repo, "refs/heads/main", &[]);
 
@@ -4387,7 +4396,7 @@ fn test_fetch_prune_deleted_ref() -> TestResult {
 #[test]
 fn test_fetch_no_default_branch() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     let initial_git_commit = empty_git_commit(&test_data.origin_repo, "refs/heads/main", &[]);
 
@@ -4418,7 +4427,7 @@ fn test_fetch_no_default_branch() -> TestResult {
 #[test]
 fn test_fetch_empty_refspecs() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     empty_git_commit(&test_data.origin_repo, "refs/heads/main", &[]);
 
@@ -4451,19 +4460,35 @@ fn test_fetch_environment_options() -> TestResult {
     let temp_dir = testutils::new_temp_dir();
     let test_data = GitRepoData::create();
 
+    // The environment is passed to transport programs, such as the SSH command.
     let import_options = default_import_options();
-    let mut subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
-    let trace_path = temp_dir.path().join("git-trace.log");
-    subprocess_options
-        .environment
-        .insert("GIT_TRACE".into(), trace_path.clone().into());
+    let (subprocess_options, marker_path) = ssh_marker_environment(&temp_dir);
+    git::set_remote_urls(
+        test_data.repo.store(),
+        "origin".as_ref(),
+        Some("ssh://example.invalid/repo"),
+        None,
+    )?;
 
     let mut tx = test_data.repo.start_transaction();
     let mut fetcher = GitFetch::new(tx.repo_mut(), subprocess_options, &import_options)?;
-    fetch_all_with(&mut fetcher, "origin".as_ref())?;
+    assert!(fetch_all_with(&mut fetcher, "origin".as_ref()).is_err());
 
-    assert!(trace_path.exists());
+    assert!(marker_path.exists());
     Ok(())
+}
+
+fn ssh_marker_environment(temp_dir: &TempDir) -> (GitTransportOptions, PathBuf) {
+    let marker_path = temp_dir.path().join("ssh-invoked");
+    let mut options = GitTransportOptions::default();
+    options.environment.insert(
+        "GIT_SSH_COMMAND".into(),
+        "touch \"$JJ_TEST_MARKER\"; exit 1; true".into(),
+    );
+    options
+        .environment
+        .insert("JJ_TEST_MARKER".into(), marker_path.clone().into());
+    (options, marker_path)
 }
 
 #[test]
@@ -4671,7 +4696,7 @@ fn test_load_default_fetch_bookmarks_invalid_configuration() -> TestResult {
 #[test]
 fn test_fetch_no_such_remote() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     let mut tx = test_data.repo.start_transaction();
     let mut fetcher = GitFetch::new(tx.repo_mut(), subprocess_options, &import_options)?;
@@ -4684,7 +4709,7 @@ fn test_fetch_no_such_remote() -> TestResult {
 fn test_fetch_multiple_branches() -> TestResult {
     let test_data = GitRepoData::create();
     let _initial_git_commit = empty_git_commit(&test_data.origin_repo, "refs/heads/main", &[]);
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
 
     let mut tx = test_data.repo.start_transaction();
@@ -4714,7 +4739,7 @@ fn test_fetch_multiple_branches() -> TestResult {
 #[test]
 fn test_fetch_local_remote_conflicts() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = auto_track_import_options();
 
     let fetch_import = |mut_repo: &mut MutableRepo| {
@@ -4821,7 +4846,7 @@ fn test_fetch_with_tag_changes() -> TestResult {
 #[test]
 fn test_fetch_with_explicit_tag_patterns() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
 
     let fetch_import = |mut_repo: &mut MutableRepo, tag: StringExpression| {
@@ -4905,7 +4930,7 @@ fn test_fetch_with_explicit_tag_patterns() -> TestResult {
 #[test]
 fn test_fetch_export_annotated_tags() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
 
     let fetch_import = |mut_repo: &mut MutableRepo| {
@@ -5104,7 +5129,7 @@ fn test_push_bookmarks_success() -> TestResult {
     let mut setup = set_up_push_repos(&settings, &temp_dir);
     let clone_repo = get_git_repo(&setup.jj_repo);
     let mut tx = setup.jj_repo.start_transaction();
-    let subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
+    let subprocess_options = GitTransportOptions::from_settings(&settings)?;
     let import_options = default_import_options();
 
     let targets = GitPushRefTargets {
@@ -5179,7 +5204,7 @@ fn test_push_bookmarks_deletion() -> TestResult {
     let mut setup = set_up_push_repos(&settings, &temp_dir);
     let clone_repo = get_git_repo(&setup.jj_repo);
     let mut tx = setup.jj_repo.start_transaction();
-    let subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
+    let subprocess_options = GitTransportOptions::from_settings(&settings)?;
     let import_options = default_import_options();
 
     let source_repo = testutils::git::open(&setup.source_repo_dir);
@@ -5251,7 +5276,7 @@ fn test_push_bookmarks_mixed_deletion_and_addition() -> TestResult {
     let temp_dir = testutils::new_temp_dir();
     let mut setup = set_up_push_repos(&settings, &temp_dir);
     let mut tx = setup.jj_repo.start_transaction();
-    let subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
+    let subprocess_options = GitTransportOptions::from_settings(&settings)?;
     let import_options = default_import_options();
 
     let targets = GitPushRefTargets {
@@ -5338,7 +5363,7 @@ fn test_push_bookmarks_not_fast_forward() -> TestResult {
     let temp_dir = testutils::new_temp_dir();
     let setup = set_up_push_repos(&settings, &temp_dir);
     let mut tx = setup.jj_repo.start_transaction();
-    let subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
+    let subprocess_options = GitTransportOptions::from_settings(&settings)?;
 
     let targets = GitPushRefTargets {
         bookmarks: vec![(
@@ -5384,7 +5409,7 @@ fn test_push_bookmarks_partial_success() -> TestResult {
     let temp_dir = testutils::new_temp_dir();
     let setup = set_up_push_repos(&settings, &temp_dir);
     let mut tx = setup.jj_repo.start_transaction();
-    let subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
+    let subprocess_options = GitTransportOptions::from_settings(&settings)?;
 
     let targets = GitPushRefTargets {
         bookmarks: vec![
@@ -5462,21 +5487,21 @@ fn test_push_bookmarks_partial_success() -> TestResult {
 #[test]
 fn test_push_bookmarks_unmapped_refs() -> TestResult {
     let test_repo = TestRepo::init_with_backend(TestRepoBackend::Git);
-    let subprocess_options = GitSubprocessOptions::from_settings(test_repo.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_repo.repo.settings())?;
     let remote_git_repo = testutils::git::init_bare(test_repo.env.root().join("remote"));
 
     // Add remote with refspecs that map only specific branch
     let repo = &test_repo.repo;
     let git_repo = get_git_repo(repo);
-    let mut remote = git_repo
-        .remote_at(remote_git_repo.path().to_str().unwrap())?
-        .with_refspecs(
-            ["+refs/heads/dummy:refs/remotes/origin/dummy"],
-            gix::remote::Direction::Fetch,
-        )?;
-    let mut config = git_repo.config_snapshot().clone();
-    remote.save_as_to("origin", &mut config).unwrap();
-    git::save_git_config(&config)?;
+    let config_path = git_repo.path().join("config");
+    let mut config = std::fs::read_to_string(&config_path)?;
+    writeln!(
+        config,
+        "[remote \"origin\"]\n\turl = {}\n\tfetch = +refs/heads/dummy:refs/remotes/origin/dummy",
+        remote_git_repo.path().to_str().unwrap()
+    )
+    .unwrap();
+    std::fs::write(&config_path, config)?;
     // Reload after Git configuration change.
     let repo = test_repo
         .env
@@ -5578,7 +5603,7 @@ fn test_push_bookmarks_unmapped_refs() -> TestResult {
 #[test]
 fn test_push_new_tags() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     let origin_repo = test_data.origin_repo;
     let git_repo = test_data.git_repo;
@@ -5651,7 +5676,7 @@ fn test_push_new_tags() -> TestResult {
 #[test]
 fn test_push_deleted_tags() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     let origin_repo = test_data.origin_repo;
 
@@ -5739,7 +5764,7 @@ fn test_push_deleted_tags() -> TestResult {
 #[test]
 fn test_push_moved_tags_without_fetching() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     let origin_repo = test_data.origin_repo;
     let git_repo = test_data.git_repo;
@@ -5840,7 +5865,7 @@ fn test_push_moved_tags_without_fetching() -> TestResult {
 #[test]
 fn test_push_deleted_tags_without_fetching() -> TestResult {
     let test_data = GitRepoData::create();
-    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
+    let subprocess_options = GitTransportOptions::from_settings(test_data.repo.settings())?;
     let import_options = default_import_options();
     let origin_repo = test_data.origin_repo;
     let git_repo = test_data.git_repo;
@@ -5953,11 +5978,11 @@ fn test_push_updates_unexpectedly_moved_sideways_on_remote() -> TestResult {
     // conflict `jj git fetch` would generate resolves to the push destination.
 
     let attempt_push_expecting_sideways = |target: Option<&Commit>| {
-        let subprocess_options = GitSubprocessOptions::from_settings(&settings).unwrap();
+        let subprocess_options = GitTransportOptions::from_settings(&settings).unwrap();
         let targets = [GitRefUpdate {
             qualified_name: "refs/heads/main".into(),
             targets: Diff::new(Some(&setup.sideways_commit), target)
-                .map(|commit| commit.map(git_id)),
+                .map(|commit| commit.map(girt_id)),
         }];
         git::push_updates(
             setup.jj_repo.as_ref(),
@@ -6038,11 +6063,11 @@ fn test_push_updates_unexpectedly_moved_forward_on_remote() -> TestResult {
     // conflict `jj git fetch` would generate resolves to the push destination.
 
     let attempt_push_expecting_parent = |target: Option<&Commit>| {
-        let subprocess_options = GitSubprocessOptions::from_settings(&settings).unwrap();
+        let subprocess_options = GitTransportOptions::from_settings(&settings).unwrap();
         let targets = [GitRefUpdate {
             qualified_name: "refs/heads/main".into(),
             targets: Diff::new(Some(&setup.parent_of_main_commit), target)
-                .map(|commit| commit.map(git_id)),
+                .map(|commit| commit.map(girt_id)),
         }];
         git::push_updates(
             setup.jj_repo.as_ref(),
@@ -6104,10 +6129,10 @@ fn test_push_updates_unexpectedly_exists_on_remote() -> TestResult {
     // conflict `jj git fetch` would generate resolves to the push destination.
 
     let attempt_push_expecting_absence = |target: Option<&Commit>| {
-        let subprocess_options = GitSubprocessOptions::from_settings(&settings).unwrap();
+        let subprocess_options = GitTransportOptions::from_settings(&settings).unwrap();
         let targets = [GitRefUpdate {
             qualified_name: "refs/heads/main".into(),
-            targets: Diff::new(None, target).map(|commit| commit.map(git_id)),
+            targets: Diff::new(None, target).map(|commit| commit.map(girt_id)),
         }];
         git::push_updates(
             setup.jj_repo.as_ref(),
@@ -6141,7 +6166,7 @@ fn test_push_updates_success() -> TestResult {
     let settings = testutils::user_settings();
     let temp_dir = testutils::new_temp_dir();
     let setup = set_up_push_repos(&settings, &temp_dir);
-    let subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
+    let subprocess_options = GitTransportOptions::from_settings(&settings)?;
     let clone_repo = get_git_repo(&setup.jj_repo);
     let stats = git::push_updates(
         setup.jj_repo.as_ref(),
@@ -6150,7 +6175,7 @@ fn test_push_updates_success() -> TestResult {
         &[GitRefUpdate {
             qualified_name: "refs/heads/main".into(),
             targets: Diff::new(&setup.main_commit, &setup.child_of_main_commit)
-                .map(|commit| Some(git_id(commit))),
+                .map(|commit| Some(girt_id(commit))),
         }],
         &mut NullCallback,
         &GitPushOptions::default(),
@@ -6187,7 +6212,7 @@ fn test_push_updates_no_such_remote() -> TestResult {
     let settings = testutils::user_settings();
     let temp_dir = testutils::new_temp_dir();
     let setup = set_up_push_repos(&settings, &temp_dir);
-    let subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
+    let subprocess_options = GitTransportOptions::from_settings(&settings)?;
     let result = git::push_updates(
         setup.jj_repo.as_ref(),
         subprocess_options,
@@ -6195,7 +6220,7 @@ fn test_push_updates_no_such_remote() -> TestResult {
         &[GitRefUpdate {
             qualified_name: "refs/heads/main".into(),
             targets: Diff::new(&setup.main_commit, &setup.child_of_main_commit)
-                .map(|commit| Some(git_id(commit))),
+                .map(|commit| Some(girt_id(commit))),
         }],
         &mut NullCallback,
         &GitPushOptions::default(),
@@ -6209,7 +6234,7 @@ fn test_push_updates_invalid_remote() -> TestResult {
     let settings = testutils::user_settings();
     let temp_dir = testutils::new_temp_dir();
     let setup = set_up_push_repos(&settings, &temp_dir);
-    let subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
+    let subprocess_options = GitTransportOptions::from_settings(&settings)?;
     let result = git::push_updates(
         setup.jj_repo.as_ref(),
         subprocess_options,
@@ -6217,7 +6242,7 @@ fn test_push_updates_invalid_remote() -> TestResult {
         &[GitRefUpdate {
             qualified_name: "refs/heads/main".into(),
             targets: Diff::new(&setup.main_commit, &setup.child_of_main_commit)
-                .map(|commit| Some(git_id(commit))),
+                .map(|commit| Some(girt_id(commit))),
         }],
         &mut NullCallback,
         &GitPushOptions::default(),
@@ -6232,12 +6257,15 @@ fn test_push_environment_options() -> TestResult {
     let temp_dir = testutils::new_temp_dir();
     let setup = set_up_push_repos(&settings, &temp_dir);
     let mut tx = setup.jj_repo.start_transaction();
-    let mut subprocess_options = GitSubprocessOptions::from_settings(&settings)?;
 
-    let trace_path = temp_dir.path().join("git-trace.log");
-    subprocess_options
-        .environment
-        .insert("GIT_TRACE".into(), trace_path.clone().into());
+    // The environment is passed to transport programs, such as the SSH command.
+    let (subprocess_options, marker_path) = ssh_marker_environment(&temp_dir);
+    git::set_remote_urls(
+        setup.jj_repo.store(),
+        "origin".as_ref(),
+        Some("ssh://example.invalid/repo"),
+        None,
+    )?;
 
     let targets = GitPushRefTargets {
         bookmarks: vec![(
@@ -6250,16 +6278,17 @@ fn test_push_environment_options() -> TestResult {
         tags: vec![],
     };
 
-    git::push_refs(
+    let result = git::push_refs(
         tx.repo_mut(),
         subprocess_options,
         "origin".as_ref(),
         &targets,
         &mut NullCallback,
         &GitPushOptions::default(),
-    )?;
+    );
+    assert!(result.is_err());
 
-    assert!(trace_path.exists());
+    assert!(marker_path.exists());
     Ok(())
 }
 
@@ -6896,7 +6925,7 @@ fn test_push_updates_with_options() -> TestResult {
         &[GitRefUpdate {
             qualified_name: "refs/heads/main".into(),
             targets: Diff::new(&setup.main_commit, &setup.child_of_main_commit)
-                .map(|commit| Some(git_id(commit))),
+                .map(|commit| Some(girt_id(commit))),
         }],
         &mut callback,
         &GitPushOptions {

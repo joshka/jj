@@ -48,12 +48,12 @@ use crate::file_util::PathError;
 use crate::file_util::is_empty_dir;
 use crate::git_backend::GitBackend;
 use crate::git_backend::to_git_object_id;
-use crate::git_subprocess::GitFetchStatus;
-pub use crate::git_subprocess::GitProgress;
-pub use crate::git_subprocess::GitSidebandLineTerminator;
-pub use crate::git_subprocess::GitSubprocessCallback;
-use crate::git_subprocess::GitSubprocessContext;
-use crate::git_subprocess::GitSubprocessError;
+pub use crate::git_transport::GitProgress;
+pub use crate::git_transport::GitSidebandLineTerminator;
+pub use crate::git_transport::GitSubprocessCallback;
+use crate::git_transport::GitTransport;
+pub use crate::git_transport::GitTransportError;
+pub use crate::git_transport::GitCredentialPrompt;
 use crate::index::IndexError;
 use crate::matchers::EverythingMatcher;
 use crate::merge::Diff;
@@ -240,7 +240,6 @@ const INDEX_DUMMY_CONFLICT_FILE: &str = ".jj-do-not-resolve-this-conflict";
 #[derive(Clone, Debug)]
 pub struct GitSettings {
     pub abandon_unreachable_commits: bool,
-    pub executable_path: PathBuf,
     pub record_synthetic_predecessors: bool,
     pub write_change_id_header: bool,
 }
@@ -249,21 +248,14 @@ impl GitSettings {
     pub fn from_settings(settings: &UserSettings) -> Result<Self, ConfigGetError> {
         Ok(Self {
             abandon_unreachable_commits: settings.get_bool("git.abandon-unreachable-commits")?,
-            executable_path: settings.get("git.executable-path")?,
             record_synthetic_predecessors: settings
                 .get_bool("git.record-synthetic-predecessors")?,
             write_change_id_header: settings.get("git.write-change-id-header")?,
         })
     }
 
-    pub fn to_subprocess_options(&self) -> GitSubprocessOptions {
-        GitSubprocessOptions {
-            executable_path: self.executable_path.clone(),
-            environment: HashMap::new(),
-        }
-    }
     pub fn to_transport_options(&self) -> GitTransportOptions {
-        self.to_subprocess_options()
+        GitTransportOptions::default()
     }
 
 }
@@ -288,7 +280,19 @@ impl GitSubprocessOptions {
     }
 }
 
-pub type GitTransportOptions = GitSubprocessOptions;
+#[derive(Clone, Debug, Default)]
+pub struct GitTransportOptions {
+    /// Environment variables to set (or override) for transports and the
+    /// programs they run, such as `GIT_SSH_COMMAND` or `GIT_ASKPASS`. Setting
+    /// these per operation avoids the need for process-wide state.
+    pub environment: HashMap<OsString, OsString>,
+}
+
+impl GitTransportOptions {
+    pub fn from_settings(_settings: &UserSettings) -> Result<Self, ConfigGetError> {
+        Ok(Self::default())
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum GitRemoteNameError {
@@ -447,13 +451,13 @@ impl NegativeRefSpec {
 /// remote it's being pushed to
 pub(crate) struct RefToPush<'a> {
     pub(crate) refspec: &'a RefSpec,
-    pub(crate) expected_location: Option<&'a gix::oid>,
+    pub(crate) expected_location: Option<&'a girt::ObjectId>,
 }
 
 impl<'a> RefToPush<'a> {
     fn new(
         refspec: &'a RefSpec,
-        expected_locations: &'a HashMap<&GitRefName, Option<&gix::oid>>,
+        expected_locations: &'a HashMap<&GitRefName, Option<&girt::ObjectId>>,
     ) -> Self {
         let expected_location = *expected_locations
             .get(GitRefName::new(&refspec.destination))
@@ -569,7 +573,7 @@ pub fn get_git_backend(store: &Store) -> Result<&GitBackend, UnexpectedGitBacken
 }
 
 /// Returns new thread-local instance to access to the underlying Git repo.
-fn get_native_git_repo(store: &Store) -> Result<girt::Repository, UnexpectedGitBackendError> {
+pub fn get_native_git_repo(store: &Store) -> Result<girt::Repository, UnexpectedGitBackendError> {
     get_git_backend(store).map(|backend| backend.native_git_repo())
 }
 
@@ -3789,7 +3793,7 @@ pub enum GitFetchError {
     #[error("Failed to update refs: {}", .0.iter().map(|n| n.as_symbol()).join(", "))]
     RejectedUpdates(Vec<GitRefNameBuf>),
     #[error(transparent)]
-    Subprocess(#[from] GitSubprocessError),
+    Transport(#[from] GitTransportError),
 }
 
 #[derive(Error, Debug)]
@@ -4131,8 +4135,8 @@ fn parse_fetch_refspec(
 /// Helper struct to execute multiple `git fetch` operations
 pub struct GitFetch<'a> {
     mut_repo: &'a mut MutableRepo,
-    git_repo: Box<gix::Repository>,
-    git_ctx: GitSubprocessContext,
+    git_repo: Box<girt::Repository>,
+    transport: GitTransport,
     import_options: &'a GitImportOptions,
     fetched: Vec<FetchedRefs>,
 }
@@ -4140,16 +4144,16 @@ pub struct GitFetch<'a> {
 impl<'a> GitFetch<'a> {
     pub fn new(
         mut_repo: &'a mut MutableRepo,
-        subprocess_options: GitSubprocessOptions,
+        transport_options: GitTransportOptions,
         import_options: &'a GitImportOptions,
     ) -> Result<Self, UnexpectedGitBackendError> {
         let git_backend = get_git_backend(mut_repo.store())?;
-        let git_repo = Box::new(git_backend.git_repo());
-        let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
+        let git_repo = Box::new(git_backend.native_git_repo());
+        let transport = GitTransport::from_git_backend(git_backend, transport_options);
         Ok(GitFetch {
             mut_repo,
             git_repo,
-            git_ctx,
+            transport,
             import_options,
             fetched: vec![],
         })
@@ -4166,7 +4170,7 @@ impl<'a> GitFetch<'a> {
         remote_name: &RemoteName,
         ExpandedFetchRefSpecs {
             expr,
-            refspecs: mut remaining_refspecs,
+            refspecs,
             negative_refspecs,
         }: ExpandedFetchRefSpecs,
         callback: &mut dyn GitSubprocessCallback,
@@ -4175,56 +4179,41 @@ impl<'a> GitFetch<'a> {
         validate_remote_name(remote_name)?;
 
         // check the remote exists
-        if try_find_active_remote_inner(&self.git_repo, remote_name).is_none() {
+        if native_try_find_active_remote_inner(&self.git_repo, remote_name).is_none() {
             return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
         }
 
-        if remaining_refspecs.is_empty() {
+        if refspecs.is_empty() {
             // Don't fall back to the base refspecs.
             return Ok(());
         }
 
-        let mut branches_to_prune = Vec::new();
-        // git unfortunately errors out if one of the many refspecs is not found
-        //
-        // our approach is to filter out failures and retry,
-        // until either all have failed or an attempt has succeeded
-        //
-        // even more unfortunately, git errors out one refspec at a time,
-        // meaning that the below cycle runs in O(#failed refspecs)
-        let updates = loop {
-            let status = self.git_ctx.spawn_fetch(
-                remote_name,
-                &remaining_refspecs,
-                &negative_refspecs,
-                callback,
-                depth,
-            )?;
-            let failing_refspec = match status {
-                GitFetchStatus::Updates(updates) => break updates,
-                GitFetchStatus::NoRemoteRef(failing_refspec) => failing_refspec,
-            };
-            tracing::debug!(failing_refspec, "failed to fetch ref");
-            remaining_refspecs.retain(|r| r.source.as_ref() != Some(&failing_refspec));
-
-            if let Some(branch_name) = failing_refspec.strip_prefix("refs/heads/") {
-                branches_to_prune.push(format!(
-                    "{remote_name}/{branch_name}",
-                    remote_name = remote_name.as_str()
-                ));
-            }
-        };
-
-        // Since remote refs are "force" updated, there should usually be no
-        // rejected refs. One exception is implicit tag updates.
-        if !updates.rejected.is_empty() {
-            let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
-            return Err(GitFetchError::RejectedUpdates(names));
+        // Destinations of exact refspecs whose source is missing on the remote
+        // are pruned along with the other stale remote-tracking refs.
+        let tag_namespace = format!(
+            "{REMOTE_TAG_REF_NAMESPACE}{remote}/",
+            remote = remote_name.as_str()
+        );
+        let outcome = self.transport.fetch(
+            remote_name,
+            &refspecs,
+            &negative_refspecs,
+            callback,
+            depth,
+            &tag_namespace,
+        )?;
+        for source in &outcome.missing_sources {
+            tracing::debug!(source, "failed to fetch ref");
         }
-
-        // Even if git fetch has --prune, if a branch is not found it will not be
-        // pruned on fetch
-        self.git_ctx.spawn_branch_prune(&branches_to_prune)?;
+        // The fetch installed new objects and moved refs.
+        let git_backend =
+            get_git_backend(self.mut_repo.store()).expect("backend type should have been tested");
+        *self.git_repo = git_backend.native_git_repo();
+        git_backend.refresh_objects().map_err(|err| {
+            GitFetchError::Transport(GitTransportError::Transfer(
+                girt::workflow::TransferError::Local(err.into()),
+            ))
+        })?;
 
         self.fetched.push(FetchedRefs {
             remote: remote_name.to_owned(),
@@ -4240,10 +4229,10 @@ impl<'a> GitFetch<'a> {
         &self,
         remote_name: &RemoteName,
     ) -> Result<Option<RefNameBuf>, GitFetchError> {
-        if try_find_active_remote_inner(&self.git_repo, remote_name).is_none() {
+        if native_try_find_active_remote_inner(&self.git_repo, remote_name).is_none() {
             return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
         }
-        let default_branch = self.git_ctx.spawn_remote_show(remote_name)?;
+        let default_branch = self.transport.default_branch(remote_name)?;
         tracing::debug!(?default_branch);
         Ok(default_branch)
     }
@@ -4258,10 +4247,12 @@ impl<'a> GitFetch<'a> {
     pub async fn import_refs(&mut self) -> Result<GitImportStats, GitImportError> {
         tracing::debug!("import_refs");
         let all_remote_tags = true;
+        let store = self.mut_repo.store().clone();
+        let git_backend = get_git_backend(&store)?;
         let refs_to_import = diff_refs_to_import(
             self.mut_repo.view(),
-            &get_native_git_repo(self.mut_repo.store())?,
-            get_git_backend(self.mut_repo.store())?,
+            &self.git_repo,
+            git_backend,
             all_remote_tags,
             |kind, symbol| match kind {
                 GitRefKind::Bookmark => self
@@ -4292,7 +4283,7 @@ pub enum GitPushError {
     #[error(transparent)]
     RemoteName(#[from] GitRemoteNameError),
     #[error(transparent)]
-    Subprocess(#[from] GitSubprocessError),
+    Transport(#[from] GitTransportError),
     #[error(transparent)]
     UnexpectedBackend(#[from] UnexpectedGitBackendError),
 }
@@ -4311,7 +4302,7 @@ pub struct GitRefUpdate {
     ///
     /// The expected position is sourced from the local remote-tracking branch.
     /// This should be `None` if we expect the ref to not exist on the remote.
-    pub targets: Diff<Option<gix::ObjectId>>,
+    pub targets: Diff<Option<girt::ObjectId>>,
 }
 
 /// Miscellaneous options for Git push command.
@@ -4324,7 +4315,7 @@ pub struct GitPushOptions {
 /// Pushes the specified refs and updates the repo view accordingly.
 pub fn push_refs(
     mut_repo: &mut MutableRepo,
-    subprocess_options: GitSubprocessOptions,
+    transport_options: GitTransportOptions,
     remote: &RemoteName,
     targets: &GitPushRefTargets,
     callback: &mut dyn GitSubprocessCallback,
@@ -4332,19 +4323,25 @@ pub fn push_refs(
 ) -> Result<GitPushStats, GitPushError> {
     validate_remote_name(remote)?;
 
-    let git_repo = get_git_repo(mut_repo.store())?;
+    let store = mut_repo.store().clone();
+    let git_backend = get_git_backend(&store)?;
+    let git_repo = git_backend.native_git_repo();
+    let git_refs = GitRefs::new(&git_repo, git_backend).map_err(|err| {
+        GitPushError::Transport(GitTransportError::Transfer(
+            girt::workflow::TransferError::Local(err),
+        ))
+    })?;
+    let to_oid = |id: &CommitId| oid_from_commit_id(&git_repo, id);
     let to_tag_target = |name: &RefName, remote: &RemoteName, id: &CommitId| {
         let remote_matcher = StringMatcher::exact(remote);
-        let oid = owned_oid_from_commit_id(id);
-        find_git_tag_oid_to_copy(mut_repo.view(), &git_repo, name, &remote_matcher, &oid)
+        let oid = to_oid(id);
+        native_find_git_tag_oid_to_copy(mut_repo.view(), &git_refs, name, &remote_matcher, oid)
             .unwrap_or(oid)
     };
     let ref_updates = itertools::chain(
         targets.bookmarks.iter().map(|(name, update)| GitRefUpdate {
             qualified_name: format!("refs/heads/{name}", name = name.as_str()).into(),
-            targets: update
-                .as_ref()
-                .map(|id| id.as_ref().map(owned_oid_from_commit_id)),
+            targets: update.as_ref().map(|id| id.as_ref().map(to_oid)),
         }),
         targets.tags.iter().map(|(name, update)| GitRefUpdate {
             qualified_name: format!("refs/tags/{name}", name = name.as_str()).into(),
@@ -4364,7 +4361,7 @@ pub fn push_refs(
 
     let push_stats = push_updates(
         mut_repo,
-        subprocess_options,
+        transport_options,
         remote,
         &ref_updates,
         callback,
@@ -4388,7 +4385,7 @@ pub fn push_refs(
     // case, this only updates our record about the last exported state.
     let unexported_bookmarks = {
         let refs = build_pushed_bookmarks_to_export(remote, pushed_bookmark_updates());
-        export_refs_to_git(mut_repo, &git_repo, GitRefKind::Bookmark, refs)
+        native_export_refs_to_git(mut_repo, &git_repo, GitRefKind::Bookmark, refs)
     };
     // Update remote tags so we can look up annotated tag oid without fetching.
     // Since remote tags should never be imported without fetching from the
@@ -4396,7 +4393,7 @@ pub fn push_refs(
     for (name, _, ref_update) in pushed_tag_updates() {
         let symbol = name.to_remote_symbol(remote);
         let edit = to_remote_tag_ref_update(symbol, ref_update.targets.after);
-        if let Err(err) = git_repo.edit_reference(edit) {
+        if let Err(err) = git_refs.transaction(&[edit]) {
             tracing::warn!(?symbol, ?err, "failed to update remote tag ref");
         }
     }
@@ -4438,7 +4435,7 @@ pub fn push_refs(
 /// Pushes the specified Git refs without updating the repo view.
 pub fn push_updates(
     repo: &dyn Repo,
-    subprocess_options: GitSubprocessOptions,
+    transport_options: GitTransportOptions,
     remote_name: &RemoteName,
     updates: &[GitRefUpdate],
     callback: &mut dyn GitSubprocessCallback,
@@ -4449,7 +4446,7 @@ pub fn push_updates(
     for update in updates {
         qualified_remote_refs_expected_locations.insert(
             update.qualified_name.as_ref(),
-            update.targets.before.as_deref(),
+            update.targets.before.as_ref(),
         );
         if let Some(new_target) = &update.targets.after {
             // We always force-push. We use the push_negotiation callback in
@@ -4468,11 +4465,11 @@ pub fn push_updates(
     }
 
     let git_backend = get_git_backend(repo.store())?;
-    let git_repo = git_backend.git_repo();
-    let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
+    let git_repo = git_backend.native_git_repo();
+    let transport = GitTransport::from_git_backend(git_backend, transport_options);
 
     // check the remote exists
-    if try_find_active_remote_inner(&git_repo, remote_name).is_none() {
+    if native_try_find_active_remote_inner(&git_repo, remote_name).is_none() {
         return Err(GitPushError::NoSuchRemote(remote_name.to_owned()));
     }
 
@@ -4481,7 +4478,7 @@ pub fn push_updates(
         .map(|full_refspec| RefToPush::new(full_refspec, &qualified_remote_refs_expected_locations))
         .collect();
 
-    let mut push_stats = git_ctx.spawn_push(remote_name, &refs_to_push, callback, options)?;
+    let mut push_stats = transport.push(remote_name, &refs_to_push, callback, options)?;
     push_stats.pushed.sort();
     push_stats.rejected.sort();
     push_stats.remote_rejected.sort();
@@ -4521,32 +4518,23 @@ fn build_pushed_bookmarks_to_export<'a>(
 /// Constructs `RefEdit` to update pushed remote tag ref.
 fn to_remote_tag_ref_update(
     symbol: RemoteRefSymbol<'_>,
-    new_oid: Option<gix::ObjectId>,
-) -> gix::refs::transaction::RefEdit {
-    // No constraint on existing ref because remote tag ref shouldn't be moved
-    // externally, and should always point to the actual remote ref.
-    let expected = gix::refs::transaction::PreviousValue::Any;
-    let change = match new_oid {
-        Some(oid) => gix::refs::transaction::Change::Update {
-            log: gix::refs::transaction::LogChange::default(),
-            expected,
-            new: oid.into(),
-        },
-        None => gix::refs::transaction::Change::Delete {
-            expected,
-            log: gix::refs::transaction::RefLog::AndReference,
-        },
-    };
+    new_oid: Option<girt::ObjectId>,
+) -> girt::refs::RefEdit {
     let name = format!(
         "{REMOTE_TAG_REF_NAMESPACE}{remote}/{name}",
         remote = symbol.remote.as_str(),
         name = symbol.name.as_str()
     );
-    gix::refs::transaction::RefEdit {
-        change,
-        name: name.try_into().expect("pushed ref name should be valid"),
-        deref: false,
-    }
+    girt::refs::RefEdit::new(
+        git_ref_name(&name).expect("pushed ref name should be valid"),
+        new_oid.map(girt::refs::Target::Direct),
+        girt::refs::Expected::Any,
+        if new_oid.is_some() {
+            girt::refs::Reflog::Preserve
+        } else {
+            girt::refs::Reflog::Delete
+        },
+    )
 }
 
 #[cfg(test)]
