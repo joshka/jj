@@ -1493,8 +1493,8 @@ dependencies = [
 
 [[package]]
 name = "girt"
-version = "0.9.1"
-source = "git+https://github.com/joshka/girt?rev=9606037b182281b59774e861c933c8f6d490a2b6#9606037b182281b59774e861c933c8f6d490a2b6"
+version = "0.9.2"
+source = "git+https://github.com/joshka/girt?rev=a92e9b0dc164b1d47ceba3445b266aaae3def5dd#a92e9b0dc164b1d47ceba3445b266aaae3def5dd"
 dependencies = [
  "aws-lc-rs",
  "crc32fast",
