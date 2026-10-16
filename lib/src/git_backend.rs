@@ -1565,9 +1565,11 @@ impl Backend for GitBackend {
             .with_track_empty(false)
             .with_candidate_limit(1000)
             .with_approximate_binary(false);
-        let rewrites = self
+        // Like Git's `diff.renameLimit`, too many candidates skip inexact detection but keep
+        // exact renames and copies. Copy records are best-effort, so report what was found.
+        let detection = self
             .objects()
-            .detect_rewrites(
+            .detect_rewrites_or_exact(
                 Some(root_tree),
                 Some(head_tree),
                 options,
@@ -1576,8 +1578,17 @@ impl Backend for GitBackend {
                 &AtomicBool::new(false),
             )
             .map_err(|err| BackendError::Other(err.into()))?;
+        if let Some(skipped) = detection.inexact_skipped {
+            tracing::info!(
+                sources = skipped.sources,
+                targets = skipped.targets,
+                suggested_limit = skipped.suggested_limit(),
+                "skipped inexact copy detection for too many candidates"
+            );
+        }
 
-        let records = rewrites
+        let records = detection
+            .rewrites
             .into_iter()
             .map(|rewrite| -> BackendResult<Option<CopyRecord>> {
                 let source = str::from_utf8(&rewrite.source)

@@ -410,6 +410,67 @@ fn test_copy_detection_file_and_dir() -> TestResult {
     Ok(())
 }
 
+/// Builds `count` small files with distinct content under `dir`.
+fn unique_files(dir: &str, count: usize) -> Vec<(RepoPathBuf, String)> {
+    (0..count)
+        .map(|i| (repo_path_buf(format!("{dir}/{i}")), format!("{dir} {i}\n")))
+        .collect()
+}
+
+// Many new files (as with 10,000 untracked files in `jj status`) must not fail copy detection;
+// one source against them is within the candidate limit, as in Git.
+#[test]
+fn test_copy_detection_many_added_files() -> TestResult {
+    let test_repo = TestRepo::init_with_backend(TestRepoBackend::Git);
+    let repo = &test_repo.repo;
+    let lines = "line 1\nline 2\nline 3\nline 4\n";
+    let edited = "line 1\nline 2\nline 3\nchanged\n";
+    let added = unique_files("added", 10_000);
+
+    let mut tx = repo.start_transaction();
+    let commit_a = make_commit(
+        &mut tx,
+        vec![repo.store().root_commit_id().clone()],
+        &[(repo_path("old"), lines)],
+    );
+    let mut content = vec![(repo_path("new"), edited)];
+    content.extend(added.iter().map(|(path, text)| (path.as_ref(), text.as_str())));
+    let commit_b = make_commit(&mut tx, vec![commit_a.id().clone()], &content);
+
+    assert_eq!(
+        get_copy_records(repo.store(), None, &commit_a, &commit_b),
+        HashMap::from([("new".to_owned(), "old".to_owned())])
+    );
+    Ok(())
+}
+
+// Over the candidate limit, inexact detection is skipped but exact renames are still reported.
+#[test]
+fn test_copy_detection_over_limit_keeps_exact() -> TestResult {
+    let test_repo = TestRepo::init_with_backend(TestRepoBackend::Git);
+    let repo = &test_repo.repo;
+    let removed = unique_files("removed", 1001);
+    let added = unique_files("added", 1001);
+
+    let mut tx = repo.start_transaction();
+    let mut content = vec![(repo_path("exact"), "same content\n")];
+    content.extend(removed.iter().map(|(path, text)| (path.as_ref(), text.as_str())));
+    let commit_a = make_commit(
+        &mut tx,
+        vec![repo.store().root_commit_id().clone()],
+        &content,
+    );
+    let mut content = vec![(repo_path("moved"), "same content\n")];
+    content.extend(added.iter().map(|(path, text)| (path.as_ref(), text.as_str())));
+    let commit_b = make_commit(&mut tx, vec![commit_a.id().clone()], &content);
+
+    assert_eq!(
+        get_copy_records(repo.store(), None, &commit_a, &commit_b),
+        HashMap::from([("moved".to_owned(), "exact".to_owned())])
+    );
+    Ok(())
+}
+
 #[test]
 fn test_jj_trees_header_with_one_tree() -> TestResult {
     let test_repo = TestRepo::init_with_backend(TestRepoBackend::Git);
