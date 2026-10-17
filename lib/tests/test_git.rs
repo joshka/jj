@@ -3894,6 +3894,44 @@ fn test_reset_head_with_index_no_conflict() -> TestResult {
     Ok(())
 }
 
+#[test_case(false; "matching")]
+#[test_case(true; "staged")]
+fn test_reset_head_reuses_only_matching_index(staged: bool) -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let workspace_root = test_workspace.workspace.workspace_root();
+    let mut tx = repo.start_transaction();
+    let mut_repo = tx.repo_mut();
+    let parent_tree = testutils::create_tree_with(repo, |builder| {
+        builder.file(repo_path("dir/file"), "parent\n");
+    });
+    let wc_tree = testutils::create_tree_with(repo, |builder| {
+        builder.file(repo_path("dir/file"), "parent\n");
+        builder.file(repo_path("added"), "new\n");
+    });
+    let parent = mut_repo
+        .new_commit(vec![repo.store().root_commit_id().clone()], parent_tree)
+        .write_unwrap();
+    let wc = mut_repo.new_commit(vec![parent.id().clone()], wc_tree).write_unwrap();
+    reset_head(mut_repo, &test_workspace.workspace, &wc)?;
+    let git_repo = girt::Repository::open(workspace_root)?;
+    let expected = git_repo.read_index(girt::index::Limits::trusted())?.unwrap();
+    let mut entries = expected.entries().to_vec();
+    let file = entries.iter_mut().find(|entry| entry.path == b"dir/file").unwrap();
+    file.assume_valid = true;
+    file.skip_worktree = true;
+    if staged {
+        file.id = git_repo.loose_objects().write_blob(b"staged\n")?;
+    }
+    let mut edit = git_repo.edit_index(girt::index::Limits::trusted())?;
+    edit.replace_entries(entries)?;
+    edit.commit()?;
+    reset_head(mut_repo, &test_workspace.workspace, &wc)?;
+    let actual = git_repo.read_index(girt::index::Limits::trusted())?.unwrap();
+    assert_eq!(actual.entries(), expected.entries());
+    Ok(())
+}
+
 #[test]
 fn test_reset_head_with_index_merge_conflict() -> TestResult {
     let test_workspace = TestWorkspace::init_colocated_git();

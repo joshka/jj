@@ -2333,6 +2333,9 @@ async fn reset_index(
     git_repo: &girt::Repository,
     wc_commit: &Commit,
 ) -> Result<(), GitResetHeadError> {
+    let mut edit = git_repo
+        .edit_index(girt::index::Limits::trusted())
+        .map_err(GitResetHeadError::from_git)?;
     let parent_tree = wc_commit.parent_tree(repo).await?;
     // Use the merged parent tree as the Git index, allowing `git diff` to show the
     // same changes as `jj diff`. If the merged parent tree has conflicts, then the
@@ -2344,9 +2347,6 @@ async fn reset_index(
 
     // Entries in the new index that match entries in the old index keep their
     // cached stat information, so Git doesn't need to rehash unchanged files.
-    let mut edit = git_repo
-        .edit_index(girt::index::Limits::trusted())
-        .map_err(GitResetHeadError::from_git)?;
     // Optional extensions (e.g. resolve-undo, untracked cache) describe the
     // old index contents.
     edit.make_standalone()
