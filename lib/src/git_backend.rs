@@ -720,6 +720,19 @@ impl GitBackend {
     }
 
     fn write_blob(&self, bytes: &[u8], object_type: &'static str) -> BackendResult<girt::ObjectId> {
+        // Snapshotting an existing checkout mostly finds content that is already packed. Like
+        // Git, store only what the repository lacks instead of writing loose duplicates.
+        let id = girt::ObjectId::for_blob(self.object_format(), bytes);
+        let present = self
+            .objects()
+            .contains(id)
+            .map_err(|err| BackendError::WriteObject {
+                object_type,
+                source: Box::new(err),
+            })?;
+        if present {
+            return Ok(id);
+        }
         self.repo
             .loose_objects()
             .write_blob(bytes)
