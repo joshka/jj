@@ -243,7 +243,7 @@ impl<'a> GitRefs<'a> {
             girt::refs::Target::Direct(id) => *id,
             // A dangling or unresolvable symbolic ref is an invalid ref.
             girt::refs::Target::Symbolic(name) => {
-                match self.refs.resolve(name, 5).ok().and_then(|r| r.id) {
+                match self.refs.resolve_with(name, 5).ok().and_then(|r| r.id) {
                     Some(id) => id,
                     None => return Ok(None),
                 }
@@ -1443,7 +1443,7 @@ pub fn export_some_refs(
             // Unborn ref should be considered absent
             let current_oid = git_refs
                 .refs()
-                .resolve(target_name, 5)
+                .resolve_with(target_name, 5)
                 .map_err(GitExportError::from_git)?
                 .id;
             let refs = match kind {

@@ -247,7 +247,7 @@ impl GitBackend {
         settings: &UserSettings,
     ) -> Result<Self, girt::OpenError> {
         let format = repo.object_format();
-        let objects = repo.objects(girt::PackLimits::trusted()).map_err(|err| {
+        let objects = repo.objects_with(girt::PackLimits::trusted()).map_err(|err| {
             girt::OpenError::Malformed {
                 path: repo.object_dir().to_owned(),
                 reason: err.to_string(),
@@ -620,7 +620,7 @@ impl GitBackend {
         let git_id = self.validate_git_object_id(id)?;
         let read = |objects: &girt::Objects| {
             objects
-                .read(git_id, girt::ReadLimits::trusted())
+                .read_with(git_id, girt::ReadLimits::trusted())
                 .map_err(|err| to_read_object_err(err, id))
         };
         let mut object = read(&self.objects.read().unwrap())?;
