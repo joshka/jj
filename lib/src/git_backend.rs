@@ -195,7 +195,7 @@ fn init_options(
     kind: girt::InitKind,
     format: girt::ObjectFormat,
 ) -> Result<girt::InitOptions, Box<GitBackendInitError>> {
-    let options = girt::InitOptions::new(kind).object_format(format);
+    let options = girt::InitOptions::new(kind).with_object_format(format);
     // An unreadable user configuration leaves Git's built-in defaults in place.
     match girt::Config::resolve(&git_config_inputs()) {
         Ok(config) => options

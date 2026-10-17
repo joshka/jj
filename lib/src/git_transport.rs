@@ -142,15 +142,15 @@ impl GitTransport {
                         .map(|refspec| refspec.to_git_format()),
                 ),
         )
-        .prune(true)
-        .depth(depth)
-        .reflog(
+        .with_prune(true)
+        .with_depth(depth)
+        .with_reflog(
             self.committer.clone(),
             format!("fetch {}", remote_name.as_str()),
         );
         let namespace = tag_namespace.trim_end_matches('/');
         if let Ok(namespace) = girt::refs::RefName::new(namespace) {
-            options = options.tag_namespace(namespace);
+            options = options.with_tag_namespace(namespace);
         }
         let mut callbacks = Callbacks::new(callback);
         let outcome = girt::workflow::fetch(
@@ -228,9 +228,9 @@ impl GitTransport {
             );
         }
         let mut push_options =
-            girt::workflow::PushOptions::default().identity(self.committer.clone());
+            girt::workflow::PushOptions::default().with_identity(self.committer.clone());
         for option in &options.remote_push_options {
-            push_options = push_options.push_option(option.as_bytes());
+            push_options = push_options.with_push_option(option.as_bytes());
         }
         let mut callbacks = Callbacks::new(callback);
         let report = girt::workflow::push(
