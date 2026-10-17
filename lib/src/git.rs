@@ -2214,7 +2214,8 @@ pub async fn reset_head(
 
     // If the first parent of the working copy has changed, reset the Git HEAD.
     let old_head_target = mut_repo.git_head(workspace_name);
-    if *old_head_target != new_head_target {
+    let head_changed = *old_head_target != new_head_target;
+    if head_changed {
         let expected_ref = if let Some(id) = old_head_target.as_normal() {
             // We have to check the actual HEAD state because we don't record a
             // symbolic ref as such.
@@ -2252,7 +2253,7 @@ pub async fn reset_head(
     // up.
     clear_operation_state(&git_repo)?;
 
-    reset_index(mut_repo, &git_repo, wc_commit).await
+    reset_index(mut_repo, &git_repo, wc_commit, !head_changed).await
 }
 
 fn clear_operation_state(git_repo: &girt::Repository) -> Result<(), GitResetHeadError> {
@@ -2332,18 +2333,57 @@ async fn reset_index(
     repo: &dyn Repo,
     git_repo: &girt::Repository,
     wc_commit: &Commit,
+    try_reuse: bool,
 ) -> Result<(), GitResetHeadError> {
-    let mut edit = git_repo
-        .edit_index(girt::index::Limits::trusted())
-        .map_err(GitResetHeadError::from_git)?;
     let parent_tree = wc_commit.parent_tree(repo).await?;
-    // Use the merged parent tree as the Git index, allowing `git diff` to show the
-    // same changes as `jj diff`. If the merged parent tree has conflicts, then the
-    // Git index will also be conflicted.
-    let mut entries = build_index_from_merged_tree(git_repo, &parent_tree)?;
-
     let wc_tree = wc_commit.tree();
+    // A changed HEAD normally requires a new index. Keep that path free of the
+    // extra parse/hash; unchanged HEAD still needs proof against staged Git edits.
+    let mut reused_edit = None;
+    if try_reuse && let Some(tree_id) = parent_tree.tree_ids().as_resolved() {
+        let edit = git_repo
+            .edit_index(girt::index::Limits::trusted())
+            .map_err(GitResetHeadError::from_git)?;
+        let index = edit.index();
+        let matches_parent = !index
+            .entries()
+            .iter()
+            .any(|entry| entry.mode == girt::index::Mode::SparseDirectory)
+            && index
+                .tree_id()
+                .is_some_and(|id| id.as_bytes() == tree_id.as_bytes());
+        if matches_parent {
+            reused_edit = Some(edit);
+        } else {
+            edit.abort().map_err(GitResetHeadError::from_git)?;
+        }
+    }
+    // Use the merged parent tree plus working-copy intent-to-add entries. Keep
+    // the proof's lock through publication; ordinary rebuilds read objects unlocked.
+    let mut entries = if let Some(edit) = &reused_edit {
+        edit.index()
+            .entries()
+            .iter()
+            .filter(|entry| !entry.intent_to_add)
+            .map(|entry| {
+                let mut entry = entry.clone();
+                entry.assume_valid = false;
+                entry.skip_worktree = false;
+                entry.stat = girt::index::Stat::default();
+                entry
+            })
+            .collect()
+    } else {
+        build_index_from_merged_tree(git_repo, &parent_tree)?
+    };
     update_intent_to_add_impl(git_repo, &mut entries, &parent_tree, &wc_tree).await?;
+    let mut edit = if let Some(edit) = reused_edit {
+        edit
+    } else {
+        git_repo
+            .edit_index(girt::index::Limits::trusted())
+            .map_err(GitResetHeadError::from_git)?
+    };
 
     // Entries in the new index that match entries in the old index keep their
     // cached stat information, so Git doesn't need to rehash unchanged files.
