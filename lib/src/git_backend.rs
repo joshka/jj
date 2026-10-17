@@ -580,13 +580,17 @@ impl GitBackend {
             .map(|&id| id.clone())
             .collect_vec();
         while let Some(id) = work_ids.pop() {
-            let data = self.read_git_object(&id, girt::ObjectKind::Commit)?;
+            let object = self.read_shared_git_object(&id, girt::ObjectKind::Commit)?;
             let is_shallow = shallow_roots.contains(&id);
             // TODO(#1624): Should we read the root tree here and check if it has a
             // `.jjconflict-...` entries? That could happen if the user used `git` to e.g.
             // change the description of a commit with tree-level conflicts.
-            let commit =
-                commit_from_git_without_root_parent(&id, self.object_format(), &data, is_shallow)?;
+            let commit = commit_from_git_without_root_parent(
+                &id,
+                self.object_format(),
+                object.data(),
+                is_shallow,
+            )?;
             mut_table.add_entry(id.to_bytes(), serialize_extras(&commit));
             work_ids.extend(
                 commit
@@ -617,6 +621,17 @@ impl GitBackend {
         id: &impl ObjectId,
         expected: girt::ObjectKind,
     ) -> BackendResult<Vec<u8>> {
+        self.read_shared_git_object(id, expected)
+            .map(girt::Object::into_data)
+    }
+
+    /// Like [`Self::read_git_object()`], but borrows the payload the object
+    /// store shares with its cache instead of copying it out.
+    fn read_shared_git_object(
+        &self,
+        id: &impl ObjectId,
+        expected: girt::ObjectKind,
+    ) -> BackendResult<girt::Object> {
         let git_id = self.validate_git_object_id(id)?;
         let read = |objects: &girt::Objects| {
             objects
@@ -647,7 +662,7 @@ impl GitBackend {
                 id,
             ));
         }
-        Ok(object.into_data())
+        Ok(object)
     }
 
     /// Returns the current pack-snapshot generation, for [`Self::peel()`].
@@ -863,32 +878,53 @@ pub fn canonicalize_git_repo_path(path: &Path) -> io::Result<PathBuf> {
     }
 }
 
+/// Headers that reading a commit looks up, found in one pass over the headers.
+const KNOWN_COMMIT_HEADERS: [&str; 5] = [
+    CHANGE_ID_COMMIT_HEADER,
+    JJ_CONFLICT_LABELS_COMMIT_HEADER,
+    JJ_TREES_COMMIT_HEADER,
+    "gpgsig",
+    "gpgsig-sha256",
+];
+
 /// Extra (non-standard) headers of a Git commit, in order, with folded
 /// continuation lines unfolded.
 struct CommitHeaders<'a> {
     payload: girt::CommitPayload<'a>,
+    /// First occurrence and index of each of [`KNOWN_COMMIT_HEADERS`].
+    known: [Option<(usize, girt::CommitHeaderRef<'a>)>; KNOWN_COMMIT_HEADERS.len()],
 }
 
 impl<'a> CommitHeaders<'a> {
     fn new(data: &'a [u8]) -> Self {
-        Self {
-            payload: girt::CommitPayload::from_bytes(data),
+        let payload = girt::CommitPayload::from_bytes(data);
+        let mut known = [None; KNOWN_COMMIT_HEADERS.len()];
+        for (index, header) in payload.headers().enumerate() {
+            if let Some(slot) = KNOWN_COMMIT_HEADERS
+                .iter()
+                .position(|name| header.name == name.as_bytes())
+            {
+                known[slot].get_or_insert((index, header));
+            }
+        }
+        Self { payload, known }
+    }
+
+    /// Returns the index and header of the first header with the given name.
+    fn first(&self, name: &str) -> Option<(usize, girt::CommitHeaderRef<'a>)> {
+        match KNOWN_COMMIT_HEADERS.iter().position(|known| *known == name) {
+            Some(slot) => self.known[slot],
+            None => self
+                .payload
+                .headers()
+                .enumerate()
+                .find(|(_, header)| header.name == name.as_bytes()),
         }
     }
 
     /// Returns the first header value with the given name.
     fn find(&self, name: &str) -> Option<Vec<u8>> {
-        self.payload
-            .headers()
-            .find(|header| header.name == name.as_bytes())
-            .map(|header| header.unfolded_value())
-    }
-
-    /// Returns the index of the first header with the given name.
-    fn position(&self, name: &str) -> Option<usize> {
-        self.payload
-            .headers()
-            .position(|header| header.name == name.as_bytes())
+        self.first(name).map(|(_, header)| header.unfolded_value())
     }
 }
 
@@ -1018,9 +1054,8 @@ fn commit_from_git_without_root_parent(
     // If the commit is signed, extract both the signature and the signed data
     // (which is the commit buffer with the signature header omitted).
     let secure_sig = headers
-        .position(signature_field_name(format)?)
-        .map(|index| {
-            let header = headers.payload.headers().nth(index).unwrap();
+        .first(signature_field_name(format)?)
+        .map(|(index, header)| {
             let data = headers
                 .payload
                 .without_headers(&[index])
@@ -1379,9 +1414,14 @@ impl Backend for GitBackend {
         }
 
         let mut commit = {
-            let data = self.read_git_object(id, girt::ObjectKind::Commit)?;
+            let object = self.read_shared_git_object(id, girt::ObjectKind::Commit)?;
             let is_shallow = self.shallow_root_ids().contains(id);
-            commit_from_git_without_root_parent(id, self.object_format(), &data, is_shallow)?
+            commit_from_git_without_root_parent(
+                id,
+                self.object_format(),
+                object.data(),
+                is_shallow,
+            )?
         };
         if commit.parents.is_empty() {
             commit.parents.push(self.root_commit_id.clone());
