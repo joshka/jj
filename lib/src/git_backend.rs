@@ -764,6 +764,16 @@ impl GitBackend {
         };
         let tree =
             girt::Tree::new(self.object_format(), entries).map_err(|err| to_err(err.into()))?;
+        // Merged trees that jj derives while rendering merge commits are usually already packed.
+        // As for blobs, store only what the repository lacks.
+        let id = tree.id();
+        if self
+            .objects()
+            .contains(id)
+            .map_err(|err| to_err(err.into()))?
+        {
+            return Ok(id);
+        }
         self.repo
             .loose_objects()
             .write_tree(&tree)
@@ -1829,6 +1839,75 @@ mod tests {
         )
         .unwrap()
         .to_thread_local()
+    }
+
+    #[test]
+    fn write_tree_skips_packed_trees() -> TestResult {
+        let settings = user_settings();
+        let temp_dir = new_temp_dir();
+        let store_path = temp_dir.path().join("store");
+        fs::create_dir(&store_path)?;
+        let git_repo_path = temp_dir.path().join("git");
+        let git_repo = git_init(&git_repo_path, gix::hash::Kind::default());
+        let git = |args: &[&str]| -> TestResult {
+            let output = Command::new("git")
+                .args([
+                    "-c",
+                    "user.name=Someone",
+                    "-c",
+                    "user.email=someone@example.com",
+                ])
+                .args(args)
+                .current_dir(&git_repo_path)
+                .output()?;
+            assert!(output.status.success(), "{output:?}");
+            Ok(())
+        };
+        fs::write(git_repo_path.join("file"), "contents\n")?;
+        git(&["add", "file"])?;
+        git(&["commit", "-q", "-m", "packed"])?;
+        git(&["repack", "-a", "-d", "-q"])?;
+        git(&["prune-packed"])?;
+        let commit_id =
+            CommitId::from_bytes(gix::open(git_repo_path.as_path())?.head_id()?.as_bytes());
+        let backend = GitBackend::init_external(&settings, &store_path, git_repo.path())?;
+        let loose_count = || {
+            fs::read_dir(backend.git_repo_path().join("objects"))
+                .unwrap()
+                .map(|entry| entry.unwrap())
+                .filter(|entry| entry.file_name().len() == 2)
+                .map(|entry| fs::read_dir(entry.path()).unwrap().count())
+                .sum::<usize>()
+        };
+        assert_eq!(loose_count(), 0);
+
+        let commit = backend.read_commit(&commit_id).block_on()?;
+        let tree_id = commit.root_tree.as_resolved().unwrap();
+        let tree = backend.read_tree(RepoPath::root(), tree_id).block_on()?;
+        assert_eq!(
+            backend.write_tree(RepoPath::root(), &tree).block_on()?,
+            *tree_id
+        );
+        assert_eq!(
+            loose_count(),
+            0,
+            "a packed tree was rewritten as a loose object"
+        );
+
+        // A tree the repository lacks is still stored.
+        let new_tree = Tree::from_sorted_entries(vec![(
+            RepoPathComponentBuf::new("subdir").unwrap(),
+            TreeValue::Tree(tree_id.clone()),
+        )]);
+        let new_tree_id = backend.write_tree(RepoPath::root(), &new_tree).block_on()?;
+        assert_eq!(loose_count(), 1);
+        assert_eq!(
+            backend
+                .read_tree(RepoPath::root(), &new_tree_id)
+                .block_on()?,
+            new_tree
+        );
+        Ok(())
     }
 
     #[test]
