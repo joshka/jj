@@ -3894,6 +3894,110 @@ fn test_reset_head_with_index_no_conflict() -> TestResult {
     Ok(())
 }
 
+#[test_case(false; "matching")]
+#[test_case(true; "staged")]
+fn test_reset_head_reuses_only_matching_index(staged: bool) -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let workspace_root = test_workspace.workspace.workspace_root();
+    let mut tx = repo.start_transaction();
+    let mut_repo = tx.repo_mut();
+    let parent_tree = testutils::create_tree_with(repo, |builder| {
+        builder.file(repo_path("dir/file"), "parent\n");
+    });
+    let wc_tree = testutils::create_tree_with(repo, |builder| {
+        builder.file(repo_path("dir/file"), "parent\n");
+        builder.file(repo_path("added"), "new\n");
+    });
+    let parent = mut_repo
+        .new_commit(vec![repo.store().root_commit_id().clone()], parent_tree)
+        .write_unwrap();
+    let wc = mut_repo
+        .new_commit(vec![parent.id().clone()], wc_tree)
+        .write_unwrap();
+    reset_head(mut_repo, &test_workspace.workspace, &wc)?;
+    let git_repo = girt::Repository::open(workspace_root)?;
+    let expected = git_repo
+        .read_index(girt::index::Limits::trusted())?
+        .unwrap();
+    let mut entries = expected.entries().to_vec();
+    let file = entries
+        .iter_mut()
+        .find(|entry| entry.path == b"dir/file")
+        .unwrap();
+    file.assume_valid = true;
+    file.skip_worktree = true;
+    if staged {
+        file.id = git_repo.loose_objects().write_blob(b"staged\n")?;
+    }
+    entries.push(
+        girt::index::Entry::new(
+            b"foreign-intent".to_vec(),
+            girt::index::Mode::Regular,
+            git_repo.loose_objects().write_blob(b"")?,
+        )
+        .with_intent_to_add(true),
+    );
+    let mut edit = git_repo.edit_index(girt::index::Limits::trusted())?;
+    edit.replace_entries(entries)?;
+    edit.commit()?;
+    reset_head(mut_repo, &test_workspace.workspace, &wc)?;
+    let actual = git_repo
+        .read_index(girt::index::Limits::trusted())?
+        .unwrap();
+    assert_eq!(actual.entries(), expected.entries());
+    Ok(())
+}
+
+#[test]
+fn test_reset_head_matching_index_does_not_read_parent_tree() -> TestResult {
+    let test_workspace = TestWorkspace::init_colocated_git();
+    let repo = &test_workspace.repo;
+    let workspace_root = test_workspace.workspace.workspace_root();
+    let mut tx = repo.start_transaction();
+    let tree = testutils::create_tree_with(repo, |builder| {
+        builder.file(repo_path("dir/file"), "parent\n");
+    });
+    let parent = tx
+        .repo_mut()
+        .new_commit(vec![repo.store().root_commit_id().clone()], tree.clone())
+        .write_unwrap();
+    let wc = tx
+        .repo_mut()
+        .new_commit(vec![parent.id().clone()], tree)
+        .write_unwrap();
+    reset_head(tx.repo_mut(), &test_workspace.workspace, &wc)?;
+    let git_repo = girt::Repository::open(workspace_root)?;
+    let index = git_repo
+        .read_index(girt::index::Limits::trusted())?
+        .unwrap();
+    let id = index.tree_id().unwrap().to_string();
+    tx.commit("test").block_on()?;
+    // A fresh store prevents cached trees from hiding an accidental full traversal.
+    let fresh_repo = test_workspace
+        .env
+        .load_repo_at_head(repo.settings(), test_workspace.workspace.repo_path());
+    let wc = fresh_repo.store().get_commit(wc.id())?;
+    // Only this disposable fixture loses its backing tree: traversing it must fail.
+    fs::remove_file(
+        git_repo
+            .git_dir()
+            .join("objects")
+            .join(&id[..2])
+            .join(&id[2..]),
+    )?;
+    let mut tx = fresh_repo.start_transaction();
+    reset_head(tx.repo_mut(), &test_workspace.workspace, &wc)?;
+    assert_eq!(
+        git_repo
+            .read_index(girt::index::Limits::trusted())?
+            .unwrap()
+            .entries(),
+        index.entries()
+    );
+    Ok(())
+}
+
 #[test]
 fn test_reset_head_with_index_merge_conflict() -> TestResult {
     let test_workspace = TestWorkspace::init_colocated_git();
