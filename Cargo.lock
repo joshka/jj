@@ -1471,9 +1471,9 @@ dependencies = [
 
 [[package]]
 name = "girt"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f7b855f7bea6eaee779de40a3221219e8e3cd3049368d7d086200c6752dae68"
+checksum = "4f13f251d953660c6f36451e22d872ca34e37047737384d4722bcfc40df68af6"
 dependencies = [
  "aws-lc-rs",
  "crc32fast",
@@ -1484,6 +1484,8 @@ dependencies = [
  "regex-automata",
  "reqwest",
  "rustix",
+ "rustls",
+ "rustls-platform-verifier",
  "sha1",
  "tempfile",
  "thiserror 2.0.20",
@@ -4598,9 +4600,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
