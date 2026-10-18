@@ -222,7 +222,9 @@ pub struct GitBackend {
     repo: girt::Repository,
     /// Pack snapshot plus live loose-object reads. Refreshed when an object is
     /// not found, since other processes (and fetch) may install new packs.
-    objects: RwLock<girt::Objects>,
+    objects: RwLock<Arc<girt::Objects>>,
+    /// One lazy worker overlaps commit reads with rendering without contending with Rayon jobs.
+    commit_read_pool: OnceLock<Option<rayon::ThreadPool>>,
     /// Number of successful refreshes of `objects`, updated under its write
     /// lock. Lets callers refresh at most once per snapshot they started from.
     objects_generation: AtomicU64,
@@ -259,7 +261,8 @@ impl GitBackend {
             TreeId::from_bytes(format.hash_object(girt::ObjectKind::Tree, b"").as_bytes());
         Ok(Self {
             repo,
-            objects: RwLock::new(objects),
+            objects: RwLock::new(Arc::new(objects)),
+            commit_read_pool: OnceLock::new(),
             objects_generation: AtomicU64::new(0),
             root_commit_id,
             root_change_id,
@@ -665,6 +668,47 @@ impl GitBackend {
         Ok(object)
     }
 
+    /// Lets commit streams overlap packed reads without blocking their async polling thread.
+    async fn read_commit_object(&self, id: &CommitId) -> BackendResult<girt::Object> {
+        // A caller may synchronously wait from inside a Rayon pool. Read inline there so a
+        // saturated pool cannot wait for work queued to itself.
+        if rayon::current_thread_index().is_some() {
+            return self.read_shared_git_object(id, girt::ObjectKind::Commit);
+        }
+
+        let Some(pool) = self.commit_read_pool.get_or_init(|| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .thread_name(|_| "jj-commit-read".to_owned())
+                .build()
+                .ok()
+        }) else {
+            return self.read_shared_git_object(id, girt::ObjectKind::Commit);
+        };
+
+        let git_id = self.validate_git_object_id(id)?;
+        let objects = Arc::clone(&self.objects.read().unwrap());
+        let (sender, receiver) = futures::channel::oneshot::channel();
+        pool.spawn_fifo(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                objects.read_with(git_id, girt::ReadLimits::trusted())
+            }));
+            drop(sender.send(result));
+        });
+
+        let object = receiver
+            .await
+            .map_err(|err| to_read_object_err(err, id))?
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            .map_err(|err| to_read_object_err(err, id))?;
+
+        match object {
+            Some(object) if object.kind() == girt::ObjectKind::Commit => Ok(object),
+            // Preserve refresh-on-miss and the existing missing/wrong-kind errors.
+            _ => self.read_shared_git_object(id, girt::ObjectKind::Commit),
+        }
+    }
+
     /// Returns the current pack-snapshot generation, for [`Self::peel()`].
     pub(crate) fn objects_generation(&self) -> u64 {
         self.objects_generation.load(Ordering::Acquire)
@@ -704,8 +748,11 @@ impl GitBackend {
         peel(&objects)
     }
 
-    fn refresh_locked(&self, objects: &mut girt::Objects) -> Result<(), girt::ObjectReadError> {
-        objects.refresh(
+    fn refresh_locked(
+        &self,
+        objects: &mut Arc<girt::Objects>,
+    ) -> Result<(), girt::ObjectReadError> {
+        Arc::make_mut(objects).refresh(
             girt::PackLimits::trusted(),
             girt::AlternateLimits::default(),
         )?;
@@ -714,7 +761,7 @@ impl GitBackend {
     }
 
     /// Returns the (pack-snapshot) object store for bulk operations.
-    pub(crate) fn objects(&self) -> std::sync::RwLockReadGuard<'_, girt::Objects> {
+    pub(crate) fn objects(&self) -> std::sync::RwLockReadGuard<'_, Arc<girt::Objects>> {
         self.objects.read().unwrap()
     }
 
@@ -1274,7 +1321,9 @@ impl Backend for GitBackend {
     }
 
     fn concurrency(&self) -> usize {
-        1
+        // Allow commit streams to overlap one worker read with rendering. Other backend
+        // consumers share this advisory buffer size; it is not a worker queue limit.
+        32
     }
 
     async fn read_file(
@@ -1424,7 +1473,7 @@ impl Backend for GitBackend {
         }
 
         let mut commit = {
-            let object = self.read_shared_git_object(id, girt::ObjectKind::Commit)?;
+            let object = self.read_commit_object(id).await?;
             let is_shallow = self.shallow_root_ids().contains(id);
             commit_from_git_without_root_parent(
                 id,
@@ -1881,7 +1930,8 @@ mod tests {
         };
         assert_eq!(loose_count(), 0);
 
-        let commit = backend.read_commit(&commit_id).block_on()?;
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build()?;
+        let commit = pool.install(|| backend.read_commit(&commit_id).block_on())?;
         let tree_id = commit.root_tree.as_resolved().unwrap();
         let tree = backend.read_tree(RepoPath::root(), tree_id).block_on()?;
         assert_eq!(
@@ -1893,6 +1943,18 @@ mod tests {
             0,
             "a packed tree was rewritten as a loose object"
         );
+
+        // The worker preserves wrong-kind errors and refreshes snapshots on a miss.
+        let tree_as_commit = CommitId::from_bytes(tree_id.as_bytes());
+        let wrong_kind = backend.read_commit_object(&tree_as_commit).block_on();
+        assert!(wrong_kind.is_err());
+        git(&["commit", "--allow-empty", "-q", "-m", "new pack"])?;
+        git(&["repack", "-a", "-d", "-q"])?;
+        git(&["prune-packed"])?;
+        let new_commit_id =
+            CommitId::from_bytes(gix::open(git_repo_path.as_path())?.head_id()?.as_bytes());
+        let new_commit = backend.read_commit_object(&new_commit_id).block_on();
+        assert!(new_commit.is_ok());
 
         // A tree the repository lacks is still stored.
         let new_tree = Tree::from_sorted_entries(vec![(
