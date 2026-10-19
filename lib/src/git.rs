@@ -37,6 +37,7 @@ use thiserror::Error;
 use crate::backend::BackendError;
 use crate::backend::ChangeId;
 use crate::backend::CommitId;
+use crate::backend::TreeId;
 use crate::backend::TreeValue;
 use crate::commit::Commit;
 use crate::config::ConfigGetError;
@@ -75,6 +76,7 @@ use crate::ref_name::WorkspaceName;
 use crate::repo::MutableRepo;
 use crate::repo::Repo;
 use crate::repo_path::RepoPath;
+use crate::repo_path::RepoPathBuf;
 use crate::revset::ResolvedRevsetExpression;
 use crate::revset::RevsetEvaluationError;
 use crate::revset::RevsetExpression;
@@ -2337,13 +2339,6 @@ async fn reset_index(
     // Use the merged parent tree as the Git index, allowing `git diff` to show the
     // same changes as `jj diff`. If the merged parent tree has conflicts, then the
     // Git index will also be conflicted.
-    let mut entries = build_index_from_merged_tree(git_repo, &parent_tree)?;
-
-    let wc_tree = wc_commit.tree();
-    update_intent_to_add_impl(git_repo, &mut entries, &parent_tree, &wc_tree).await?;
-
-    // Entries in the new index that match entries in the old index keep their
-    // cached stat information, so Git doesn't need to rehash unchanged files.
     let mut edit = git_repo
         .edit_index(girt::index::Limits::trusted())
         .map_err(GitResetHeadError::from_git)?;
@@ -2351,9 +2346,93 @@ async fn reset_index(
     // old index contents.
     edit.make_standalone()
         .map_err(GitResetHeadError::from_git)?;
+    let mut entries = match index_entries_for_tree(git_repo, edit.index(), &parent_tree).await? {
+        Some(entries) => entries,
+        None => build_index_from_merged_tree(git_repo, &parent_tree)?,
+    };
+
+    let wc_tree = wc_commit.tree();
+    update_intent_to_add_impl(git_repo, &mut entries, &parent_tree, &wc_tree).await?;
+
+    // Entries in the new index that match entries in the old index keep their
+    // cached stat information, so Git doesn't need to rehash unchanged files.
     edit.replace_entries_reusing_stat(entries)
         .map_err(GitResetHeadError::from_git)?;
     edit.commit().map_err(GitResetHeadError::from_git)
+}
+
+/// The entries [`build_index_from_merged_tree`] would build for `merged_tree`,
+/// derived from the entries already in `index`, or `None` if the index can't
+/// stand in for a tree.
+///
+/// [`girt::index::Index::tree_id`] hashes the staged entries, leaving out
+/// intent-to-add ones, without reading any objects. When that tree is stored,
+/// those entries are exactly its files, so only the trees that differ from
+/// `merged_tree` are read. Conflicted trees, conflicted or sparse indexes, and
+/// index trees that were never stored or can't be read fall back to the full
+/// tree walk.
+async fn index_entries_for_tree(
+    git_repo: &girt::Repository,
+    index: &girt::index::Index,
+    merged_tree: &MergedTree,
+) -> Result<Option<Vec<girt::index::Entry>>, GitResetHeadError> {
+    let Some(tree_id) = merged_tree.tree_ids().as_resolved() else {
+        return Ok(None);
+    };
+    if index
+        .entries()
+        .iter()
+        .any(|entry| entry.skip_worktree || entry.mode == girt::index::Mode::SparseDirectory)
+    {
+        return Ok(None);
+    }
+    let Some(index_tree_id) = index.tree_id() else {
+        return Ok(None);
+    };
+    let mut entries: Vec<_> = index
+        .entries()
+        .iter()
+        .filter(|entry| !entry.intent_to_add)
+        .map(|entry| girt::index::Entry::new(entry.path.clone(), entry.mode, entry.id))
+        .collect();
+    if index_tree_id.as_bytes() == tree_id.as_bytes() {
+        return Ok(Some(entries));
+    }
+    let store = merged_tree.store();
+    let index_tree_id = TreeId::from_bytes(index_tree_id.as_bytes());
+    if store
+        .get_tree(RepoPathBuf::root(), &index_tree_id)
+        .await
+        .is_err()
+    {
+        return Ok(None);
+    }
+    let index_tree = MergedTree::resolved(store.clone(), index_tree_id);
+    let format = git_repo.object_format();
+    let mut removed = HashSet::new();
+    let mut added = vec![];
+    let mut diff_stream = index_tree.diff_stream(merged_tree, &EverythingMatcher);
+    while let Some(TreeDiffEntry { path, values }) = diff_stream.next().await {
+        // The index tree's subtrees may be unreadable even when the parent
+        // tree is fine, so let the full walk decide.
+        let Ok(values) = values else {
+            return Ok(None);
+        };
+        if !values.before.is_absent() {
+            removed.insert(path.as_internal_file_string().as_bytes().to_vec());
+        }
+        if let Some(entry) = values
+            .after
+            .as_normal()
+            .and_then(|value| to_index_entry(format, &path, value, girt::index::Stage::Normal))
+        {
+            added.push(entry);
+        }
+    }
+    entries.retain(|entry| !removed.contains(&entry.path));
+    entries.extend(added);
+    sort_index_entries(&mut entries);
+    Ok(Some(entries))
 }
 
 fn build_index_from_merged_tree(
