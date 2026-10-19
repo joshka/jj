@@ -1552,11 +1552,44 @@ fn export_refs_to_git(
             mut_repo.set_git_ref_target(&git_ref_name, new_target);
         }
     }
+    // Batch new bookmarks with no previously exported target. Keep the per-ref path as the
+    // fallback: a failed batch can have published a prefix, and create_git_ref
+    // already accepts a ref that independently reached the desired target.
+    let new_bookmark_edits = if kind == GitRefKind::Bookmark {
+        refs.to_update
+            .iter()
+            .filter(|(_, (old, _))| old.is_none())
+            .filter_map(|(symbol, (_, new))| {
+                let name = to_git_ref_name(kind, symbol.as_ref())?;
+                Some((|| {
+                    let name = git_ref_name_or_err(name.as_str())?;
+                    let reflog = reflog_for(git_repo, &name, &committer, "export from jj")?;
+                    Ok(girt::refs::RefEdit::new(
+                        name,
+                        Some(girt::refs::Target::Direct(oid_from_commit_id(
+                            git_repo, new,
+                        ))),
+                        girt::refs::Expected::Absent,
+                        reflog,
+                    ))
+                })())
+            })
+            .collect::<Result<Vec<_>, BoxedError>>()
+    } else {
+        Ok(Vec::new())
+    };
+    let created_bookmarks = new_bookmark_edits
+        .as_ref()
+        .is_ok_and(|edits| !edits.is_empty() && git_refs.transaction(edits).is_ok());
     for (symbol, (old_commit_oid, new_commit_oid)) in refs.to_update {
         let Some(git_ref_name) = to_git_ref_name(kind, symbol.as_ref()) else {
             failed.push((symbol, FailedRefExportReason::InvalidGitName));
             continue;
         };
+        if created_bookmarks && old_commit_oid.is_none() {
+            mut_repo.set_git_ref_target(&git_ref_name, RefTarget::normal(new_commit_oid));
+            continue;
+        }
         let new_ref_oid = match kind {
             GitRefKind::Bookmark => None,
             // Copy existing tag ref, which may point to annotated tag object.

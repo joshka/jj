@@ -3293,6 +3293,76 @@ fn test_export_bookmark_on_root_commit() -> TestResult {
     Ok(())
 }
 
+#[test_case(false; "all new")]
+#[test_case(true; "independently created refs")]
+fn test_export_new_bookmarks_preserves_existing_refs(existing: bool) -> TestResult {
+    let test_data = GitRepoData::create();
+    let git_repo = test_data.git_repo;
+    let mut tx = test_data.repo.start_transaction();
+    let mut_repo = tx.repo_mut();
+    let commit = write_random_commit(mut_repo);
+    let other = write_random_commit(mut_repo);
+    let target = RefTarget::normal(commit.id().clone());
+    for i in 0..100 {
+        mut_repo
+            .set_local_bookmark_target(format!("export-{i:03}").as_str().as_ref(), target.clone());
+    }
+    if existing {
+        // Independently created refs: one agrees with jj, one must be preserved.
+        for (name, id) in [
+            ("export-050", git_id(&other)),
+            ("export-075", git_id(&commit)),
+        ] {
+            git_repo.reference(
+                format!("refs/heads/{name}"),
+                id,
+                gix::refs::transaction::PreviousValue::MustNotExist,
+                "test",
+            )?;
+        }
+    }
+    let stats = git::export_refs(mut_repo)?;
+    assert!(stats.failed_tags.is_empty());
+    if existing {
+        assert_eq!(stats.failed_bookmarks.len(), 1);
+        assert_eq!(
+            stats.failed_bookmarks[0].0.as_ref(),
+            remote_symbol("export-050", "git")
+        );
+        assert_matches!(
+            stats.failed_bookmarks[0].1,
+            FailedRefExportReason::AddedInJjAddedInGit
+        );
+    } else {
+        assert!(stats.failed_bookmarks.is_empty());
+    }
+    for i in 0..100 {
+        let name = format!("refs/heads/export-{i:03}");
+        let expected = if existing && i == 50 {
+            git_id(&other)
+        } else {
+            git_id(&commit)
+        };
+        assert_eq!(
+            git_repo.find_reference(name.as_str())?.target().id(),
+            expected
+        );
+        let expected_view = if existing && i == 50 {
+            RefTarget::absent()
+        } else {
+            target.clone()
+        };
+        assert_eq!(mut_repo.get_git_ref(name.as_str().as_ref()), &expected_view);
+        if !existing || (i != 50 && i != 75) {
+            let log = std::fs::read_to_string(git_repo.path().join("logs").join(&name))?;
+            assert_eq!(log.lines().count(), 1);
+            assert!(log.ends_with("\texport from jj\n"));
+            assert!(log.contains(&commit.id().hex()));
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn test_export_partial_failure() -> TestResult {
     // Check that we skip bookmarks that fail to export
