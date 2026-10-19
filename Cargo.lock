@@ -1471,11 +1471,12 @@ dependencies = [
 
 [[package]]
 name = "girt"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f13f251d953660c6f36451e22d872ca34e37047737384d4722bcfc40df68af6"
+checksum = "b5e09bc2573e068d0009b8b3815be8a2ca6151e1eff59e0e0ff117b1bc5720a2"
 dependencies = [
  "aws-lc-rs",
+ "base64 0.22.1",
  "crc32fast",
  "flate2",
  "futures-util",
@@ -1492,6 +1493,7 @@ dependencies = [
  "tokio",
  "tracing",
  "unicode-normalization",
+ "unicode-width 0.2.2",
  "windows-sys 0.61.2",
 ]
 
