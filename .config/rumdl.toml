@@ -32,9 +32,6 @@ disable = [
     # 4 findings. Blank line inside blockquote.
     # https://github.com/rvben/rumdl/blob/main/docs/md028.md
     "no-blanks-blockquote",
-    # 20 findings. Ordered list marker value.
-    # https://github.com/rvben/rumdl/blob/main/docs/md029.md
-    "ol-prefix",
     # 144 findings. Spaces after list markers should be consistent.
     # https://github.com/rvben/rumdl/blob/main/docs/md030.md
     "list-marker-space",
@@ -97,9 +94,6 @@ disable = [
 
 # [no-blanks-blockquote]
 # fix = false
-
-# [ol-prefix]
-# style = "one-or-ordered"
 
 # [list-marker-space]
 # ol-align-column = 0

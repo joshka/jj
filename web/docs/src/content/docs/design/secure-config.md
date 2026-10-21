@@ -39,9 +39,9 @@ vectors and what it would take to defend against them.
 1.  The attacker creates a repo
 2.  The attacker runs
     `jj config set --repo fix.tools.foo ‘[“malicious”, “command”]’`
-4.  The attacker zips up their repo and sends it to the victim
-5.  The victim unzips the repo, make some changes, then run `jj fix`
-6.  They have now executed an arbitrary command on the victim’s system
+3.  The attacker zips up their repo and sends it to the victim
+4.  The victim unzips the repo, make some changes, then run `jj fix`
+5.  They have now executed an arbitrary command on the victim’s system
 
 This attack vector can be solved by ensuring that we can determine the user who
 created the repo.

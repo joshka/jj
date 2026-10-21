@@ -726,17 +726,17 @@ files expensive.
 A rough implementation plan may look like this:
 
 1. Implement support for copy-tracking in the test backend
-3. Implement diff algorithm and test it
-4. Implement merge algorithm and test it
-5. Implement blame algorithm and test it
-6. Implement file-following log algorithm and test it
-7. Extract some queries to the commit backend trait so cloud-based backends
+2. Implement diff algorithm and test it
+3. Implement merge algorithm and test it
+4. Implement blame algorithm and test it
+5. Implement file-following log algorithm and test it
+6. Extract some queries to the commit backend trait so cloud-based backends
    (like the Google backend) can provide versions implemented using database
    indexes
-8. Implement support for copy-tracking in the Git backend. This may involve
+7. Implement support for copy-tracking in the Git backend. This may involve
    backfilling, possibly lazily. Or it may involve new abstractions in the
    commit backend trait.
-9. Implement CLI for recording copies and for resolving conflicts in copies
+8. Implement CLI for recording copies and for resolving conflicts in copies
 
 ## Alternatives considered
 
