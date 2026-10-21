@@ -40,8 +40,8 @@ at just the tree id, we recurse into the sub-tree. Similarly, if we can't
 resolve a file conflict trivially by looking at just the id, we recursive into
 the hunks within the file.
 
-See [here](../git-compatibility.md#format-mapping-details) for how conflicts are
-stored when using the Git commit backend.
+See [format mapping details](../git-compatibility.md#format-mapping-details) for
+how conflicts are stored when using the Git commit backend.
 
 ## Conflict simplification
 

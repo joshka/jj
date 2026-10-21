@@ -5570,9 +5570,9 @@ No changes (just trying to get automated GitHub release to work).
 
 * `jj log` now defaults to showing only commits that are not on any remote
   branches (plus their closest commit on the remote branch for context). This
-  set of commits can be overridden by setting `ui.default-revset`. Use
-  `jj log -r 'all()'` for the old behavior. Read more about revsets
-  [here](https://github.com/jj-vcs/jj/blob/main/docs/revsets.md).
+  set of commits can be overridden by setting `ui.default-revset`. Use `jj log
+  -r 'all()'` for the old behavior. Read more in the [revsets
+  documentation](https://github.com/jj-vcs/jj/blob/main/docs/revsets.md).
   [#250](https://github.com/jj-vcs/jj/issues/250)
 
 * `jj new` now always checks out the new commit (used to be only if the parent

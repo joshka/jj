@@ -224,7 +224,7 @@ directory to the global `.gitignore` which then stores all your temporary files
 and notes. For example, you could add `scratch/` to `~/.git/ignore` and then
 store arbitrary files in `<your-git-repo>/scratch/`.
 
-You can find more details on `gitignore` files [here][gitignore].
+See the [`gitignore` documentation][gitignore] for more details.
 
 ### How can I avoid committing my local-only changes to tracked files?
 

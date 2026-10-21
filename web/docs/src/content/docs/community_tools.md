@@ -15,21 +15,21 @@ review, endorse, or guarantee their quality or security.
 Diffedit3 is a web-based alternate to Meld, as it no longer is packaged and
 available for all Distros. Its creator is also a frequent contributor.
 
-Find it [here][diffedit3]
+Find it at [diffedit3][diffedit3]
 
 ## GG - GUI for JJ
 
 GG is a cross platform GUI for Jujutsu which makes all graph manipulating
 workflows quite easy. Take a look at its README.md as it quite descriptive.
 
-Find it [here][gg].
+Find it at [gg][gg].
 
 ## Hunk.nvim
 
 Hunk.nvim is a Neovim based diff-editor for Jujutsu which can be used as an
 alternative to the default `:builtin` diff-editor.
 
-Find it [here][hunk.nvim].
+Find it at [hunk.nvim][hunk.nvim].
 
 ## JJ-FZF
 
@@ -37,34 +37,34 @@ Centered around the `jj log` graph view, jj-fzf provides previews of diffs, the
 evolution-log, browses the op log and offers a large number of key bindings for
 commonly used `jj` operations from rebase to undo, and helps with divergent commits.
 
-Find it [here][jj-fzf].
+Find it at [jj-fzf][jj-fzf].
 
 ## JJ TUI
 
 This is TUI for Jujutsu built in Ocaml, it is unopiniated and its creator is
 open to feedback.
 
-Find it [here][jj_tui].
+Find it at [jj_tui][jj_tui].
 
 ## Jujutsu Kaizen
 
 Jujutsu Kaizen is a plugin for Visual Studio Code. The goal of this extension is to bring the great UX of Jujutsu into the VS Code UI.
 Its developers are currently focused on achieving parity for commonly used features of VS Code's built-in Git extension, such as the various operations possible via the Source Control view.
 
-Find it [here][jjk].
+Find it at [jjk][jjk].
 
 ## LazyJJ
 
 lazyjj is a lazygit inspired TUI for Jujutsu.
 
-Find it [here][lazyjj].
+Find it at [lazyjj][lazyjj].
 
 ## Visual Jujutsu
 
 VJJ is a fzf (fuzzy finder) wrapper for Jujutsu, which is meant to be used
 interactively in the terminal.
 
-Find it [here][vjj].
+Find it at [vjj][vjj].
 
 ## VisualJJ
 
@@ -72,19 +72,19 @@ VisualJJ is a plugin for Visual Studio Code which provides native integration
 for Jujutsu, not relying on Git colocation. Unlike other tools on this page,
 VisualJJ is not open-source.
 
-Find it [here][visualjj].
+Find it at [visualjj][visualjj].
 
 ## Jujutsu UI
 
 jjui is a terminal user interface for working with Jujutsu version control system.
 
-Find it [here][jjui].
+Find it at [jjui][jjui].
 
 ## Selvejj
 
 Selvejj is a JetBrains plugin for integrating Jujutsu as a first-class VCS within the IDE.
 
-Find it [here][selvejj].
+Find it at [selvejj][selvejj].
 
 ## PSCompletions
 
@@ -92,7 +92,7 @@ PSCompletions is powerful shell completions for PowerShell and other shells, pow
 
 It can provide completions via `psc add jj`, or offer a better interactive menu for the official completions.
 
-Find it [here][PSCompletions].
+Find it at [PSCompletions][PSCompletions].
 
 ## Finding other integrations
 

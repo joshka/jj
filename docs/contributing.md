@@ -216,7 +216,7 @@ for an overview, especially if you are familiar with C++.
 
 ## Style guide
 
-See [here](style_guide.md).
+See the [style guide](style_guide.md).
 
 ## Setting up a development environment
 

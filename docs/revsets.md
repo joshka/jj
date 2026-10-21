@@ -621,9 +621,10 @@ HEAD.doc = 'The parent of the working-copy commit'
 
 ### Built-in Aliases
 
-The following aliases are built-in and used for certain operations. These functions
-are defined as aliases in order to allow you to overwrite them as needed.
-See [revsets.toml](https://github.com/jj-vcs/jj/blob/main/cli/src/config/revsets.toml)
+The following aliases are built-in and used for certain operations. These
+functions are defined as aliases in order to allow you to overwrite them as
+needed. See
+[revsets.toml](https://github.com/jj-vcs/jj/blob/main/cli/src/config/revsets.toml)
 for a comprehensive list.
 
 * `trunk()`: Resolves to the head commit for the default bookmark of the default
@@ -659,7 +660,8 @@ for a comprehensive list.
   untracked_remote_bookmarks() | untracked_remote_tags()` by default. It is
   actually defined as `builtin_immutable_heads()`, and can be overridden as
   required. The full set of immutable commits is `::immutable_heads()` (i.e.,
-  `immutable()`). See [here](config.md#set-of-immutable-commits) for details.
+  `immutable()`). See [set of immutable
+  commits](config.md#set-of-immutable-commits) for details.
 
 * `immutable()`: The set of commits that `jj` treats as immutable. This is
   equivalent to `::(immutable_heads() | root())`. It is not recommended to redefine

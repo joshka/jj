@@ -2,7 +2,8 @@
 
 Authors: [Philip Metzger](mailto:philipmetzger@bluewin.ch), [Martin von Zweigberk](mailto:martinvonz@google.com), [Danny Hooper](mailto:hooper@google.com), [Waleed Khan](mailto:me@waleedkhan.name)
 
-Initial Version, 10.12.2022 (view full history [here](https://docs.google.com/document/d/14BiAoEEy_e-BRPHYpXRFjvHMfgYVKh-pKWzzTDi-v-g/edit))
+Initial Version, 10.12.2022 ([full
+history](https://docs.google.com/document/d/14BiAoEEy_e-BRPHYpXRFjvHMfgYVKh-pKWzzTDi-v-g/edit))
 
 **Summary:** This Document documents the design of a new `run` command for
 Jujutsu which will be used to seamlessly integrate with build systems, linters

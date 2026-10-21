@@ -12,21 +12,21 @@ already simplify many workflows and can improve your experience.
 Diffedit3 is a web-based alternate to Meld, as it no longer is packaged and
 available for all Distros. Its creator is also a frequent contributor.
 
-Find it [here][diffedit3]
+Find it at [diffedit3][diffedit3]
 
 ## GG - GUI for JJ
 
 GG is a cross platform GUI for Jujutsu which makes all graph manipulating
 workflows quite easy. Take a look at its README.md as it quite descriptive.
 
-Find it [here][gg].
+Find it at [gg][gg].
 
 ## Hunk.nvim
 
 Hunk.nvim is a Neovim based diff-editor for Jujutsu which can be used as an
 alternative to the default `:builtin` diff-editor.
 
-Find it [here][hunk.nvim].
+Find it at [hunk.nvim][hunk.nvim].
 
 ## JayJay
 
@@ -35,7 +35,7 @@ a DAG graph view, Myers diff with syntax highlighting, side-by-side diffs, confl
 resolution, bookmark manager, command palette, and AI commit messages. The diff
 engine is available as a standalone Rust crate (`jj-diff`).
 
-Find it [here][jayjay].
+Find it at [jayjay][jayjay].
 
 ## JJ-FZF
 
@@ -43,7 +43,7 @@ Centered around the `jj log` graph view, jj-fzf provides previews of diffs, the
 evolution-log, browses the op log and offers a large number of key bindings for
 commonly used `jj` operations from rebase to undo, and helps with divergent commits.
 
-Find it [here][jj-fzf].
+Find it at [jj-fzf][jj-fzf].
 
 ## jj-hunk
 
@@ -51,34 +51,34 @@ jj-hunk is a command-line tool for programmatic hunk selection. It can split,
 commit, and squash selected hunks without opening an interactive diff editor,
 which is useful for scripts and AI coding agents.
 
-Find it [here][jj-hunk].
+Find it at [jj-hunk][jj-hunk].
 
 ## JJ TUI
 
 This is TUI for Jujutsu built in Ocaml, it is unopiniated and its creator is
 open to feedback.
 
-Find it [here][jj_tui].
+Find it at [jj_tui][jj_tui].
 
 ## Jujutsu Kaizen
 
 Jujutsu Kaizen is a plugin for Visual Studio Code. The goal of this extension is to bring the great UX of Jujutsu into the VS Code UI.
 Its developers are currently focused on achieving parity for commonly used features of VS Code's built-in Git extension, such as the various operations possible via the Source Control view.
 
-Find it [here][jjk].
+Find it at [jjk][jjk].
 
 ## LazyJJ
 
 lazyjj is a lazygit inspired TUI for Jujutsu.
 
-Find it [here][lazyjj].
+Find it at [lazyjj][lazyjj].
 
 ## Visual Jujutsu
 
 VJJ is a fzf (fuzzy finder) wrapper for Jujutsu, which is meant to be used
 interactively in the terminal.
 
-Find it [here][vjj].
+Find it at [vjj][vjj].
 
 ## VisualJJ
 
@@ -86,25 +86,27 @@ VisualJJ is a plugin for Visual Studio Code which provides native integration
 for Jujutsu, not relying on Git colocation. Unlike other tools on this page,
 VisualJJ is not open-source.
 
-Find it [here][visualjj].
+Find it at [visualjj][visualjj].
 
 ## Jujutsu UI
 
 jjui is a terminal user interface for working with Jujutsu version control system.
 
-Find it [here][jjui].
+Find it at [jjui][jjui].
 
 ## Selvejj
 
 Selvejj is a JetBrains plugin for integrating Jujutsu as a first-class VCS within the IDE.
 
-Find it [here][selvejj] and [here (Marketplace)][selvejj-marketplace].
+Find it at [selvejj][selvejj] and on the [JetBrains
+Marketplace][selvejj-marketplace].
 
 ## Jujutsu plugin for IntelliJ IDEA
 
 Native IntelliJ integration for Jujutsu.
 
-Find it [here][jj-idea] and [here (Marketplace)][jj-idea-marketplace].
+Find it at [jj-idea][jj-idea] and on the [JetBrains
+Marketplace][jj-idea-marketplace].
 
 ## PSCompletions
 
@@ -112,19 +114,19 @@ PSCompletions is powerful shell completions for PowerShell and other shells, pow
 
 It can provide completions via `psc add jj`, or offer a better interactive menu for the official completions.
 
-Find it [here][PSCompletions].
+Find it at [PSCompletions][PSCompletions].
 
 ## LightJJ
 
 A fast, keyboard-driven browser UI for Jujutsu.
 
-Find it [here][LightJJ].
+Find it at [LightJJ][LightJJ].
 
 ## JJ View
 
 JJ View is an open-source Visual Studio Code extension that provides a rich, native graphical interface for Jujutsu. It features a Git-style Source Control (SCM) view for easy change management, an interactive visual commit history graph, and built-in commands for common `jj` operations like squashing, abandoning, and absorbing modifications directly from the editor. It also includes native Gerrit integration for streamlined code review workflows.
 
-Find it [here][jj-view].
+Find it at [jj-view][jj-view].
 
 ## jj-stack
 
@@ -132,7 +134,7 @@ Find it [here][jj-view].
 Rewrite, split, squash, or reorder your changes with `jj`, then run `jj-stack submit` to update
 GitHub. Existing PRs follow their change IDs, keeping comments and review history together.
 
-Find it [here][jj-stack].
+Find it at [jj-stack][jj-stack].
 
 ## Finding other integrations
 

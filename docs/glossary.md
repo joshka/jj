@@ -33,8 +33,8 @@ such as the "operation store backend" for storing
 
 A bookmark is a named pointer to a [commit](#commit). They are similar to Git's
 [branches](#branch) and even more similar to [Mercurial's
-bookmarks](https://wiki.mercurial-scm.org/Bookmarks). See [here](bookmarks.md)
-for details.
+bookmarks](https://wiki.mercurial-scm.org/Bookmarks). See
+[bookmarks](bookmarks.md) for details.
 
 Unlike in Git, there is no concept of a "current bookmark"; bookmarks *do not*
 move when you create a new commit. Bookmarks *do* automatically follow the
@@ -116,19 +116,20 @@ directory is a sibling of `.jj/`, we call the workspace colocated. Most
 tools designed for Git can be easily used on such workspaces. `jj` and `git`
 commands can be used interchangeably.
 
-See [here](git-compatibility.md#colocated-jujutsugit-workspaces) for details.
+See [colocated workspaces](git-compatibility.md#colocated-jujutsugit-workspaces)
+for details.
 
 ## Conflict
 
 Conflicts can occur in many places. The most common type is conflicts in files.
 Those are the conflicts that users coming from other VCSs are usually familiar
 with. You can see them in `jj status` and in `jj log` (the red "conflict"
-label at the end of the line). See [here](conflicts.md) for details.
+label at the end of the line). See [conflicts](conflicts.md) for details.
 
 Conflicts can also occur in [bookmarks](#bookmark). For example, if you moved a
 bookmark locally, and it was also moved on the remote, then the bookmark will be
 in a conflicted state after you pull from the remote.
-See [here](bookmarks.md#conflicts) for details.
+See [conflicted bookmarks](bookmarks.md#conflicts) for details.
 
 Similar to a bookmark conflict, when a [change](#change) is rewritten locally
 and remotely, for example, then the change will be in a conflicted state. We
@@ -192,7 +193,7 @@ A synonym for [Commit](#commit).
 ## Revset
 
 Jujutsu supports a functional language for selecting a set of revisions.
-Expressions in this language are called "revsets". See [here](revsets.md) for
+Expressions in this language are called "revsets". See [revsets](revsets.md) for
 details. We also often use the term "revset" for the set of revisions selected
 by a revset.
 
@@ -252,12 +253,12 @@ snapshot without history, and an [operation](#operation) object is similar to a
 
 ## Workspace
 
-A workspace is a [working copy](#working-copy) and an
-associated [repository](#repository). There can be multiple workspaces for a
-single repository. Each workspace has a `.jj/` directory, but the
-[commits](#commit) and [operations](#operation) will be stored in the initial
-workspace; the other workspaces will have pointers to the initial workspace. See
-[here](working-copy.md#workspaces) for details.
+A workspace is a [working copy](#working-copy) and an associated
+[repository](#repository). There can be multiple workspaces for a single
+repository. Each workspace has a `.jj/` directory, but the [commits](#commit)
+and [operations](#operation) will be stored in the initial workspace; the other
+workspaces will have pointers to the initial workspace. See
+[workspaces](working-copy.md#workspaces) for details.
 
 This is what Git calls a "worktree".
 
@@ -268,7 +269,7 @@ automatically snapshot at the beginning of almost every `jj` command, thus
 creating a new [working-copy commit](#working-copy-commit) if any changes had
 been made in the working copy. Conversely, the working copy is automatically
 updated to the state of the working-copy commit at the end of almost every `jj`
-command. See [here](working-copy.md) for details.
+command. See [working copy](working-copy.md) for details.
 
 This is what Git calls a "working tree".
 

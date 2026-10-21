@@ -175,7 +175,7 @@ If you want to import all remote bookmarks including inactive ones, set
 specify a contributor's bookmark as `jj new <bookmark>` instead of `jj new
 <bookmark>@<remote>`.
 
-You can find more information on that setting [here][auto-bookmark].
+See [automatic bookmark creation][auto-bookmark] for more on that setting.
 
 ## Using GitHub CLI
 

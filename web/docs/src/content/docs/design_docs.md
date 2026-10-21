@@ -24,5 +24,5 @@ Jujutsu, you'll need to go through this process.
 
 ## Blueprint (Template)
 
-You can find the base template of a new Design Doc
-[here](design_doc_blueprint.md).
+You can find the base template of a new Design Doc in the [design doc
+blueprint](design_doc_blueprint.md).

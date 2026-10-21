@@ -49,7 +49,7 @@ The deeper understanding of conflicts has many advantages:
   interact with your project using Git.)
 
 For information about how conflicts are handled in the working copy, see
-[here](working-copy.md#conflicts).
+[conflicts in the working copy](working-copy.md#conflicts).
 
 ## Conflict markers
 
