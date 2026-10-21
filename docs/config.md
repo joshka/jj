@@ -2343,12 +2343,12 @@ Besides `$JJ_CONFIG` (which controls [where user config files are loaded from](#
 these environment variables override individual config keys. They take precedence over config files
 and are themselves overridden by `--config` / `--config-file`.
 
-| Variable          | Config key          |
-| :---------------- | :------------------ |
-| `$JJ_USER`        | `user.name`         |
-| `$JJ_EMAIL`       | `user.email`        |
-| `$JJ_EDITOR`      | `ui.editor`         |
-| `$JJ_PAGER`       | `ui.pager`          |
+| Variable          | Config key           |
+| :---------------- | :------------------- |
+| `$JJ_USER`        | `user.name`          |
+| `$JJ_EMAIL`       | `user.email`         |
+| `$JJ_EDITOR`      | `ui.editor`          |
+| `$JJ_PAGER`       | `ui.pager`           |
 | `$JJ_OP_HOSTNAME` | `operation.hostname` |
 | `$JJ_OP_USERNAME` | `operation.username` |
 

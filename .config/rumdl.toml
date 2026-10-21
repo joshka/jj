@@ -33,3 +33,7 @@ reflow = true
 reflow-mode = "normalize"
 # Keep tables aligned even when their contents require wider lines.
 tables = false
+
+[table-format]
+enabled = true
+style = "aligned"
