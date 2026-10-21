@@ -95,7 +95,7 @@ And it adds several innovative, useful features of its own:
 - **Automatic rebase and conflict resolution**: When you modify a commit, every
   descendent is automatically rebased on top of the freshly-modified one. This
   makes "patch-based" workflows a breeze. If you resolve a conflict in a commit,
-  the _resolution_ of that conflict is also propagated through descendants as
+  the *resolution* of that conflict is also propagated through descendants as
   well. In effect, this is a completely transparent version of `git rebase
   --update-refs` combined with `git rerere`, supported by design.
 
@@ -110,14 +110,14 @@ And it adds several innovative, useful features of its own:
   The fundamental problem with using filesystems like Dropbox and backup tools
   like `rsync` on your typical Git/Mercurial repositories is that they rely
   on *local filesystem operations* being atomic, serialized, and non-concurrent
-  with respect to other reads and writes—which is _not_ true when operating on
+  with respect to other reads and writes—which is *not* true when operating on
   distributed file systems, or when operations like concurrent file copies (for
   backup) happen while lock files are being held.
 
   Jujutsu is instead designed to be [safe under concurrent scenarios][conc-safety];
   simply using rsync or Dropbox and then using that resulting repository
   should never result in a repository in a *corrupt state*. The worst that
-  _should_ happen is that it will expose conflicts between the local and remote
+  *should* happen is that it will expose conflicts between the local and remote
   state, leaving you to resolve them.
 
 [wcc]: https://docs.jj-vcs.dev/latest/working-copy/
@@ -262,7 +262,7 @@ commit message of any commit (defaults to the working-copy commit).
 
 All operations you perform in the repo are recorded, along with a snapshot of
 the repo state after the operation. This means that you can easily restore to
-an earlier repo state, simply undo your operations one-by-one or even _revert_ a
+an earlier repo state, simply undo your operations one-by-one or even *revert* a
 particular operation which does not have to be the most recent one.
 
 <img src="demos/operation_log.png" />

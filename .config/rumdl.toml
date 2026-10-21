@@ -68,9 +68,6 @@ disable = [
     # 44 findings. Code blocks should use a consistent style.
     # https://github.com/rvben/rumdl/blob/main/docs/md046.md
     "code-block-style",
-    # 7 findings. Emphasis style should be consistent.
-    # https://github.com/rvben/rumdl/blob/main/docs/md049.md
-    "emphasis-style",
     # 4 findings. Link fragments should reference valid headings.
     # https://github.com/rvben/rumdl/blob/main/docs/md051.md
     "link-fragments",
@@ -178,9 +175,6 @@ disable = [
 # level = 1
 
 # [code-block-style]
-# style = "consistent"
-
-# [emphasis-style]
 # style = "consistent"
 
 # [link-fragments]

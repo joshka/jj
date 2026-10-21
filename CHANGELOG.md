@@ -1688,7 +1688,7 @@ Thanks to the people who made this release happen!
 
  * `jj metaedit --update-committer-timestamp` was renamed to
    `jj metaedit --force-rewrite` since the old name (and help text)
-   incorrectly suggested that the committer name and email would _not_
+   incorrectly suggested that the committer name and email would *not*
    be updated.
 
 ### New features
@@ -2399,7 +2399,7 @@ Thanks to the people who made this release happen!
   `core.fsmonitor` gitconfig is set in the global or system gitconfigs.
   [#6440](https://github.com/jj-vcs/jj/issues/6440)
 
-* `jj parallelize` can now parallelize groups of changes that _start_ with an
+* `jj parallelize` can now parallelize groups of changes that *start* with an
   immutable change, but do not contain any other immutable changes.
 
 * `jj` will no longer warn about deprecated paths on macOS if the configured
@@ -4607,7 +4607,7 @@ Thanks to the people who made this release happen!
 
 ### New features
 
-* `jj workspace add` can now take _multiple_ `--revision` arguments, which will
+* `jj workspace add` can now take *multiple* `--revision` arguments, which will
   create a new workspace with its working-copy commit on top of all the parents,
   as if you had run `jj new r1 r2 r3 ...`.
 
