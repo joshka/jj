@@ -5,7 +5,7 @@ title: Roadmap
 This documents some of the goals we have. Many of them are quite independent.
 
 > **Note:** Most people contributing to Jujutsu do so in their spare time, which
->  means that we cannot attach any target dates to any of the goals below.
+> means that we cannot attach any target dates to any of the goals below.
 
 ## Support for copies and renames
 
@@ -51,8 +51,8 @@ See [design doc][api-design-doc].
 ## Open-source cloud-based repos (server and daemon process)
 
 Google has an internal Jujutsu server backed by a database. This server allows
-commits and repos (operation logs) to be stored in the cloud (i.e. the database).
-Working copies can still be stored locally.
+commits and repos (operation logs) to be stored in the cloud (i.e. the
+database). Working copies can still be stored locally.
 
 In order to reduce latency, there is a local daemon process that caches reads
 and writes. It also prefetches of objects it thinks the client might ask for

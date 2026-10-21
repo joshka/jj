@@ -33,13 +33,13 @@ like the solution. `jj undo` can be used in that case.
 
 Divergent commits (for the same change-id) can differ:
 
-*   In their commit description (including tags)
-*   In their commit trees
-*   In the parent(s) of the commits (commits *B/0* and *B/1* for change *B* have
-    different parents)
-*   In the commit author
-*   It is also possible divergence involves two commits with different
-    timestamps that are otherwise identical
+* In their commit description (including tags)
+* In their commit trees
+* In the parent(s) of the commits (commits *B/0* and *B/1* for change *B* have
+  different parents)
+* In the commit author
+* It is also possible divergence involves two commits with different
+  timestamps that are otherwise identical
 
 As you read this design doc it is important to not confuse the
 *predecessor / successor* relationship versus the *ancestor / descendant*
@@ -51,40 +51,40 @@ Divergence can be introduced in many ways. This document does not aim to explain
 any / all of those scenarios accurately, this section is only meant to be rough
 background material. Here are some examples:
 
-*   In one terminal you type `jj describe` to edit a commit description and
-    while the editor is open you take a coffee break, when you come back you
-    open another terminal and do something that rewrites the commit (for example
-    you modify a file and run `jj log`, causing a snapshot). When you save the
-    new description `jj describe` completes and you end up with 2 visible
-    commits with the same change id.
+* In one terminal you type `jj describe` to edit a commit description and
+  while the editor is open you take a coffee break, when you come back you
+  open another terminal and do something that rewrites the commit (for example
+  you modify a file and run `jj log`, causing a snapshot). When you save the
+  new description `jj describe` completes and you end up with 2 visible
+  commits with the same change id.
 
-*   In general any interactive jj command (`jj split -i`, `jj squash -i`, etc.)
-    can lead to divergence in a similar way.
+* In general any interactive jj command (`jj split -i`, `jj squash -i`, etc.)
+  can lead to divergence in a similar way.
 
-*   You can introduce divergence by making some hidden predecessor of your
-    change visible again. There are many ways this could happen.
+* You can introduce divergence by making some hidden predecessor of your
+  change visible again. There are many ways this could happen.
 
-*   Divergence can happen when mutating two workspaces. For example, assume you
-    have workspaces w1 and w2 with working copy commits *A* and *B*
-    respectively, where *B* is a child of *A*. In w2 you run `jj git fetch` and
-    then rebase the whole branch onto main. Go back to w1 (which is now stale),
-    modify some file on disk and take a snapshot (e.g. run `jj log`). This
-    introduces divergence.
+* Divergence can happen when mutating two workspaces. For example, assume you
+  have workspaces w1 and w2 with working copy commits *A* and *B*
+  respectively, where *B* is a child of *A*. In w2 you run `jj git fetch` and
+  then rebase the whole branch onto main. Go back to w1 (which is now stale),
+  modify some file on disk and take a snapshot (e.g. run `jj log`). This
+  introduces divergence.
 
-*   When using the Git backend jj propagates change-id. The change-id is stored
-    in the commit header, so after jj git fetch you can end up with a second
-    commit with the same change-id.
+* When using the Git backend jj propagates change-id. The change-id is stored
+  in the commit header, so after jj git fetch you can end up with a second
+  commit with the same change-id.
 
-*   There is a Google-specific jj upload command to upload a commit to Google's
-    review / test / submit system, and there is an associated Google-specific
-    command to "download" a change from that system back to your jj repo. This
-    can introduce divergence very much like in the Git scenario.
+* There is a Google-specific jj upload command to upload a commit to Google's
+  review / test / submit system, and there is an associated Google-specific
+  command to "download" a change from that system back to your jj repo. This
+  can introduce divergence very much like in the Git scenario.
 
-*   At Google, snapshotting operations happen concurrently on different machines
-    (e.g. two terminals, or more commonly, a terminal and an IDE). Often times
-    they end up snapshotting the same content. Google's backend does not hold
-    locks while snapshotting because it's a distributed filesystem, so locking
-    would be slow.
+* At Google, snapshotting operations happen concurrently on different machines
+  (e.g. two terminals, or more commonly, a terminal and an IDE). Often times
+  they end up snapshotting the same content. Google's backend does not hold
+  locks while snapshotting because it's a distributed filesystem, so locking
+  would be slow.
 
 ## Strawman proposal
 
@@ -98,7 +98,7 @@ change *B*. First we assume *B/0* and *B/1* evolve directly from a common
 predecessor commit *P*, which is now hidden (no longer visible). Later we look
 at more complex evolution graphs. Note that *P*'s change id is also *B*.
 
-```
+```text
 Evolution graph for examples 1, 2, 3 and 4.
 B/0 and B/1 may have other predecessors for unrelated change-ids, P may have
 predecessors (even for change-id B):
@@ -236,7 +236,7 @@ A
 
 We determine the parent(s) of the solution as follows:
 
-```
+```text
 parents = P⁻ + (B/0⁻ - P⁻) + (B/1⁻ - P⁻)
 ```
 
@@ -247,7 +247,7 @@ parents of the solution.
 Note that this simple algorithm produces the desired output in example 1 and
 example 2. In example 2, the expression looks like this:
 
-```
+```text
 parents = P⁻ + (B/0⁻ - P⁻) + (B/1⁻ - P⁻)
         = {X} + ({A} - {X}) + ({A} - {X})
         = {A} + ({A} - {X})
@@ -276,7 +276,7 @@ X
 
 In this case parents will be
 
-```
+```text
 {X} + ({A} - {X}) + ({C} - {X}) = {A} + ({C} - {X})
 ```
 
@@ -286,7 +286,7 @@ the desired parents for the solution: either *{A}* or *{C}*.
 Assume the user chooses *{C}*. The command then rebases (in memory) *B/0*, *B/1*
 and *P* onto the chosen parents:
 
-```
+```text
 In-memory commits after rebasing B/0, B/1 and P on top of C (edges represent
 parent/child relationship):
 
@@ -352,7 +352,7 @@ complex than the basic 3-commit case. This will serve as motivation for the
 general case. Here is our truncated evolution graph (remember the edges here
 represent change evolution, not parent-child relations):
 
-```
+```text
 Truncated evolution graph. B/0, B/1 and Q may have other predecessors for
 unrelated change-ids. P is the evolution fork point (it may have predecessors,
 even for change-id B):
@@ -392,7 +392,7 @@ starting with the description of the evolution fork point *P*, then adding
 *desc(Y) - desc(X)* terms for each *X->Y* edge in the truncated evolution graph.
 Then we call *try_resolve_deduplicating_same_diffs* to get:
 
-```
+```text
 P + (Q - P) + (B/1 - P) + (B/0 - Q) =
        = v1 + (v2 - v1) + (v2 - v1) + (v3 - v2)    <== collapse duplicate
                                                        (v2 - v1) edge/term
@@ -404,7 +404,7 @@ P + (Q - P) + (B/1 - P) + (B/0 - Q) =
 resolve_trivial (with either SameChange value) would return none. Here is
 another example:
 
-```
+```text
 Truncated evolution graph:
 
 B/0     ( foo.txt contents: "v3" )
@@ -431,13 +431,13 @@ commits with change-ids other than *B*, and none of those are descendants of
 
 On the other hand,
 
-*   if any candidate parent is a descendant of one of the divergent commits we
-    are trying to solve, or
-*   if any of the candidate parents are hidden and the chain starting at visible
-    roots and leading up to and including the parent has any commit for the
-    divergent change we are trying to solve (*B*), or for any other visible
-    commit (divergent or not), or the chain itself has two or more commits with
-    the same change-id,
+* if any candidate parent is a descendant of one of the divergent commits we
+  are trying to solve, or
+* if any of the candidate parents are hidden and the chain starting at visible
+  roots and leading up to and including the parent has any commit for the
+  divergent change we are trying to solve (*B*), or for any other visible
+  commit (divergent or not), or the chain itself has two or more commits with
+  the same change-id,
 
 then we would introduce new divergence or cycles in the commit graph if we based
 on the solution on such candidate parents. In these edge cases the command will
@@ -482,7 +482,7 @@ probably best to error out.
 
 ## Open questions
 
-*   Do we ever have divergence of committer? Is it safe to mess with committer?
+* Do we ever have divergence of committer? Is it safe to mess with committer?
 
 ## Alternatives considered
 

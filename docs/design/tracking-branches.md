@@ -10,6 +10,7 @@ with a number of branches. The `auto-track-bookmarks` config can mitigate this
 problem, but we'll get locally-deleted branches instead.
 
 The goal of this plan is to implement
+
 * proper support for tracking/non-tracking remote branches
 * logically consistent data model for importing/exporting Git refs
 
@@ -20,7 +21,7 @@ The goal of this plan is to implement
 Under the current model, all remote branches are "tracking" branches, and
 remote changes are merged into the local counterparts.
 
-```
+```text
 branches
   [name]:
     local_target?
@@ -49,7 +50,7 @@ git_head: target?
 We'll add a per-remote-branch `state` to distinguish non-tracking branches
 from tracking ones.
 
-```
+```text
 state = new        # not merged in the local branch or tag
       | tracking   # merged in the local branch or tag
 # `ignored` state could be added if we want to manage it by view, not by
@@ -60,7 +61,7 @@ We'll add a per-remote view-like object to record the last known remote
 branches. It will replace `branches[name].remote_targets` in the current model.
 `@git` branches will be stored in `remotes["git"]`.
 
-```
+```text
 branches
   [name]: target
 tags
@@ -84,12 +85,13 @@ git_refs                                    # last imported/exported refs
 ```
 
 With the proposed data model, we can
+
 * naturally support remote branches which have no local counterparts
 * deduplicate `branches[name].remote_targets` and `git_refs["refs/remotes"]`
 
 ### Import/export data flow
 
-```
+```text
        export flow                              import flow
        -----------                              -----------
                         +----------------+                   --.
@@ -244,6 +246,7 @@ In particular, a merge of local and remote targets is
   * TODO: hide non-tracking branches by default? ...
 
 Note: desired behavior of `jj branch forget` is to
+
 * discard both local and remote branches (without actually removing branches
   at remotes)
 * not abandon commits which belongs to those branches (even if the branch is

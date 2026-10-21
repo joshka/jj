@@ -12,7 +12,7 @@ the community, including Discord, issues, and pull requests.
    disclose this by adding an `Assisted-by` trailer at the end of the commit
    message. Examples:
 
-   ```
+   ```text
    Assisted-by: Claude Opus 4.8
    Assisted-by: Kimi K3
    Assisted-by: GPT 5.6 Sol
@@ -24,8 +24,8 @@ the community, including Discord, issues, and pull requests.
    or GitHub Discussions.
 
 3. **We want to talk to you, not your AI.** When communicating with the
-   community, do not paste the output from AI or allow an AI agent to post for you.
-   This includes, but is not limited to:
+   community, do not paste the output from AI or allow an AI agent to post for
+   you. This includes, but is not limited to:
 
    - Creating pull requests and responding to feedback
    - Creating or replying to GitHub issues

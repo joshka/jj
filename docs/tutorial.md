@@ -544,9 +544,9 @@ the `jj squash` command. That means that you can move any changes you want into
 the parent change, even if they touch the same word, and it won't cause any
 conflicts.
 
-Let's try one final command for changing the contents of an existing commit. That
-command is `jj diffedit`, which lets you edit the changes in a commit without
-checking it out.
+Let's try one final command for changing the contents of an existing commit.
+That command is `jj diffedit`, which lets you edit the changes in a commit
+without checking it out.
 
 ```shell
 $ jj diffedit -r @-
@@ -584,8 +584,8 @@ If you already have a local Git checkout, you can start using Jujutsu in that
 directory instead of cloning:
 
 ```shell
-$ cd path/to/my-git-repo
-$ jj git init
+cd path/to/my-git-repo
+jj git init
 ```
 
 This creates a [colocated

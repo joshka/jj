@@ -39,7 +39,7 @@ test and document.
 The commit message should describe the changes in the commit;
 the PR description can even be empty, but feel free to include a personal
 message. We don't use [Conventional Commits] and instead start the commit
-message with `<topic>: ` rather than like `chore: `, `feat: ` and `fix: `.
+message with `<topic>:` rather than like `chore: `, `feat:` and `fix: `.
 This means if you modified a command in the CLI, use its name as the topic, e.g.
 `next/prev: <your-modification>` or `conflicts: <your-modification>`. We don't
 currently have a specific guidelines on what to write in the topic field, but
@@ -78,9 +78,8 @@ review others' PRs so the maintainers don't need to spend as much time on them.
 When you address comments on a PR, don't make the changes in a commit on top (as
 is typical on GitHub). Instead, please make the changes in the appropriate
 commit. You can do that by creating a new commit on top of the initial commit
- (`jj new <commit>`) and then squash in the changes when you're done (`jj squash`).
-`jj git push`
-will automatically force-push the bookmark.
+(`jj new <commit>`) and then squash in the changes when you're done
+(`jj squash`). `jj git push` will automatically force-push the bookmark.
 
 Mark conversation threads as resolved when you have addressed them. If you
 realize that a comment requires non-trivial changes, write a reply instead and
@@ -216,7 +215,7 @@ for an overview, especially if you are familiar with C++.
 
 ## Style guide
 
-See [here](style_guide.md).
+See the [style guide](style_guide.md).
 
 ## Setting up a development environment
 
@@ -489,12 +488,12 @@ they are needed.
 Here are some of the commands you may find yourself using frequently during
 development:
 
-* `mise test`: Runs all tests.
-* `mise test <string>`: Runs tests that contain a specific string. For
+- `mise test`: Runs all tests.
+- `mise test <string>`: Runs tests that contain a specific string. For
   example, `mise test squash` would run tests with "squash" in their name.
-* `mise build`: Compiles `jj`.
-* `mise build:release`: Compiles `jj` in release mode.
-* `mise build:docs`: Builds the documentation for `jj`.
+- `mise build`: Compiles `jj`.
+- `mise build:release`: Compiles `jj` in release mode.
+- `mise build:docs`: Builds the documentation for `jj`.
 
 For a complete list of all available tasks, you can run `mise tasks` or review
 the configuration file at `.config/mise.toml`.
@@ -577,8 +576,8 @@ reloaded in your browser automatically.
 
 #### Offline distribution
 
-To build the rendered docs for offline distribution or to view them from your file
-system, run while inside the `jj` repository:
+To build the rendered docs for offline distribution or to view them from your
+file system, run while inside the `jj` repository:
 
 ```shell
 MKDOCS_OFFLINE=true uv run mkdocs build
@@ -609,7 +608,8 @@ Windows, you'll need to understand and adapt the shell script):
 1. Check out `jj` (`jj git clone`), cloned from your fork of `jj` (e.g.
   `github.com/jjfan/jj`). You can also use a pure Git repo if you prefer.
 
-2. Make sure `github.com/jjfan/jj` includes the `gh-pages` bookmark of the jj repo
+2. Make sure `github.com/jjfan/jj` includes the `gh-pages` bookmark of the jj
+   repo
 and run `git fetch origin gh-pages`.
 
 3. Go to the GitHub repository settings, enable GitHub Pages, and configure them
@@ -623,11 +623,12 @@ that is used in GitHub CI (details below):
     .github/scripts/docs-build-deploy prerelease main --push
     ```
 
-    This should build the version of the docs from the current commit,
-    deploy it as a new commit to the `gh-pages` bookmark,
-    and push the `gh-pages` bookmark to the origin.
+   This should build the version of the docs from the current commit,
+   deploy it as a new commit to the `gh-pages` bookmark,
+   and push the `gh-pages` bookmark to the origin.
 
-5. Now, you should be able to see the full website, including your latest changes
+5. Now, you should be able to see the full website, including your latest
+   changes
 to the `prerelease` version, at `https://jjfan.github.io/jj/prerelease/`.
 
 6. (Optional) The previous steps actually only rebuild
@@ -640,7 +641,8 @@ back and forth, you can also rebuild the docs for the latest release as follows.
     .github/scripts/docs-build-deploy v1.33.1 latest --push
     ```
 
-7. (Optional) When you are done, you may want to reset the `gh-pages` bookmark to the
+7. (Optional) When you are done, you may want to reset the `gh-pages` bookmark
+   to the
 same spot as it is upstream. If you configured the "upstream" remote,
 this can be done with:
 
@@ -651,8 +653,8 @@ this can be done with:
     jj git push --remote origin --bookmark gh-pages
     ```
 
-    If you want to preserve some of the changes you made, you can do `jj bookmark
-    set my-changes -r gh-pages` BEFORE running the above commands.
+   If you want to preserve some of the changes you made, you can do `jj bookmark
+   set my-changes -r gh-pages` BEFORE running the above commands.
 
 ### Explanation of the `docs-build-deploy` script
 
@@ -679,21 +681,21 @@ to adjust the `site_url` to something like `https://jjfan.github.io/jj`.
  storage format. In this case, you will need to add a few steps to the above
  workflow.
 
- - Install the `protoc` compiler. This usually means either `apt-get install
-   protobuf-compiler` or downloading [an official release]. The
-   `prost` [library docs] have additional advice.
- - Run `cargo run -p gen-protos` regularly (or after every edit to a `.proto`
-   file). This is the same as running `cargo run` from `lib/gen-protos`. The
-   `gen-protos` binary will use the `prost-build` library to compile the
-   `.proto` files into `.rs` files.
- - If you are adding a new `.proto` file, you will need to edit the list of
-   these files in `lib/gen-protos/src/main.rs`.
+- Install the `protoc` compiler. This usually means either `apt-get install
+  protobuf-compiler` or downloading [an official release]. The
+  `prost` [library docs] have additional advice.
+- Run `cargo run -p gen-protos` regularly (or after every edit to a `.proto`
+  file). This is the same as running `cargo run` from `lib/gen-protos`. The
+  `gen-protos` binary will use the `prost-build` library to compile the
+  `.proto` files into `.rs` files.
+- If you are adding a new `.proto` file, you will need to edit the list of
+  these files in `lib/gen-protos/src/main.rs`.
 
 [an official release]: https://github.com/protocolbuffers/protobuf/releases
 [library docs]: https://docs.rs/prost-build/latest/prost_build/#sourcing-protoc
 
- The `.rs` files generated from `.proto` files are included in the repository,
- and there is a GitHub CI check that will complain if they do not match.
+The `.rs` files generated from `.proto` files are included in the repository,
+and there is a GitHub CI check that will complain if they do not match.
 
 ## Logging
 
@@ -712,11 +714,11 @@ turns on `debug` log level for `jj-lib` and `jj-cli` only.
 jj provides two main approaches to profiling:
 
 1. **Tracing-based profiling** - Uses the Rust `tracing` crate to record spans
-   and events. Good for understanding control flow and finding where time is spent
-   in instrumented code.
+   and events. Good for understanding control flow and finding where time is
+   spent in instrumented code.
 2. **Sampling-based profiling** - Uses system profilers (perf, dtrace) to sample
-   the call stack. Good for finding hot spots including in uninstrumented code and
-   external libraries.
+   the call stack. Good for finding hot spots including in uninstrumented code
+   and external libraries.
 
 ### Tracing-based profiling
 
@@ -740,7 +742,7 @@ JJ_TRACE_INCLUDE_ARGS=1 JJ_TRACE=/tmp/trace.json jj log -r 'ancestors(@, 10)'
 ```
 
 The produced profiles can be imported into chrome://tracing (on Google Chrome)
-or https://ui.perfetto.dev/ (all browsers).
+or <https://ui.perfetto.dev/> (all browsers).
 
 Only functions annotated with `#[tracing::instrument]` or explicit `trace_span!`
 macros appear in traces. If you need to profile a specific area that isn't
@@ -748,10 +750,12 @@ instrumented, you can add `#[instrument]` attributes to the relevant functions.
 
 ### Sampling-based profiling
 
-Sampling profilers periodically capture the call stack to identify hot spots. This approach:
+Sampling profilers periodically capture the call stack to identify hot spots.
+This approach:
 
 - Has lower overhead than tracing
-- Captures all code, including uninstrumented functions and external libraries (like gitoxide)
+- Captures all code, including uninstrumented functions and external libraries
+  (like gitoxide)
 - May miss short-lived function calls since it samples rather than traces every
   call
 

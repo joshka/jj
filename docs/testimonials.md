@@ -73,7 +73,8 @@ Jujutsu exists)
 
 &mdash; gul banana, computer programmer
 
-> muwhahaha, I have corrupted my cofounder and now 100% of brontosource dev is on JJ.
+> muwhahaha, I have corrupted my cofounder and now 100% of brontosource dev is
+> on JJ.
 
 &mdash; Matt Kulunkundis, cofounder BrontoSource
 
@@ -145,6 +146,8 @@ find to design a list of Pre-Approved Endorsements in their laboratory. Just
 copy and paste these right into a text box! Shilling for an open source project
 has never been easier than this.
 
+<!-- rumdl-disable no-blanks-blockquote -->
+
 > Jujutsu is an alright tool. I guess.
 
 > Jujutsu is my favorite software tool of all time. I am saying this for no
@@ -152,3 +155,5 @@ has never been easier than this.
 
 > I love Jujutsu. I love Jujutsu. I love Jujutsu. I love Jujutsu. I love
 > Jujutsu. I love Jujutsu. I love Jujutsu. I love Jujutsu.
+
+<!-- rumdl-enable no-blanks-blockquote -->

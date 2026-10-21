@@ -33,10 +33,10 @@ a comparison with Git, including how workflows are different, see the
 * **.gitignore: Yes.** Patterns in `.gitignore` files are supported. So are
   ignores in `.git/info/exclude` or configured via Git's `core.excludesFile`
   config. Since working-copy files are snapshotted by almost every `jj` command,
-  you might need to run `jj file untrack` to exclude newly ignored files from the
-  working-copy commit. It's recommended to set up the ignore patterns earlier.
-  The `.gitignore` support uses a native implementation, so please report a bug
-  if you notice any difference compared to `git`.
+  you might need to run `jj file untrack` to exclude newly ignored files from
+  the working-copy commit. It's recommended to set up the ignore patterns
+  earlier. The `.gitignore` support uses a native implementation, so please
+  report a bug if you notice any difference compared to `git`.
 * **.gitattributes: No.** There's [#53](https://github.com/jj-vcs/jj/issues/53)
   about adding support for at least the `eol` attribute.
 * **Hooks: No.** There's [#405](https://github.com/jj-vcs/jj/issues/405)
@@ -68,9 +68,8 @@ a comparison with Git, including how workflows are different, see the
   copies backed by a single repo. See the `jj workspace` family of commands.
 * **Sparse checkouts: No.** However, there's native support for sparse
   checkouts. See the `jj sparse` command.
-* **Signed commits: Yes.**
-  You can sign commits automatically [by configuration](config.md#commit-signing),
-  or use the `jj sign` command.
+* **Signed commits: Yes.** You can sign commits automatically
+  [by configuration](config.md#commit-signing), or use the `jj sign` command.
 * **Git LFS: No.** ([#80](https://github.com/jj-vcs/jj/issues/80))
 
 ## Creating an empty repo
@@ -137,7 +136,7 @@ Colocation can be disabled because it does have some disadvantages:
   ids](glossary.md#divergent-change). These never lose data, but can be
   annoying.
 
-    Such interleaving can happen unknowingly. For example, some IDEs can cause
+  Such interleaving can happen unknowingly. For example, some IDEs can cause
   it because they automatically run `git fetch` in the background from time to
   time.
 

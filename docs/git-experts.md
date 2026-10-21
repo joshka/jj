@@ -76,8 +76,8 @@ one command.
 Common uses of the operation log:
 
 - `jj undo` reverts the last operation in one step, without needing to figure
-  out which ref to reset. You can repeat `jj undo` to continue stepping backwards
-  in time.
+  out which ref to reset. You can repeat `jj undo` to continue stepping
+  backwards in time.
 
 - `jj op log -p` shows operations with diffs so you can inspect what happened.
 

@@ -2,7 +2,8 @@
 title: Copy Tracking and Tracing Design
 ---
 
-Authors: [Daniel Ploch](mailto:dploch@google.com), [Martin von Zweigbergk](mailto:martinvonz@google.com)
+Authors: [Daniel Ploch](mailto:dploch@google.com),
+[Martin von Zweigbergk](mailto:martinvonz@google.com)
 
 **Summary:** This Document documents an approach to tracking and detecting copy
 information in jj repos, in a way that is compatible with both Git's detection
@@ -251,6 +252,7 @@ K add foo
 
 Assuming the new files are different in each commit, we get the following trees.
 Notation:
+
 * `id`is the hash of the contents (the `FileId`)
 * The `2:bar->1:foo` means that copy ID 2 (i.e. hash of the `CopyHistory`
   struct) has file `bar`, which was copied from copy ID `1`, where it was
@@ -509,7 +511,7 @@ $ jj new B C
 It seems clear that `baz`'s copy graph should inherit from both `foo` and `bar`,
 producing a merge in copy graph. The trees would look like this:
 
-```
+```text
 Commit A:
 name: foo, id: aaa111, copy_id: 1:foo
 name: bar, id: aaa111, copy_id: 2:bar
@@ -633,7 +635,7 @@ note and leaves it at that.
 The model and algorithm described in this document would result in a conflict
 in the copy ID at both paths after propagating the renames.
 
-#### Example: @jonathantanmy's test case:
+#### Example: @jonathantanmy's test case
 
 TODO: fill this out
 
@@ -727,17 +729,17 @@ files expensive.
 A rough implementation plan may look like this:
 
 1. Implement support for copy-tracking in the test backend
-3. Implement diff algorithm and test it
-4. Implement merge algorithm and test it
-5. Implement blame algorithm and test it
-6. Implement file-following log algorithm and test it
-7. Extract some queries to the commit backend trait so cloud-based backends
+2. Implement diff algorithm and test it
+3. Implement merge algorithm and test it
+4. Implement blame algorithm and test it
+5. Implement file-following log algorithm and test it
+6. Extract some queries to the commit backend trait so cloud-based backends
    (like the Google backend) can provide versions implemented using database
    indexes
-8. Implement support for copy-tracking in the Git backend. This may involve
+7. Implement support for copy-tracking in the Git backend. This may involve
    backfilling, possibly lazily. Or it may involve new abstractions in the
    commit backend trait.
-9.  Implement CLI for recording copies and for resolving conflicts in copies
+8. Implement CLI for recording copies and for resolving conflicts in copies
 
 ## Alternatives considered
 
@@ -757,10 +759,10 @@ comparing the full trees.
 
 ### Record logical file identifiers in trees (BitKeeper-like model)
 
-BitKeeper records a file ID (which identifies a logical file, unlike our `FileId`
-type) for each path (or maybe it's a path for each file ID). That way you can
-compare two arbitrary trees, find the added and deleted files and just compare
-the file IDs to figure out which of them are renames.
+BitKeeper records a file ID (which identifies a logical file, unlike our
+`FileId` type) for each path (or maybe it's a path for each file ID). That way
+you can compare two arbitrary trees, find the added and deleted files and just
+compare the file IDs to figure out which of them are renames.
 
 This model doesn't seem to be easily extensible to support copies (it only
 supports renames).

@@ -51,13 +51,17 @@ cargo install --locked --bin jj jj-cli
 ```
 
 #### Arch Linux
-You can install the `jujutsu` package from the [official extra repository](https://archlinux.org/packages/extra/x86_64/jujutsu/):
+
+You can install the `jujutsu` package from the
+[official extra repository](https://archlinux.org/packages/extra/x86_64/jujutsu/):
 
 ```shell
 pacman -S jujutsu
 ```
 
-Or install from the [AUR repository](https://aur.archlinux.org/packages/jujutsu-git) with an [AUR Helper](https://wiki.archlinux.org/title/AUR_helpers):
+Or install from the
+[AUR repository](https://aur.archlinux.org/packages/jujutsu-git) with an
+[AUR Helper](https://wiki.archlinux.org/title/AUR_helpers):
 
 ```shell
 yay -S jujutsu-git
@@ -94,10 +98,13 @@ brew install jj
 
 #### Gentoo Linux
 
-`dev-vcs/jj` is available in the [GURU](https://wiki.gentoo.org/wiki/Project:GURU) repository.
-Details on how to enable the GURU repository can be found [here](https://wiki.gentoo.org/wiki/Project:GURU/Information_for_End_Users).
+`dev-vcs/jj` is available in the
+[GURU](https://wiki.gentoo.org/wiki/Project:GURU) repository. Details on how to
+enable the GURU repository are in the [GURU guide for end
+users](https://wiki.gentoo.org/wiki/Project:GURU/Information_for_End_Users).
 
-Once you have synced the GURU repository, you can install `dev-vcs/jj` via Portage:
+Once you have synced the GURU repository, you can install `dev-vcs/jj` via
+Portage:
 
 ```shell
 emerge -av dev-vcs/jj
@@ -105,7 +112,9 @@ emerge -av dev-vcs/jj
 
 #### openSUSE Tumbleweed
 
-`jujutsu` can be installed from the official [openSUSE-Tumbleweed-Oss](http://download.opensuse.org/tumbleweed/repo/oss/) repository:
+`jujutsu` can be installed from the official
+[openSUSE-Tumbleweed-Oss](http://download.opensuse.org/tumbleweed/repo/oss/)
+repository:
 
 ```shell
 zypper install jujutsu
@@ -125,7 +134,8 @@ sudo dnf install jj-cli
 
 #### From Source
 
-First make sure that you have a Rust version >= 1.97.1. You may also need to run:
+First make sure that you have a Rust version >= 1.97.1. You may also need to
+run:
 
 ```shell
 xcode-select --install
@@ -197,7 +207,8 @@ scoop install main/jj
 
 ### FreeBSD
 
-`devel/jujutsu` is [available](https://www.freshports.org/devel/jujutsu) in the ports.
+`devel/jujutsu` is [available](https://www.freshports.org/devel/jujutsu) in the
+ports.
 
 Install pre-built pkg:
 
@@ -223,8 +234,8 @@ You will need git 2.42.0 or above. On older systems (e.g. Debian 11, Ubuntu
 You may want to configure your name and email so commits are made in your name.
 
 ```shell
-$ jj config set --user user.name "Martin von Zweigbergk"
-$ jj config set --user user.email "martinvonz@google.com"
+jj config set --user user.name "Martin von Zweigbergk"
+jj config set --user user.email "martinvonz@google.com"
 ```
 
 ## Command-line completion
@@ -346,7 +357,7 @@ Insert the above into your `$PROFILE` file
 
 [cargo-binstall]: https://github.com/cargo-bins/cargo-binstall
 [clap]: https://github.com/clap-rs/clap/issues/3166
-[Homebrew]: https://brew.sh/
 [macports]: https://ports.macports.org/port/jujutsu/
 [pre-built binaries]: https://github.com/jj-vcs/jj/releases/latest
+<!-- rumdl-disable-next-line link-image-reference-definitions -->
 [ExecutionPolicies]: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies

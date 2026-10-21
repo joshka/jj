@@ -21,8 +21,9 @@ These are the config settings available to jj/Jujutsu.
   or found with `jj config path --workspace`. For security reasons, they are not
   located inside the workspace.
 
-- Settings from [environment variable overrides](#environment-variable-overrides)
-  (for example `$JJ_USER` / `$JJ_EMAIL`).
+- Settings from
+  [environment variable overrides](#environment-variable-overrides) (for example
+  `$JJ_USER` / `$JJ_EMAIL`).
 
 - Settings [specified on the command-line].
 
@@ -103,7 +104,7 @@ literal_template = '"hello" ++ "\n"'
 
 `basic_template` is actually equivalent to this string:
 
-```
+```text
 'hello' ++ "
 "
 ```
@@ -115,7 +116,7 @@ error messages (such as referencing a line that you think shouldn't exist).
 
 On the other hand, `literal_template` is equivalent to:
 
-```
+```text
 "hello" ++ "\n"
 ```
 
@@ -148,8 +149,9 @@ export JJ_EMAIL="you@example.com"
 
 `$JJ_USER` overrides `user.name` and `$JJ_EMAIL` overrides `user.email`. They
 take precedence over values in config files (but not over `--config` /
-`--config-file`). See [Environment variable overrides](#environment-variable-overrides)
-for the full list. For directory-based switching without env vars, use
+`--config-file`). See
+[Environment variable overrides](#environment-variable-overrides) for the full
+list. For directory-based switching without env vars, use
 [conditional variables](#conditional-variables).
 
 ## UI settings
@@ -178,15 +180,15 @@ commit_id = "green"
 
 The following colors are available:
 
-* black
-* red
-* green
-* yellow
-* blue
-* magenta
-* cyan
-* white
-* default
+- black
+- red
+- green
+- yellow
+- blue
+- magenta
+- cyan
+- white
+- default
 
 All of them but "default" come in a bright version too, e.g. "bright red". The
 "default" color can be used to override a color defined by a parent style
@@ -398,9 +400,10 @@ format_signed_off_by_trailer(self)
 ```
 
 Some ready-to-use trailer templates are available for frequently used trailers:
-* `format_signed_off_by_trailer(commit)` creates a "Signed-off-by" trailer
+
+- `format_signed_off_by_trailer(commit)` creates a "Signed-off-by" trailer
   using the committer info.
-* `format_gerrit_change_id_trailer(commit)` creates a "Change-Id" trailer
+- `format_gerrit_change_id_trailer(commit)` creates a "Change-Id" trailer
   suitable to be used with Gerrit. It is based Jujutsu's change id.
 
 Existing trailers are also accessible via `commit.trailers()`.
@@ -458,32 +461,32 @@ In color-words diffs, changed words are displayed inline by default when color
 is enabled. When the formatter cannot emit color, changed words are always shown
 on separate lines because inline changes would not be distinguishable.
 
-Because it's difficult to read a diff line with many removed/added words, there's
-a threshold to switch to traditional separate-line format in colorized output.
-You can also change the default number of lines of context shown.
+Because it's difficult to read a diff line with many removed/added words,
+there's a threshold to switch to traditional separate-line format in colorized
+output. You can also change the default number of lines of context shown.
 
-* `max-inline-alternation`: Maximum number of removed/added word alternation to
+- `max-inline-alternation`: Maximum number of removed/added word alternation to
   inline. For example, `<added> ... <added>` sequence has 1 alternation, so the
   line will be inline if `max-inline-alternation >= 1`. `<added> ... <removed>
   ... <added>` sequence has 3 alternation.
 
-  * `0`: disable inlining, making `--color-words` more similar to `--git`
-  * `1`: inline removes-only or adds-only lines
-  * `2`, `3`, ..: inline up to `2`, `3`, .. alternation
-  * `-1`: inline all lines
+  - `0`: disable inlining, making `--color-words` more similar to `--git`
+  - `1`: inline removes-only or adds-only lines
+  - `2`, `3`, ..: inline up to `2`, `3`, .. alternation
+  - `-1`: inline all lines
 
   The default is `3`.
 
   **This parameter is experimental.** The definition is subject to change.
 
-* `conflict`: How conflicts are processed and displayed.
+- `conflict`: How conflicts are processed and displayed.
 
-   * `"materialize"`: compare materialized contents (default)
-   * `"pair"`: compare individual pairs
+  - `"materialize"`: compare materialized contents (default)
+  - `"pair"`: compare individual pairs
 
-   **This parameter is experimental.**
+  **This parameter is experimental.**
 
-* `context`: Number of lines of context to show in the diff. The default is `3`.
+- `context`: Number of lines of context to show in the diff. The default is `3`.
 
 ```toml
 [diff.color-words]
@@ -495,9 +498,9 @@ context = 3
 
 In git diffs you can change the default number of lines of context shown.
 
-* `context`: Number of lines of context to show in the diff. The default is `3`.
+- `context`: Number of lines of context to show in the diff. The default is `3`.
 
-* `show-path-prefix`: Whether to show the `a/` and `b/` path prefixes in
+- `show-path-prefix`: Whether to show the `a/` and `b/` path prefixes in
   `diff --git` output. The default is `true`.
 
 ```toml
@@ -548,15 +551,16 @@ diff-args = ["--color=always", "$left", "$right"]
 - `$width` is replaced with the number of terminal columns available to the diff
   content.
 
-- If `diff-args` is not specified, `["$left", "$right"]` will be used by default.
+- If `diff-args` is not specified, `["$left", "$right"]` will be used by
+  default.
 
 - If `diff-args = []`, `jj` will refuse to use this tool for diff formatting.
   This is a way to explicitly state that a certain tool (e.g. `mergiraf`) does
   not work for viewing diffs.
 
 By default `jj` will invoke external tools with a directory containing the left
-and right sides. The `diff-invocation-mode` config can change this to file by file
-invocations as follows:
+and right sides. The `diff-invocation-mode` config can change this to file by
+file invocations as follows:
 
 ```toml
 [ui]
@@ -652,8 +656,8 @@ You can configure the template used when no `-T` is specified.
 - `templates.config_list` for `jj config list`
 - `templates.workspace_list` for `jj workspace list`
 
-If you want to see the config variable origin (type and path) when you do `jj config list`
-you can add this to your config:
+If you want to see the config variable origin (type and path) when you do
+`jj config list` you can add this to your config:
 
 ```toml
 [templates]
@@ -664,7 +668,8 @@ config_list = "builtin_config_list_detailed"
 
 ### Default revisions
 
-You can configure the revisions `jj log` would show when neither `-r` nor any paths are specified.
+You can configure the revisions `jj log` would show when neither `-r` nor any
+paths are specified.
 
 ```toml
 [revsets]
@@ -701,12 +706,12 @@ The default value for `revsets.op-diff-changes-in` is
 
 ### Prioritize Revsets in the Log over @
 
-In some situations the default graph can be hard to read, for example when working with big merges.
-To improve this behavior you can configure which revset in the `jj log` graph is displayed on
-the left instead of `@`.
+In some situations the default graph can be hard to read, for example when
+working with big merges. To improve this behavior you can configure which revset
+in the `jj log` graph is displayed on the left instead of `@`.
 
-The following example will prioritize the change with the description "megamerge" with a fallback
-to `trunk()` in case no such change exists:
+The following example will prioritize the change with the description
+"megamerge" with a fallback to `trunk()` in case no such change exists:
 
 ```toml
 [revsets]
@@ -903,8 +908,8 @@ show-cryptographic-signatures = true
 ## Pager
 
 By default, jj will paginate output that would scroll off the screen. It does
-this by passing output through `less -FRXK` on most platforms (on Windows it uses
-[the pager](#builtin-pager) that is built-in to jj).
+this by passing output through `less -FRXK` on most platforms (on Windows it
+uses [the pager](#builtin-pager) that is built-in to jj).
 
 Which pager to use can be customized by setting `ui.pager`. When choosing a
 pager, ensure that it either supports color codes or that you disable color (see
@@ -918,13 +923,13 @@ Examples:
 
 ```shell
 # Pipe output through `less -FRXK` (default on non-Windows platforms)
-$ jj config set --user ui.pager "less -FRXK"
+jj config set --user ui.pager "less -FRXK"
 
 # Use the built-in pager (default on Windows)
-$ jj config set --user ui.pager :builtin
+jj config set --user ui.pager :builtin
 
 # Use `$PAGER` environment variable if set (on non-Windows platforms)
-$ jj config set --user ui.pager '["sh", "-c", "exec ${PAGER:-less -FRXK}"]'
+jj config set --user ui.pager '["sh", "-c", "exec ${PAGER:-less -FRXK}"]'
 ```
 
 Additionally, paging behavior can be toggled via `ui.paginate` like so:
@@ -1204,7 +1209,9 @@ edit-args = ["--newtab", "$left", "$right"]
 
 - If no `edit-args` are specified, `["$left", "$right"]` are set by default.
 
-- If `edit-args = []`, `jj` will refuse to use this tool for diff editing. This is a way to explicitly state that a certain tool (e.g. `mergiraf`) does not work for diff editing.
+- If `edit-args = []`, `jj` will refuse to use this tool for diff editing. This
+  is a way to explicitly state that a certain tool (e.g. `mergiraf`) does not
+  work for diff editing.
 
 Like diff viewing, diff editors are invoked with a directory containing the left
 and right sides by default. The `edit-invocation-mode` config controls this
@@ -1217,7 +1224,8 @@ diff-invocation-mode = "dir"
 edit-invocation-mode = "file-by-file"
 ```
 
-Finally, `ui.diff-editor` can be a list that specifies a command and its arguments.
+Finally, `ui.diff-editor` can be a list that specifies a command and its
+arguments.
 
 Some examples:
 
@@ -1236,7 +1244,8 @@ diff-editor = "binary"
 We offer two special "3-pane" diff editor configs:
 
 - `meld-3`, which requires installing [Meld](https://meldmerge.org/), and
-- `diffedit3`, which requires installing [`diffedit3`](https://github.com/ilyagr/diffedit3/releases).
+- `diffedit3`, which requires installing
+  [`diffedit3`](https://github.com/ilyagr/diffedit3/releases).
 
 `Meld` is a graphical application that is recommended, but can be difficult to
 install in some situations. `diffedit3` is designed to be easy to install and to
@@ -1245,10 +1254,10 @@ forwarding). `diffedit3` starts a local server that can be accessed via a web
 browser, similarly to [Jupyter](https://jupyter.org/).
 
 There is also the `diffedit3-ssh` which is similar to `diffedit3` but does not
-try to open the web browser pointing to the local server (the URL
-printed to the terminal) automatically. `diffedit3-ssh` also always uses ports in between
-17376-17380 and fails if they are all busy. This can be useful when working
-over SSH. Open the fold below for more details of how to set that up.
+try to open the web browser pointing to the local server (the URL printed to the
+terminal) automatically. `diffedit3-ssh` also always uses ports in between
+17376-17380 and fails if they are all busy. This can be useful when working over
+SSH. Open the fold below for more details of how to set that up.
 
 <details>
 <summary> Tips for using `diffedit3-ssh` over SSH </summary>
@@ -1364,6 +1373,7 @@ The following built-in tools are always available:
 - `:ours` and `:theirs` pick side #1 or side #2 of the conflict respectively.
 
 The following tools can be used out of the box, as long as they are installed:
+
 - "kdiff3"
 - "meld"
 - "mergiraf"
@@ -1552,10 +1562,10 @@ range argument format expected by your tool. The formatter will be invoked with
 these arguments repeated for each modified line range (e.g. `--lines=10-20
 --lines=30-40`).
 
-Additionally, you can use `run-tool-if-zero-line-ranges` to control the
-behavior when a diff results in zero line ranges (which can happen when lines
-are only deleted or with `--include-unchanged-files`). If `false` (the default),
-`jj` will skip the tool entirely for that file. If `true`, `jj` will run the tool
+Additionally, you can use `run-tool-if-zero-line-ranges` to control the behavior
+when a diff results in zero line ranges (which can happen when lines are only
+deleted or with `--include-unchanged-files`). If `false` (the default), `jj`
+will skip the tool entirely for that file. If `true`, `jj` will run the tool
 even when there are zero line ranges calculated. This is useful for tools that
 perform file-wide operations, such as import sorting.
 
@@ -1629,7 +1639,7 @@ patterns = ["glob:'**/*.rs'"]
 Then to use the tool in a specific repository, set the `enabled` config:
 
 ```shell
-$ jj config set --repo fix.tools.rustfmt.enabled true
+jj config set --repo fix.tools.rustfmt.enabled true
 ```
 
 ## `run`: Running commands across revisions {: #run }
@@ -1676,16 +1686,17 @@ backend = "gpg"
 # key = "signing@example.com"
 ```
 
-By default the gpg backend will look for a `gpg` binary on your path. If you want
-to change the program used or specify a path to `gpg` explicitly you can set:
+By default the gpg backend will look for a `gpg` binary on your path. If you
+want to change the program used or specify a path to `gpg` explicitly you can
+set:
 
 ```toml
 [signing]
 backends.gpg.program = "gpg2"
 ```
 
-Also by default the gpg backend will consider key expiry when verifying commit signatures.
-To consider expired keys as valid you can set:
+Also by default the gpg backend will consider key expiry when verifying commit
+signatures. To consider expired keys as valid you can set:
 
 ```toml
 [signing]
@@ -1706,16 +1717,17 @@ backend = "gpgsm"
 # key = "signing@example.com"
 ```
 
-By default the gpgsm backend will look for a `gpgsm` binary on your path. If you want
-to change the program used or specify a path to `gpgsm` explicitly you can set:
+By default the gpgsm backend will look for a `gpgsm` binary on your path. If you
+want to change the program used or specify a path to `gpgsm` explicitly you can
+set:
 
 ```toml
 [signing]
 backends.gpgsm.program = "gpgsm"
 ```
 
-Also by default the gpgsm backend will consider key expiry when verifying commit signatures.
-To consider expired keys as valid you can set:
+Also by default the gpgsm backend will consider key expiry when verifying commit
+signatures. To consider expired keys as valid you can set:
 
 ```toml
 [signing]
@@ -1733,20 +1745,22 @@ key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGj+J6N6SO+4P8dOZqfR1oiay2yxhhHnagH52
 # key = "~/.ssh/id_for_signing.pub"
 ```
 
-By default the ssh backend will look for a `ssh-keygen` binary on your path. If you want
-to change the program used or specify a path to `ssh-keygen` explicitly you can set:
+By default the ssh backend will look for a `ssh-keygen` binary on your path. If
+you want to change the program used or specify a path to `ssh-keygen` explicitly
+you can set:
 
 ```toml
 [signing]
 backends.ssh.program = "/path/to/ssh-keygen"
 ```
 
-When verifying commit signatures the ssh backend needs to be provided with an allowed-signers
-file containing the public keys of authors whose signatures you want to be able to verify.
+When verifying commit signatures the ssh backend needs to be provided with an
+allowed-signers file containing the public keys of authors whose signatures you
+want to be able to verify.
 
 You can find the format for this file in the
-[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#ALLOWED_SIGNERS). This can be provided
-as follows:
+[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#ALLOWED_SIGNERS). This
+can be provided as follows:
 
 ```toml
 [signing]
@@ -1754,9 +1768,9 @@ backends.ssh.allowed-signers = "/path/to/allowed-signers"
 ```
 
 Additionally, an SSH KRL or list of revoked public keys (see
-[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#KEY_REVOCATION_LISTS)) can be provided
-with the `revocation-list` option. If a public key is found in this file then any signature
-relating to it is marked as invalid.
+[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#KEY_REVOCATION_LISTS))
+can be provided with the `revocation-list` option. If a public key is found in
+this file then any signature relating to it is marked as invalid.
 
 ```toml
 [signing]
@@ -1765,8 +1779,13 @@ backends.ssh.revocation-list = "/path/to/revocation-list"
 
 ### Manually signing commits
 
-You can use [`jj sign`](./cli-reference.md#jj-sign)/[`jj unsign`](./cli-reference.md#jj-unsign)
+<!-- rumdl-disable link-fragments -->
+
+You can use
+[`jj sign`](./cli-reference.md#jj-sign)/[`jj unsign`](./cli-reference.md#jj-unsign)
 to sign/unsign commits manually.
+
+<!-- rumdl-enable link-fragments -->
 
 !!! warning
 
@@ -1778,7 +1797,8 @@ to sign/unsign commits manually.
 ### Automatically signing commits
 
 The `signing.behavior` configuration option has four different options for what
-to do with signing commits on modification of a change (e.g., rebasing or edits).
+to do with signing commits on modification of a change (e.g., rebasing or
+edits).
 
 - `drop`: do not automatically sign; if a change was signed before
   modification, drop that signing after modification.
@@ -1845,7 +1865,8 @@ The setting `git.colocate` is a boolean option that controls whether or not the
 `jj git init` and `jj git clone` commands should create colocated workspace by
 default. Set `git.colocate` to `false` to disable it.
 
-See [Colocated Jujutsu/Git workspaces](git-compatibility.md#colocated-jujutsugit-workspaces)
+See
+[Colocated Jujutsu/Git workspaces](git-compatibility.md#colocated-jujutsugit-workspaces)
 for more information.
 
 ### Default object hash format
@@ -2131,8 +2152,8 @@ Note that if a `Change-Id` or `Link` trailer already exists in a change, then
 hunks and merge them. This can be configured to split hunks further into
 word-level hunks.
 
-* `line`: split into line hunks (default)
-* `word`: split into word hunks
+- `line`: split into line hunks (default)
+- `word`: split into word hunks
 
 ```toml
 [merge]
@@ -2149,8 +2170,8 @@ trade-offs. It also means that repeated 3-way merging of multiple trees may give
 different results depending on the order of merging. To turn it off, set
 `same-change = "keep"`.
 
-* `keep`: leave same-change conflict unresolved
-* `accept`: resolve same-change conflict to new value (default)
+- `keep`: leave same-change conflict unresolved
+- `accept`: resolve same-change conflict to new value (default)
 
 ```toml
 [merge]
@@ -2259,8 +2280,9 @@ automatically update stale working copies by setting:
 auto-update-stale = true
 ```
 
-This is particularly useful if you have [multiple workspaces](working-copy.md#workspaces)
-and want to avoid manually updating each one.
+This is particularly useful if you have
+[multiple workspaces](working-copy.md#workspaces) and want to avoid manually
+updating each one.
 
 For more information on stale working copies, see the [working copy
 documentation](working-copy.md#stale-working-copy).
@@ -2339,7 +2361,7 @@ file manually. If this option is `"respect"`, `jj` will also attempt to
 propagate that change to the filesystem.
 
 Note that if you modify a file's executable bit before changing this setting
-from `"ignore"` or  `"auto"` to `"respect"`, `jj` may not update the stored
+from `"ignore"` or `"auto"` to `"respect"`, `jj` may not update the stored
 executable bit until you modify the file's contents or update its modification
 time, e.g. with `touch`.
 
@@ -2435,10 +2457,12 @@ This enables features like:
 Here are some popular editors with TOML schema validation support:
 
 - VS Code
-  - Install [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+  - Install
+    [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
 
 - Neovim/Vim
-  - Use with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) and [taplo](https://github.com/tamasfe/taplo)
+  - Use with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) and
+    [taplo](https://github.com/tamasfe/taplo)
 
 - Helix
   - Install [taplo](https://github.com/tamasfe/taplo)
@@ -2447,7 +2471,8 @@ Here are some popular editors with TOML schema validation support:
   - Install [TOML](https://plugins.jetbrains.com/plugin/8195-toml) plugin
 
 - Emacs
-  - Install [lsp-mode](https://github.com/emacs-lsp/lsp-mode) and [toml-mode](https://github.com/dryman/toml-mode.el)
+  - Install [lsp-mode](https://github.com/emacs-lsp/lsp-mode) and
+    [toml-mode](https://github.com/dryman/toml-mode.el)
   - Configure [taplo](https://github.com/tamasfe/taplo) as the LSP server
 
 ### Environment variable overrides
@@ -2577,25 +2602,26 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
 
 #### Available condition keys
 
-* `--when.repositories`: List of paths to match the repository path prefix.
+- `--when.repositories`: List of paths to match the repository path prefix.
 
   Paths should be absolute. Each path component (directory or file name, drive
   letter, etc.) is compared case-sensitively on all platforms. A path starting
-  with `~` is expanded to the home directory. On Windows, directory separator may
-  be either `\` or `/`. (Beware that `\` needs escape in double-quoted strings.)
+  with `~` is expanded to the home directory. On Windows, directory separator
+  may be either `\` or `/`. (Beware that `\` needs escape in double-quoted
+  strings.)
 
-  Use `jj root` to see the workspace root directory. Note that the repository path
-  is in the main workspace if you're using multiple workspaces with `jj
-  workspace`.
+  Use `jj root` to see the workspace root directory. Note that the repository
+  path is in the main workspace if you're using multiple workspaces with
+  `jj workspace`.
 
-* `--when.workspaces`: List of paths to match the workspace path prefix.
+- `--when.workspaces`: List of paths to match the workspace path prefix.
 
   The same concerns about the path as for `--when.repositories` applies.
 
   Use `jj root` to see the workspace root directory.
 
-* `--when.hostnames`: List of hostnames to match against the `operation.hostname`
-  config setting.
+- `--when.hostnames`: List of hostnames to match against the
+  `operation.hostname` config setting.
 
   Hostnames are compared case-sensitively and must match exactly.
 
@@ -2604,7 +2630,7 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
   --when.hostnames = ["home-desktop", "laptop"]    # matches "home-desktop" *OR* "laptop"
   ```
 
-* `--when.commands`: List of subcommands to match.
+- `--when.commands`: List of subcommands to match.
 
   Subcommands are space-separated and matched by prefix.
 
@@ -2614,7 +2640,7 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
   --when.commands = ["file", "log"] # matches `jj file` *OR* `jj log` (*OR* subcommand of either)
   ```
 
-* `--when.platforms`: List of platforms to match.
+- `--when.platforms`: List of platforms to match.
 
   The values are defined by both
   [`std::env::consts::FAMILY`](https://doc.rust-lang.org/std/env/consts/constant.FAMILY.html)
@@ -2627,7 +2653,7 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
   --when.platforms = ["unix"]               # matches anything in the Unix family (Linux, FreeBSD, macOS, etc.)
   ```
 
-* `--when.environments`: List of environment variable conditions in
+- `--when.environments`: List of environment variable conditions in
   `"NAME=VALUE"` format (check if the variable has the value), or `NAME` to
   check if the variable is set.
 

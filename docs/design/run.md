@@ -1,8 +1,12 @@
 # Introducing JJ run
 
-Authors: [Philip Metzger](mailto:philipmetzger@bluewin.ch), [Martin von Zweigberk](mailto:martinvonz@google.com), [Danny Hooper](mailto:hooper@google.com), [Waleed Khan](mailto:me@waleedkhan.name)
+Authors: [Philip Metzger](mailto:philipmetzger@bluewin.ch),
+[Martin von Zweigberk](mailto:martinvonz@google.com),
+[Danny Hooper](mailto:hooper@google.com),
+[Waleed Khan](mailto:me@waleedkhan.name)
 
-Initial Version, 10.12.2022 (view full history [here](https://docs.google.com/document/d/14BiAoEEy_e-BRPHYpXRFjvHMfgYVKh-pKWzzTDi-v-g/edit))
+Initial Version, 10.12.2022
+([full history](https://docs.google.com/document/d/14BiAoEEy_e-BRPHYpXRFjvHMfgYVKh-pKWzzTDi-v-g/edit))
 
 **Summary:** This Document documents the design of a new `run` command for
 Jujutsu which will be used to seamlessly integrate with build systems, linters
@@ -15,15 +19,16 @@ across multiple revisions. For more details, read the
 The goal of this Design Document is to specify the correct behavior of `jj run`.
 The points we decide on here I (Philip Metzger) will try to implement. There
 exists some prior work in other DVCS:
-* `git test`: part of [git-branchless]. Similar to this proposal for `jj run`.
-* `hg run`: Google's internal Mercurial extension. Similar to this proposal for
+
+- `git test`: part of [git-branchless]. Similar to this proposal for `jj run`.
+- `hg run`: Google's internal Mercurial extension. Similar to this proposal for
 `jj run`.
 Details not available.
-* `hg fix`: Google's open source Mercurial extension: [source code][fix-src]. A
+- `hg fix`: Google's open source Mercurial extension: [source code][fix-src]. A
 more specialized approach to rewriting file content without full context of the
 working directory.
-* `git rebase -x`: runs commands opportunistically as part of rebase.
-* `git bisect run`: run a command to determine which commit introduced a bug.
+- `git rebase -x`: runs commands opportunistically as part of rebase.
+- `git bisect run`: run a command to determine which commit introduced a bug.
 
 ## Context and Scope
 
@@ -45,29 +50,31 @@ regular local-disk working copies.
 
 ### Goals
 
-* We should be able to apply the command to any revision, published or unpublished.
-* We should be able to parallelize running the actual command, while preserving a
+- We should be able to apply the command to any revision, published or
+  unpublished.
+- We should be able to parallelize running the actual command, while preserving
+  a
 good console output.
-* The run command should be able to work in any commit, the working-copy commit
+- The run command should be able to work in any commit, the working-copy commit
 itself or any other commit.
-* There should exist some way to signal hard failure.
-* The command should build enough infrastructure for `jj test`, `jj fix` and
+- There should exist some way to signal hard failure.
+- The command should build enough infrastructure for `jj test`, `jj fix` and
 `jj format`.
-* The main goal is to be good enough, as we can always expand the functionality
+- The main goal is to be good enough, as we can always expand the functionality
 in the future.
 
 ### Non-Goals
 
-* While we should build a base for `jj test`, `jj format` and `jj fix`, we
+- While we should build a base for `jj test`, `jj format` and `jj fix`, we
 shouldn't mash their use-cases into `jj run`.
-* The command shouldn't be too smart, as too many assumptions about workflows
+- The command shouldn't be too smart, as too many assumptions about workflows
 makes the command confusing for users.
-* The smart caching of outputs, as user input commands can be unpredictable.
+- The smart caching of outputs, as user input commands can be unpredictable.
 makes the command confusing for users.
-* Avoid the smart caching of outputs, as user input commands can be
+- Avoid the smart caching of outputs, as user input commands can be
 unpredictable.
-* Fine grained user facing configuration, as it's unwarranted complexity.
-* A `fix` subcommand as it cuts too much design space.
+- Fine grained user facing configuration, as it's unwarranted complexity.
+- A `fix` subcommand as it cuts too much design space.
 
 ## Use-Cases of jj run
 
@@ -200,6 +207,7 @@ undesirable state, e.g partially formatted, may confuse users.
 
 It will be useful to constrain the execution to prevent resource exhaustion.
 Relevant resources could include:
+
 - CPU and memory available on the machine running the commands. `jj run` can
 provide some simple mitigations like limiting parallelism to "number of CPUs"
 by default, and limiting parallelism by dividing "available memory" by some
@@ -214,6 +222,7 @@ communicate that information to jj.
 
 The base command of any jj command should be usable. By default `jj run` works
 on `@`, the current working copy.
+
 - --command, explicit name of the first argument
 - -x, for git compatibility (may alias another command)
 - -j, --jobs, the amount of parallelism to use
@@ -227,7 +236,8 @@ command)
 (may alias another command)
 - --clean, remove existing workspaces and remove the ignored files
 - --readonly, ignore changes across multiple run invocations
-- --error-strategy=`continue|stop|fatal`, see [Dealing with failure](#dealing-with-failure)
+- --error-strategy=`continue|stop|fatal`, see
+  [Dealing with failure](#dealing-with-failure)
 
 ### Integrating with other commands
 
@@ -254,7 +264,8 @@ needed working copies.
 to materialize.
 - Customized failure messages, this may be useful for bots, it could be similar
 to Bazel's `select(..., message = "arch not supported for $project")`.
-- Make `jj run` asynchronous by spawning a `main` process, directly return to the
+- Make `jj run` asynchronous by spawning a `main` process, directly return to
+  the
 user and incrementally updating the output of `jj st`.
 
 [git-branchless]: https://github.com/arxanas/git-branchless

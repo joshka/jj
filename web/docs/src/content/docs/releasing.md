@@ -84,7 +84,7 @@ Publish each crate:
 ```
 
 [^1]: We recommend publishing from a new clone because `cargo publish` will
-      archive ignored files if they match the patterns in `[include]`
-      ([example](https://github.com/jj-vcs/jj/blob/b95628c398c6c3d11f41bdf53d0aef11f92ee96d/lib/Cargo.toml#L15-L22)),
-      so it's a security risk to run it an existing clone where you may have
-      left sensitive content in an ignored file.
+    archive ignored files if they match the patterns in `[include]`
+    ([example](https://github.com/jj-vcs/jj/blob/b95628c398c6c3d11f41bdf53d0aef11f92ee96d/lib/Cargo.toml#L15-L22)),
+    so it's a security risk to run it an existing clone where you may have
+    left sensitive content in an ignored file.

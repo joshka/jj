@@ -28,7 +28,8 @@ tracked with `jj file track`.
 
 You can use `jj file untrack` to untrack a file while keeping it in the working
 copy. However, first [ignore](#ignored-files) them or remove them from the
-`snapshot.auto-track` patterns; otherwise they will be immediately tracked again.
+`snapshot.auto-track` patterns; otherwise they will be immediately tracked
+again.
 
 ## Conflicts
 
@@ -53,7 +54,7 @@ main disadvantage of that is that it's harder to inspect the conflict
 resolutions.
 
 With the `jj resolve` command, you can use an external merge tool to resolve
-conflicts that have 2 sides and a base.  There is not yet a good way of
+conflicts that have 2 sides and a base. There is not yet a good way of
 resolving conflicts between directories, files, and symlinks
 (<https://github.com/jj-vcs/jj/issues/19>). You can use `jj restore` to choose
 one side of the conflict, but there's no way to even see where the involved

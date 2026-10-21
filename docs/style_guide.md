@@ -9,8 +9,8 @@ non-empty slice as input, it's fine to call `slice[0]` and panic.
 
 ## Markdown
 
-Try to wrap at 80 columns. Rumdl checks Markdown in CI;
-line-length checks are not enabled yet.
+Wrap prose at 80 columns. Rumdl checks Markdown in CI, including line length
+outside code blocks and headings.
 
 Local installation is optional. To check or fix Markdown with the repository's
 configuration, run `mise check:markdown` or `mise fix:markdown`. Mise installs
@@ -24,8 +24,7 @@ The Nix development shell also includes rumdl. Run
 or add `--fix` to apply fixes.
 
 Editors should use `.config/rumdl.toml` rather than a separate rule
-set. The configuration records counts and default settings for disabled rules.
-Enable further rules and their cleanup in separate changes.
+set.
 
 ## Prefer lower-level tests to end-to-end tests
 
@@ -165,7 +164,7 @@ important points are:
   says "Returns blah blah." would be fine.
 
 [rust-lang/rfcs-1574]:
-  https://github.com/rust-lang/rfcs/blob/master/text/1574-more-api-documentation-conventions.md
+  <https://github.com/rust-lang/rfcs/blob/master/text/1574-more-api-documentation-conventions.md>
 
 ### Subcommand comments
 
@@ -187,7 +186,7 @@ Specifically for `jj` subcommands:
     if it sounds awkward, "Commands for ..." or whatever you come up with would
     probably be fine.
 
-  ```
+  ```text
   CORRECT:
   $ jj new -h
   Create a new, empty change and (by default) edit it in the working copy
@@ -196,7 +195,7 @@ Specifically for `jj` subcommands:
   Create a new bookmark
   ```
 
-  ```
+  ```text
   INCORRECT:
   $ jj new -h
   Creates a new, empty change. The default behavior is to immediately edit this new change, but pass `--no-edit` to avoid this.
@@ -222,7 +221,7 @@ Specifically for `jj` subcommands:
   at the end of the first line for the command in question in the format
   `[default alias: <alias>]`. For example, the first line of `jj describe` is:
 
-  ```
+  ```text
   Update the change description or other metadata [default alias: desc]
   ```
 
@@ -261,14 +260,16 @@ Specifically for `jj` command arguments / options:
     command line simpler and more consistent.
     - Note that the name of the struct field can be different from the name of
       the argument according to `clap`:
+
       ```rust
       #[arg(long = "flag")]
       my_values: MyType,
       ```
+
       This section is mostly discussing the user-facing argument / option names;
       how you name variables is up to you.
 
-  ```
+  ```text
   CORRECT / PREFERRED:
   --ignore-working-copy  Don't snapshot the working copy, and don't update it
   --quiet                Silence non-primary command output
@@ -276,7 +277,7 @@ Specifically for `jj` command arguments / options:
   --config <NAME=VALUE>  Additional configuration options (can be repeated)
   ```
 
-  ```
+  ```text
   INCORRECT / LESS PREFERRED:
   --ignore-working-copy   No snapshotting (so working copy is ignored).
   --quiet                 Provide this option to skip non-primary command output.
@@ -309,7 +310,7 @@ methods.)
 
 - Function signatures are written similar to Rust:
 
-  ```
+  ```text
   function_name(arg1: Type1, arg2: Type2) -> ReturnType
   ```
 
@@ -319,13 +320,13 @@ methods.)
 - For optional parameters, put square brackets around the `arg: Type` part;
   importantly, do not put the brackets around any surrounding commas.
 
-  ```
+  ```text
   CORRECT:
   parents(x, [depth])
   if(condition: Boolean, then: Template, [else: Template]) -> Template
   ```
 
-  ```
+  ```text
   INCORRECT:
   parents(x[, depth])
   if(condition: Boolean, then: Template[, else]) -> Template
@@ -341,12 +342,12 @@ methods.)
   later one instead. However, this may change in the future, especially if named
   parameters make their way to the templating language.)
 
-  ```
+  ```text
   CORRECT:
   remote_bookmarks([name_pattern], [[remote=]remote_pattern])
   ```
 
-  ```
+  ```text
   INCORRECT:
   remote_bookmarks([name_pattern], [remote] = [remote_pattern])
   remote_bookmarks([name_pattern], [remote=remote_pattern])
@@ -354,13 +355,13 @@ methods.)
 
 - For variadic parameters, add an ellipsis (`...`) after the `arg: Type` part.
 
-  ```
+  ```text
   CORRECT:
   coalesce(revsets...)
   concat(content: Template...) -> Template
   ```
 
-  ```
+  ```text
   INCORRECT:
   coalesce(...revsets)
   concat(*content: Template) -> Template
@@ -382,7 +383,7 @@ methods.)
     return an output". Follow the general Rust style of writing the first
     sentence in third-person singular present indicative form.
 
-  ```
+  ```text
   CORRECT:
   all(): Matches all files.
 
@@ -393,7 +394,7 @@ methods.)
   json(value: Serialize) -> String: Serializes `value` in JSON format.
   ```
 
-  ```
+  ```text
   INCORRECT:
   all(): All files.
 

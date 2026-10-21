@@ -2,9 +2,13 @@
 title: Introducing JJ run
 ---
 
-Authors: [Philip Metzger](mailto:philipmetzger@bluewin.ch), [Martin von Zweigberk](mailto:martinvonz@google.com), [Danny Hooper](mailto:hooper@google.com), [Waleed Khan](mailto:me@waleedkhan.name)
+Authors: [Philip Metzger](mailto:philipmetzger@bluewin.ch),
+[Martin von Zweigberk](mailto:martinvonz@google.com),
+[Danny Hooper](mailto:hooper@google.com),
+[Waleed Khan](mailto:me@waleedkhan.name)
 
-Initial Version, 10.12.2022 (view full history [here](https://docs.google.com/document/d/14BiAoEEy_e-BRPHYpXRFjvHMfgYVKh-pKWzzTDi-v-g/edit))
+Initial Version, 10.12.2022
+([full history](https://docs.google.com/document/d/14BiAoEEy_e-BRPHYpXRFjvHMfgYVKh-pKWzzTDi-v-g/edit))
 
 **Summary:** This Document documents the design of a new `run` command for
 Jujutsu which will be used to seamlessly integrate with build systems, linters
@@ -17,6 +21,7 @@ across multiple revisions. For more details, read the
 The goal of this Design Document is to specify the correct behavior of `jj run`.
 The points we decide on here I (Philip Metzger) will try to implement. There
 exists some prior work in other DVCS:
+
 * `git test`: part of [git-branchless]. Similar to this proposal for `jj run`.
 * `hg run`: Google's internal Mercurial extension. Similar to this proposal for
 `jj run`.
@@ -47,8 +52,10 @@ regular local-disk working copies.
 
 ### Goals
 
-* We should be able to apply the command to any revision, published or unpublished.
-* We should be able to parallelize running the actual command, while preserving a
+* We should be able to apply the command to any revision, published or
+  unpublished.
+* We should be able to parallelize running the actual command, while preserving
+  a
 good console output.
 * The run command should be able to work in any commit, the working-copy commit
 itself or any other commit.
@@ -75,19 +82,19 @@ unpredictable.
 
 **Linting and Formatting:**
 
-- `jj run 'pre-commit run' -r $revset`
-- `jj run 'cargo clippy' -r $revset`
-- `jj run 'cargo +nightly fmt'`
+* `jj run 'pre-commit run' -r $revset`
+* `jj run 'cargo clippy' -r $revset`
+* `jj run 'cargo +nightly fmt'`
 
 **Large scale changes across repositories, local and remote:**
 
-- `jj run 'sed /some/test/' -r 'mine() & ~remote_bookmarks(exact:"origin")'`
-- `jj run '$rewrite-tool' -r '$revset'`
+* `jj run 'sed /some/test/' -r 'mine() & ~remote_bookmarks(exact:"origin")'`
+* `jj run '$rewrite-tool' -r '$revset'`
 
 **Build systems:**
 
-- `jj run 'bazel build //some/target:somewhere'`
-- `jj run 'ninja check-lld'`
+* `jj run 'bazel build //some/target:somewhere'`
+* `jj run 'ninja check-lld'`
 
 Some of these use-cases should get a specialized command, as this allows
 further optimization. A command could be `jj format`, which runs a list of
@@ -202,11 +209,12 @@ undesirable state, e.g partially formatted, may confuse users.
 
 It will be useful to constrain the execution to prevent resource exhaustion.
 Relevant resources could include:
-- CPU and memory available on the machine running the commands. `jj run` can
+
+* CPU and memory available on the machine running the commands. `jj run` can
 provide some simple mitigations like limiting parallelism to "number of CPUs"
 by default, and limiting parallelism by dividing "available memory" by some
 estimate or measurement of per-invocation memory use of the commands.
-- External resources that are not immediately known to jj. For example,
+* External resources that are not immediately known to jj. For example,
 commands run in parallel may wish to limit the total number of connections
 to a server. We might choose to defer any handling of this to the
 implementation of the command being invoked, instead of trying to
@@ -216,6 +224,7 @@ communicate that information to jj.
 
 The base command of any jj command should be usable. By default `jj run` works
 on the `@` the current working copy.
+
 * --command, explicit name of the first argument
 * -x, for git compatibility (may alias another command)
 * -j, --jobs, the amount of parallelism to use
@@ -229,7 +238,8 @@ command)
 (may alias another command)
 * --clean, remove existing workspaces and remove the ignored files
 * --readonly, ignore changes across multiple run invocations
-* --error-strategy=`continue|stop|fatal`, see [Dealing with failure](#dealing-with-failure)
+* --error-strategy=`continue|stop|fatal`, see
+  [Dealing with failure](#dealing-with-failure)
 
 ### Integrating with other commands
 
@@ -248,15 +258,16 @@ Configuration options, User and Repository Wide?
 
 ## Future possibilities
 
-- We could rewrite the file in memory, which is a neat optimization
-- Exposing some internal state, to allow preciser resource constraints
-- Integration options for virtual filesystems, which allow them to cache the
+* We could rewrite the file in memory, which is a neat optimization
+* Exposing some internal state, to allow preciser resource constraints
+* Integration options for virtual filesystems, which allow them to cache the
 needed working copies.
-- A Jujutsu wide concept for a cached working copy, as they could be expensive
+* A Jujutsu wide concept for a cached working copy, as they could be expensive
 to materialize.
-- Customized failure messages, this maybe useful for bots, it could be similar
+* Customized failure messages, this maybe useful for bots, it could be similar
 to Bazel's `select(..., message = "arch not supported for $project")`.
-- Make `jj run` asynchronous by spawning a `main` process, directly return to the
+* Make `jj run` asynchronous by spawning a `main` process, directly return to
+  the
 user and incrementally updating the output of `jj st`.
 
 [git-branchless]: https://github.com/arxanas/git-branchless

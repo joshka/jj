@@ -78,9 +78,10 @@ only symbols.
 * `..x`: Ancestors of `x`, including the commits in `x` itself, but excluding
   the root commit. Shorthand for `root()..x`. Equivalent to `::x ~ root()`.
 * `x::y`: Descendants of `x` that are also ancestors of `y`. Equivalent
-   to `x:: & ::y`. This is what `git log` calls `--ancestry-path x..y`.
+  to `x:: & ::y`. This is what `git log` calls `--ancestry-path x..y`.
 * `x..y`: Ancestors of `y` that are not also ancestors of `x`. Equivalent to
-  `::y ~ ::x`. This is what `git log` calls `x..y` (i.e. the same as we call it).
+  `::y ~ ::x`. This is what `git log` calls `x..y` (i.e. the same as we call
+  it).
 * `::`: All visible commits in the repo. Equivalent to `all()`, and
   `root()::visible_heads()` if no hidden revisions are mentioned.
 * `..`: All visible commits in the repo, but excluding the root commit.
@@ -104,7 +105,7 @@ You can use parentheses to control evaluation order, such as `(x & y) | z` or
 
 Given this history:
 
-```
+```text
 o D
 |\
 | o C
@@ -175,7 +176,8 @@ o root()
 **Operator** `x::y`
 
 * `D::D` ⇒ `{D}`
-* `B::D` ⇒ `{D,B}` (note that, unlike `B..D`, this includes `B` and excludes `C`)
+* `B::D` ⇒ `{D,B}` (note that, unlike `B..D`, this includes `B` and excludes
+  `C`)
 * `B::C` ⇒ `{}` (empty set) (note that, unlike `B..C`, this excludes `C`)
 * `A::D` ⇒ `{D,C,B,A}`
 * `root()::D` ⇒ `{D,C,B,A,root()}`
@@ -186,7 +188,8 @@ o root()
 **Operator** `x..y`
 
 * `D..D` ⇒ `{}` (empty set)
-* `B..D` ⇒ `{D,C}` (note that, unlike `B::D`, this includes `C` and excludes `B`)
+* `B..D` ⇒ `{D,C}` (note that, unlike `B::D`, this includes `C` and excludes
+  `B`)
 * `B..C` ⇒ `{C}` (note that, unlike `B::C`, this includes `C`)
 * `A..D` ⇒ `{D,C,B}`
 * `root()..D` ⇒ `{D,C,B,A}`
@@ -257,17 +260,17 @@ indicates that all of the following usages are valid:
   completeness.
 
 * `change_id(prefix)`: Commits with the given change ID prefix. If the specified
-  change is divergent, this resolves to multiple commits. It is an error to use a
-  non-unique prefix. Unmatched prefix isn't an error.
+  change is divergent, this resolves to multiple commits. It is an error to use
+  a non-unique prefix. Unmatched prefix isn't an error.
 
 * `commit_id(prefix)`: Commits with the given commit ID prefix. It is an error
   to use a non-unique prefix. Unmatched prefix isn't an error.
 
 * `bookmarks([pattern])`: All local bookmark targets. If `pattern` is specified,
-  this selects the bookmarks whose name match the given [string
-  pattern](#string-patterns). For example, `bookmarks(push)` would match the
-  bookmarks `push-123` and `repushed` but not the bookmark `main`. If a bookmark is
-  in a conflicted state, all its possible targets are included.
+  this selects the bookmarks whose name match the given
+  [string pattern](#string-patterns). For example, `bookmarks(push)` would match
+  the bookmarks `push-123` and `repushed` but not the bookmark `main`. If a
+  bookmark is in a conflicted state, all its possible targets are included.
 
 * `remote_bookmarks([bookmark_pattern], [[remote=]remote_pattern])`: All remote
   bookmarks targets across all remotes. If just the `bookmark_pattern` is
@@ -289,8 +292,8 @@ indicates that all of the following usages are valid:
   `remote_bookmarks()`.
 
 * `untracked_remote_bookmarks([bookmark_pattern], [[remote=]remote_pattern])`:
-  All targets of untracked remote bookmarks. Supports the same optional arguments
-  as `remote_bookmarks()`.
+  All targets of untracked remote bookmarks. Supports the same optional
+  arguments as `remote_bookmarks()`.
 
 * `tags([pattern])`: All tag targets. If `pattern` is specified,
   this selects the tags whose name match the given [string
@@ -396,8 +399,8 @@ indicates that all of the following usages are valid:
   are scanned by default, but it is likely to change in future version to
   respect the command line path arguments.
 
-  For example, `diff_contains("*TODO*", "src")` will search revisions where "TODO"
-  is added to or removed from files under "src".
+  For example, `diff_contains("*TODO*", "src")` will search revisions where
+  "TODO" is added to or removed from files under "src".
 
 * `conflicts()`: Commits with conflicts.
 
@@ -428,7 +431,7 @@ indicates that all of the following usages are valid:
 
 Given this history:
 
-```
+```text
 o E
 |
 | o D
@@ -552,9 +555,10 @@ For example:
 
 ### Built-in Aliases
 
-The following aliases are built-in and used for certain operations. These functions
-are defined as aliases in order to allow you to overwrite them as needed.
-See [revsets.toml](https://github.com/jj-vcs/jj/blob/main/cli/src/config/revsets.toml)
+The following aliases are built-in and used for certain operations. These
+functions are defined as aliases in order to allow you to overwrite them as
+needed. See
+[revsets.toml](https://github.com/jj-vcs/jj/blob/main/cli/src/config/revsets.toml)
 for a comprehensive list.
 
 * `trunk()`: Resolves to the head commit for the default bookmark of the default
@@ -577,18 +581,18 @@ for a comprehensive list.
 
 * `builtin_immutable_heads()`: Resolves to
   `present(trunk()) | tags() | untracked_remote_bookmarks()`. It is used as the
-   default definition for `immutable_heads()` below. It is not recommended to
-   redefine this alias. Prefer to redefine `immutable_heads()` instead.
+  default definition for `immutable_heads()` below. It is not recommended to
+  redefine this alias. Prefer to redefine `immutable_heads()` instead.
 
-* `immutable_heads()`: Resolves to
-  `present(trunk()) | tags() | untracked_remote_bookmarks()` by default. It is
-  actually defined as `builtin_immutable_heads()`, and can be overridden as
-  required. See [here](config.md#set-of-immutable-commits) for details.
+* `immutable_heads()`: Resolves to `present(trunk()) | tags() |
+  untracked_remote_bookmarks()` by default. It is actually defined as
+  `builtin_immutable_heads()`, and can be overridden as required. See [set of
+  immutable commits](config.md#set-of-immutable-commits) for details.
 
 * `immutable()`: The set of commits that `jj` treats as immutable. This is
-  equivalent to `::(immutable_heads() | root())`. It is not recommended to redefine
-  this alias. Note that modifying this will *not* change whether a commit is immutable.
-  To do that, edit `immutable_heads()`.
+  equivalent to `::(immutable_heads() | root())`. It is not recommended to
+  redefine this alias. Note that modifying this will *not* change whether a
+  commit is immutable. To do that, edit `immutable_heads()`.
 
 * `mutable()`: The set of commits that `jj` treats as mutable. This is
   equivalent to `~immutable()`. It is not recommended to redefined this alias.

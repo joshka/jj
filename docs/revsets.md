@@ -82,8 +82,8 @@ y) | z` or `x & (y | z)`.
 
 3. * `p:x`: String/date pattern or pattern alias named `p`.
 
-4. * `x::`: Descendants of `x`, including the commits in `x` itself. Equivalent to
-     `x::visible_heads()` if no hidden revisions are mentioned.
+4. * `x::`: Descendants of `x`, including the commits in `x` itself. Equivalent
+   to `x::visible_heads()` if no hidden revisions are mentioned.
    * `x..`: Revisions that are not ancestors of `x`. Equivalent to `~::x`, and
      `x..visible_heads()` if no hidden revisions are mentioned.
    * `::x`: Ancestors of `x`, including the commits in `x` itself. Shorthand for
@@ -91,16 +91,16 @@ y) | z` or `x & (y | z)`.
    * `..x`: Ancestors of `x`, including the commits in `x` itself, but excluding
      the root commit. Shorthand for `root()..x`. Equivalent to `::x ~ root()`.
    * `x::y`: Descendants of `x` that are also ancestors of `y`. Equivalent
-      to `x:: & ::y`. This is what `git log` calls `--ancestry-path x..y`.
+     to `x:: & ::y`. This is what `git log` calls `--ancestry-path x..y`.
    * `x..y`: Ancestors of `y` that are not also ancestors of `x`. Equivalent to
-     `::y ~ ::x`. This is what `git log` calls `x..y` (i.e. the same as we call it).
-     Note that this is *not* a "path" between `x` and `y` in the commit graph -- `x`
-     and `y` do not need to be related by ancestry.
+     `::y ~ ::x`. This is what `git log` calls `x..y` (i.e. the same as we call
+     it). Note that this is *not* a "path" between `x` and `y` in the commit
+     graph -- `x` and `y` do not need to be related by ancestry.
    * `::`: All visible commits in the repo. Equivalent to `all()`, and
      `root()::visible_heads()` if no hidden revisions are mentioned.
    * `..`: All visible commits in the repo, but excluding the root commit.
-     Equivalent to `~root()`, and `root()..visible_heads()` if no hidden revisions
-     are mentioned.
+     Equivalent to `~root()`, and `root()..visible_heads()` if no hidden
+     revisions are mentioned.
 
 5. * `~x`: Revisions that are not in `x`.
 
@@ -281,8 +281,8 @@ revsets (expressions) as arguments.
   completeness.
 
 * `change_id(prefix)`: Commits with the given change ID prefix. If the specified
-  change is divergent, this resolves to multiple commits. It is an error to use a
-  non-unique prefix. Unmatched prefix isn't an error.
+  change is divergent, this resolves to multiple commits. It is an error to use
+  a non-unique prefix. Unmatched prefix isn't an error.
 
 * `commit_id(prefix)`: Commits with the given commit ID prefix. It is an error
   to use a non-unique prefix. Unmatched prefix isn't an error.
@@ -621,9 +621,10 @@ HEAD.doc = 'The parent of the working-copy commit'
 
 ### Built-in Aliases
 
-The following aliases are built-in and used for certain operations. These functions
-are defined as aliases in order to allow you to overwrite them as needed.
-See [revsets.toml](https://github.com/jj-vcs/jj/blob/main/cli/src/config/revsets.toml)
+The following aliases are built-in and used for certain operations. These
+functions are defined as aliases in order to allow you to overwrite them as
+needed. See
+[revsets.toml](https://github.com/jj-vcs/jj/blob/main/cli/src/config/revsets.toml)
 for a comprehensive list.
 
 * `trunk()`: Resolves to the head commit for the default bookmark of the default
@@ -659,12 +660,13 @@ for a comprehensive list.
   untracked_remote_bookmarks() | untracked_remote_tags()` by default. It is
   actually defined as `builtin_immutable_heads()`, and can be overridden as
   required. The full set of immutable commits is `::immutable_heads()` (i.e.,
-  `immutable()`). See [here](config.md#set-of-immutable-commits) for details.
+  `immutable()`). See [set of immutable
+  commits](config.md#set-of-immutable-commits) for details.
 
 * `immutable()`: The set of commits that `jj` treats as immutable. This is
-  equivalent to `::(immutable_heads() | root())`. It is not recommended to redefine
-  this alias. Note that modifying this will *not* change whether a commit is immutable.
-  To do that, edit `immutable_heads()`.
+  equivalent to `::(immutable_heads() | root())`. It is not recommended to
+  redefine this alias. Note that modifying this will *not* change whether a
+  commit is immutable. To do that, edit `immutable_heads()`.
 
 * `mutable()`: The set of commits that `jj` treats as mutable. This is
   equivalent to `~immutable()`. It is not recommended to redefine this alias.

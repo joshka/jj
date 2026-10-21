@@ -15,40 +15,41 @@ In this example we're letting Jujutsu auto-create a bookmark.
 
 ```shell
 # Start a new commit off of the default bookmark.
-$ jj new main
+jj new main
 # Refactor some files, then add a description and start a new commit
-$ jj commit -m 'refactor(foo): restructure foo()'
+jj commit -m 'refactor(foo): restructure foo()'
 # Add a feature, then add a description and start a new commit
-$ jj commit -m 'feat(bar): add support for bar'
+jj commit -m 'feat(bar): add support for bar'
 # Let Jujutsu generate a bookmark name and push that to GitHub. Note that we
 # push the working-copy commit's *parent* because the working-copy commit
 # itself is empty.
-$ jj git push --change @- # or -c for short
+jj git push --change @- # or -c for short
 ```
 
 ### Using a named bookmark
 
-In this example, we create a bookmark named `bar` and then push it to the remote.
+In this example, we create a bookmark named `bar` and then push it to the
+remote.
 
 ```shell
 # Start a new commit off of the default bookmark.
-$ jj new main
+jj new main
 # Refactor some files, then add a description and start a new commit
-$ jj commit -m 'refactor(foo): restructure foo()'
+jj commit -m 'refactor(foo): restructure foo()'
 # Add a feature, then add a description and start a new commit
-$ jj commit -m 'feat(bar): add support for bar'
+jj commit -m 'feat(bar): add support for bar'
 # Create a bookmark so we can push it to GitHub. Note that we created the bookmark
 # on the working-copy commit's *parent* because the working copy itself is empty.
-$ jj bookmark create bar -r @- # `bar` now contains the previous two commits.
+jj bookmark create bar -r @- # `bar` now contains the previous two commits.
 # Set the bookmark to be tracked on the remote.
-$ jj bookmark track bar
+jj bookmark track bar
 # Push the bookmark to GitHub (pushes only `bar`)
-$ jj git push
+jj git push
 ```
 
 While it's possible to create a bookmark in advance and commit on top of it in a
-Git-like manner, you will then need to move the bookmark manually when you create
-a new commits. Unlike Git, Jujutsu will not do it automatically.
+Git-like manner, you will then need to move the bookmark manually when you
+create a new commits. Unlike Git, Jujutsu will not do it automatically.
 
 ## Updating the repository
 
@@ -76,27 +77,27 @@ Jujutsu's view of the repo with Git's view. For example, `jj commit` updates the
 HEAD of the Git repository, enabling an incremental migration.
 
 ```shell
-$ nvim docs/tutorial.md
-$ # Do some more work.
-$ jj commit -m "Update tutorial"
+nvim docs/tutorial.md
+# Do some more work.
+jj commit -m "Update tutorial"
 # Create a bookmark on the working-copy commit's parent
-$ jj bookmark create doc-update -r @-
-$ jj bookmark track doc-update
-$ jj git push
+jj bookmark create doc-update -r @-
+jj bookmark track doc-update
+jj git push
 ```
 
 ## Working in a Jujutsu repository
 
 In a Jujutsu repository, the workflow is simplified. If there's no need for
-explicitly named bookmarks, you can just generate one for a change. As Jujutsu is
-able to create a bookmark for a revision.
+explicitly named bookmarks, you can just generate one for a change. As Jujutsu
+is able to create a bookmark for a revision.
 
 ```shell
-$ # Do your work
-$ jj commit
-$ # Push change "mw", letting Jujutsu automatically create a bookmark called
-$ # "push-mwmpwkwknuz"
-$ jj git push -c mw
+# Do your work
+jj commit
+# Push change "mw", letting Jujutsu automatically create a bookmark called
+# "push-mwmpwkwknuz"
+jj git push -c mw
 ```
 
 ## Addressing review comments
@@ -113,16 +114,16 @@ If your project prefers that you address review comments by adding commits on
 top, you can do that by doing something like this:
 
 ```shell
-$ # Create a new commit on top of the `your-feature` bookmark from above.
-$ jj new your-feature
-$ # Address the comments by updating the code. Then review the changes.
-$ jj diff
-$ # Give the fix a description and create a new working-copy on top.
-$ jj commit -m 'address pr comments'
-$ # Update the bookmark to point to the new commit.
-$ jj bookmark move your-feature --to @-
-$ # Push it to your remote
-$ jj git push
+# Create a new commit on top of the `your-feature` bookmark from above.
+jj new your-feature
+# Address the comments by updating the code. Then review the changes.
+jj diff
+# Give the fix a description and create a new working-copy on top.
+jj commit -m 'address pr comments'
+# Update the bookmark to point to the new commit.
+jj bookmark move your-feature --to @-
+# Push it to your remote
+jj git push
 ```
 
 Notably, the above workflow creates a new commit for you. The same can be
@@ -136,16 +137,16 @@ achieved without creating a new commit.
     avoid amending them to the previous commit.
 
 ```shell
-$ # Create a new commit on top of the `your-feature` bookmark from above.
-$ jj new your-feature
-$ # Address the comments by updating the code. Then review the changes.
-$ jj diff
-$ # Give the fix a description.
-$ jj describe -m 'address pr comments'
-$ # Update the bookmark to point to the current commit.
-$ jj bookmark move your-feature --to @
-$ # Push it to your remote
-$ jj git push
+# Create a new commit on top of the `your-feature` bookmark from above.
+jj new your-feature
+# Address the comments by updating the code. Then review the changes.
+jj diff
+# Give the fix a description.
+jj describe -m 'address pr comments'
+# Update the bookmark to point to the current commit.
+jj bookmark move your-feature --to @
+# Push it to your remote
+jj git push
 ```
 
 ### Rewriting commits
@@ -154,16 +155,16 @@ If your project prefers that you keep commits clean, you can do that by doing
 something like this:
 
 ```shell
-$ # Create a new commit on top of the second-to-last commit in `your-feature`,
-$ # as reviewers requested a fix there.
-$ jj new your-feature- # NOTE: the trailing hyphen is not a typo!
-$ # Address the comments by updating the code. Then review the changes.
-$ jj diff
-$ # Squash the changes into the parent commit
-$ jj squash
-$ # Push the updated bookmark to the remote. Jujutsu automatically makes it a
-$ # force push
-$ jj git push --bookmark your-feature
+# Create a new commit on top of the second-to-last commit in `your-feature`,
+# as reviewers requested a fix there.
+jj new your-feature- # NOTE: the trailing hyphen is not a typo!
+# Address the comments by updating the code. Then review the changes.
+jj diff
+# Squash the changes into the parent commit
+jj squash
+# Push the updated bookmark to the remote. Jujutsu automatically makes it a
+# force push
+jj git push --bookmark your-feature
 ```
 
 The hyphen after `your-feature` comes from the [revset](revsets.md) syntax.
@@ -180,7 +181,7 @@ If you want to import all remote bookmarks including inactive ones, set
 specify a contributor's bookmark as `jj new <bookmark>` instead of `jj new
 <bookmark>@<remote>`.
 
-You can find more information on that setting [here][auto-bookmark].
+See [automatic bookmark creation][auto-bookmark] for more on that setting.
 
 ## Using GitHub CLI
 
@@ -190,12 +191,12 @@ that aren't [colocated](./git-compatibility.md#colocated-jujutsugit-workspaces)
 point it to the right path:
 
 ```shell
-$ GIT_DIR=$(jj git root) gh issue list
+GIT_DIR=$(jj git root) gh issue list
 ```
 
 You can make that automatic by installing [direnv](https://direnv.net) and
-defining hooks in a `.envrc` file in the repository root to configure `$GIT_DIR`.
-Just add this line into `.envrc`:
+defining hooks in a `.envrc` file in the repository root to configure
+`$GIT_DIR`. Just add this line into `.envrc`:
 
 ```shell
 export GIT_DIR=$(jj git root)
@@ -209,30 +210,30 @@ commands like `gh issue list` normally.
 
 ## Useful Revsets
 
-Log all revisions across all local bookmarks that aren't on the main bookmark nor
-on any remote:
+Log all revisions across all local bookmarks that aren't on the main bookmark
+nor on any remote:
 
 ```shell
-$ jj log -r 'bookmarks() & ~(main | remote_bookmarks())'
+jj log -r 'bookmarks() & ~(main | remote_bookmarks())'
 ```
 
 Log all revisions that you authored, across all bookmarks that aren't on any
 remote:
 
 ```shell
-$ jj log -r 'mine() & bookmarks() & ~remote_bookmarks()'
+jj log -r 'mine() & bookmarks() & ~remote_bookmarks()'
 ```
 
 Log all remote bookmarks that you authored or committed to:
 
 ```shell
-$ jj log -r 'remote_bookmarks() & (mine() | committer(your@email.com))'
+jj log -r 'remote_bookmarks() & (mine() | committer(your@email.com))'
 ```
 
 Log all ancestors of the current working copy that aren't on any remote:
 
 ```shell
-$ jj log -r 'remote_bookmarks()..@'
+jj log -r 'remote_bookmarks()..@'
 ```
 
 ## Merge conflicts
@@ -261,9 +262,9 @@ merged through a pull-request while "origin" is your private fork of the
 project.
 
 ```shell
-$ jj git clone --remote upstream https://github.com/upstream-org/repo
-$ cd repo
-$ jj git remote add origin git@github.com:your-org/your-repo-fork
+jj git clone --remote upstream https://github.com/upstream-org/repo
+cd repo
+jj git remote add origin git@github.com:your-org/your-repo-fork
 ```
 
 This will automatically setup your repository to track the main
@@ -296,8 +297,9 @@ push = "origin"
 ## Git push options
 
 `jj git push` supports passing Git “push options” to the server via
-`-o`/`--option`. These are forwarded to the remote and interpreted by the hosting
-platform, if it supports them. You can repeat `-o` to send multiple options.
+`-o`/`--option`. These are forwarded to the remote and interpreted by the
+hosting platform, if it supports them. You can repeat `-o` to send multiple
+options.
 
 - Syntax: `jj git push -o <push_option>` or `jj git push --option <push_option>`
 - Multiple options: `jj git push -o foo -o bar=val`
@@ -310,14 +312,19 @@ full list and behavior.
 Examples with GitLab push options (see GitLab docs for details):
 
 - Skip CI for a push:
+
   ```shell
   jj git push -o ci.skip
   ```
+
 - Pass CI variables to the created pipeline:
+
   ```shell
   jj git push -o 'ci.variable=MAX_RETRIES=10' -o 'ci.variable=MAX_TIME=600'
   ```
+
 - Create a merge request with metadata on push:
+
   ```shell
   jj git push \
     -o merge_request.create \
@@ -326,20 +333,26 @@ Examples with GitLab push options (see GitLab docs for details):
     -o 'merge_request.description=Implements X with tests' \
     -o merge_request.draft
   ```
+
 - Auto-merge when pipeline succeeds and remove the source branch:
+
   ```shell
   jj git push \
     -o merge_request.merge_when_pipeline_succeeds \
     -o merge_request.remove_source_branch
   ```
+
 - Add and remove labels:
+
   ```shell
   jj git push \
     -o 'merge_request.label=label1' \
     -o 'merge_request.label=label2' \
     -o 'merge_request.unlabel=label3'
   ```
+
 - Assign and unassign users:
+
   ```shell
   jj git push \
     -o 'merge_request.assign=user1' \
