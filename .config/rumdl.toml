@@ -29,9 +29,6 @@ disable = [
     # 44 findings. Code blocks should use a consistent style.
     # https://github.com/rvben/rumdl/blob/main/docs/md046.md
     "code-block-style",
-    # 4 findings. Link fragments should reference valid headings.
-    # https://github.com/rvben/rumdl/blob/main/docs/md051.md
-    "link-fragments",
 ]
 
 # Commented settings below show the disabled rules' default options, as reported
@@ -77,10 +74,4 @@ disable = [
 
 # [code-block-style]
 # style = "consistent"
-
-# [link-fragments]
-# anchor-style = "github"
-# check-frontmatter = false
-# ignore-case = true
-# ignore-frontmatter-fields = []
 
