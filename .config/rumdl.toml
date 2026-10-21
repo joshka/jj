@@ -23,9 +23,6 @@ disable = [
     # 37 findings. Inline HTML is not allowed.
     # https://github.com/rvben/rumdl/blob/main/docs/md033.md
     "no-inline-html",
-    # 7 findings. First line in file should be a top level heading.
-    # https://github.com/rvben/rumdl/blob/main/docs/md041.md
-    "first-line-heading",
     # 44 findings. Code blocks should use a consistent style.
     # https://github.com/rvben/rumdl/blob/main/docs/md046.md
     "code-block-style",
@@ -65,12 +62,6 @@ disable = [
 # fix = false
 # fix-mode = "conservative"
 # strip-wrapper-elements = ["p"]
-
-# [first-line-heading]
-# allow-preamble = false
-# fix = false
-# front-matter-title = "title"
-# level = 1
 
 # [code-block-style]
 # style = "consistent"
