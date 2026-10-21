@@ -17,15 +17,15 @@ The goal of this Design Document is to specify the correct behavior of `jj run`.
 The points we decide on here I (Philip Metzger) will try to implement. There
 exists some prior work in other DVCS:
 
-* `git test`: part of [git-branchless]. Similar to this proposal for `jj run`.
-* `hg run`: Google's internal Mercurial extension. Similar to this proposal for
+- `git test`: part of [git-branchless]. Similar to this proposal for `jj run`.
+- `hg run`: Google's internal Mercurial extension. Similar to this proposal for
 `jj run`.
 Details not available.
-* `hg fix`: Google's open source Mercurial extension: [source code][fix-src]. A
+- `hg fix`: Google's open source Mercurial extension: [source code][fix-src]. A
 more specialized approach to rewriting file content without full context of the
 working directory.
-* `git rebase -x`: runs commands opportunistically as part of rebase.
-* `git bisect run`: run a command to determine which commit introduced a bug.
+- `git rebase -x`: runs commands opportunistically as part of rebase.
+- `git bisect run`: run a command to determine which commit introduced a bug.
 
 ## Context and Scope
 
@@ -47,29 +47,29 @@ regular local-disk working copies.
 
 ### Goals
 
-* We should be able to apply the command to any revision, published or unpublished.
-* We should be able to parallelize running the actual command, while preserving a
+- We should be able to apply the command to any revision, published or unpublished.
+- We should be able to parallelize running the actual command, while preserving a
 good console output.
-* The run command should be able to work in any commit, the working-copy commit
+- The run command should be able to work in any commit, the working-copy commit
 itself or any other commit.
-* There should exist some way to signal hard failure.
-* The command should build enough infrastructure for `jj test`, `jj fix` and
+- There should exist some way to signal hard failure.
+- The command should build enough infrastructure for `jj test`, `jj fix` and
 `jj format`.
-* The main goal is to be good enough, as we can always expand the functionality
+- The main goal is to be good enough, as we can always expand the functionality
 in the future.
 
 ### Non-Goals
 
-* While we should build a base for `jj test`, `jj format` and `jj fix`, we
+- While we should build a base for `jj test`, `jj format` and `jj fix`, we
 shouldn't mash their use-cases into `jj run`.
-* The command shouldn't be too smart, as too many assumptions about workflows
+- The command shouldn't be too smart, as too many assumptions about workflows
 makes the command confusing for users.
-* The smart caching of outputs, as user input commands can be unpredictable.
+- The smart caching of outputs, as user input commands can be unpredictable.
 makes the command confusing for users.
-* Avoid the smart caching of outputs, as user input commands can be
+- Avoid the smart caching of outputs, as user input commands can be
 unpredictable.
-* Fine grained user facing configuration, as it's unwarranted complexity.
-* A `fix` subcommand as it cuts too much design space.
+- Fine grained user facing configuration, as it's unwarranted complexity.
+- A `fix` subcommand as it cuts too much design space.
 
 ## Use-Cases of jj run
 

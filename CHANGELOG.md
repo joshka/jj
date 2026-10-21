@@ -674,14 +674,14 @@ Thanks to the people who made this release happen!
 ### Breaking changes
 
 * The following deprecated command options have been removed:
-  - `jj commit --reset-author`/`--author`
-  - `jj describe --no-edit`/`--edit`/`--reset-author`/`--author`
-  - `jj git push --allow-new`
-  - `jj metaedit --update-committer-timestamp`
+  * `jj commit --reset-author`/`--author`
+  * `jj describe --no-edit`/`--edit`/`--reset-author`/`--author`
+  * `jj git push --allow-new`
+  * `jj metaedit --update-committer-timestamp`
 
 * The following deprecated config options have been removed:
-  - `git.auto-local-bookmark`
-  - `git.push-new-bookmarks`
+  * `git.auto-local-bookmark`
+  * `git.push-new-bookmarks`
 
 ### Deprecations
 
@@ -976,8 +976,8 @@ Thanks to the people who made this release happen!
   will be created as needed.
 
 * The following deprecated config options have been removed:
-  - `core.fsmonitor`
-  - `core.watchman.register-snapshot-trigger`
+  * `core.fsmonitor`
+  * `core.watchman.register-snapshot-trigger`
 
 * The deprecated command `jj op undo` has been removed. Use `jj op revert` or
   `jj undo`/`redo` instead.
@@ -1317,10 +1317,10 @@ Thanks to the people who made this release happen!
   has been replaced by `format_short_change_id_with_change_offset(commit)`.
 
 * The following deprecated config options have been removed:
-  - `git.push-bookmark-prefix`
-  - `ui.default-description`
-  - `ui.diff.format`
-  - `ui.diff.tool`
+  * `git.push-bookmark-prefix`
+  * `ui.default-description`
+  * `ui.diff.format`
+  * `ui.diff.tool`
 
 * The deprecated `commit_id.normal_hex()` template method has been removed.
 
@@ -1677,9 +1677,9 @@ Thanks to the people who made this release happen!
 * The deprecated command `jj backout` has been removed, use `jj revert` instead.
 
 * The following deprecated config options have been removed:
-  - `signing.sign-all`
-  - `core.watchman.register_snapshot_trigger`
-  - `diff.format`
+  * `signing.sign-all`
+  * `core.watchman.register_snapshot_trigger`
+  * `diff.format`
 
 ### Deprecations
 
@@ -2631,13 +2631,13 @@ Thanks to the people who made this release happen!
 * The `jj untrack` subcommand has been removed in favor of `jj file untrack`.
 
 * The following deprecated revset functions have been removed:
-  - `branches()`, `remote_branches()`, `tracked_remote_branches()`, and
+  * `branches()`, `remote_branches()`, `tracked_remote_branches()`, and
     `untracked_remote_branches()`, which were renamed to "bookmarks".
-  - `file()` and `conflict()`, which were renamed to plural forms.
-  - `files(x, y, ..)` with multiple patterns. Use `files(x|y|..)` instead.
+  * `file()` and `conflict()`, which were renamed to plural forms.
+  * `files(x, y, ..)` with multiple patterns. Use `files(x|y|..)` instead.
 
 * The following deprecated template functions have been removed:
-  - `branches()`, `local_branches()`, and `remote_branches()`, which were
+  * `branches()`, `local_branches()`, and `remote_branches()`, which were
     renamed to "bookmarks".
 
 * The flags `--all` and `--tracked` on `jj git push` by themself do not cause
@@ -2658,9 +2658,9 @@ Thanks to the people who made this release happen!
   in the absence of a `signing.key` configuration.
 
 * Multiple user configs are now supported and are loaded in the following precedence order:
-  - `$HOME/.jjconfig.toml`
-  - `$XDG_CONFIG_HOME/jj/config.toml`
-  - `$XDG_CONFIG_HOME/jj/conf.d/*.toml`
+  * `$HOME/.jjconfig.toml`
+  * `$XDG_CONFIG_HOME/jj/config.toml`
+  * `$XDG_CONFIG_HOME/jj/conf.d/*.toml`
 
 * The `JJ_CONFIG` environment variable can now contain multiple paths separated
   by a colon (or semicolon on Windows).
@@ -2932,9 +2932,9 @@ Thanks to the people who made this release happen!
   deprecated in early 2024. Use `jj git init` instead.
 
 * The following deprecated commands have been removed:
-  - `jj cat` is replaced by `jj file show`.
-  - `jj chmod` is replaced by `jj file chmod`.
-  - `jj files` is replaced by `jj file list`.
+  * `jj cat` is replaced by `jj file show`.
+  * `jj chmod` is replaced by `jj file chmod`.
+  * `jj files` is replaced by `jj file list`.
 
 * The deprecated `-l` short alias for `--limit` in `jj log`, `jj op log`
   and `jj obslog` has been removed. The `-n` short alias can be used instead.
@@ -2950,7 +2950,7 @@ Thanks to the people who made this release happen!
   as well.
 
 * The following change introduced in 0.25.0 is reverted:
-  - `jj config list` now prints inline tables `{ key = value, .. }` literally.
+  * `jj config list` now prints inline tables `{ key = value, .. }` literally.
     Inner items of inline tables are no longer merged across configuration
     files.
 
@@ -3319,11 +3319,11 @@ Thanks to the people who made this release happen!
   mirroring that of `bookmarks()`.
 
 * Several commands now support `-f/-t` shorthands for `--from/--to`:
-  - `diff`
-  - `diffedit`
-  - `interdiff`
-  - `op diff`
-  - `restore`
+  * `diff`
+  * `diffedit`
+  * `interdiff`
+  * `op diff`
+  * `restore`
 
 * New `ui.conflict-marker-style` config option to change how conflicts are
   materialized in the working copy. The default option ("diff") renders
@@ -3871,9 +3871,9 @@ Thanks to the people who made this release happen!
 
 * A new `jj file` subcommand now replaces several existing uncategorized
   commands, which are deprecated.
-  - `jj file show` replaces `jj cat`.
-  - `jj file chmod` replaces `jj chmod`.
-  - `jj file list` replaces `jj files`.
+  * `jj file show` replaces `jj cat`.
+  * `jj file chmod` replaces `jj chmod`.
+  * `jj file list` replaces `jj files`.
 
 ### New features
 
@@ -3894,9 +3894,9 @@ Thanks to the people who made this release happen!
 * Conflicted files are individually simplified before being materialized.
 
 * The `jj file` subcommand now contains several existing file utilities.
-  - `jj file show`, replacing `jj cat`.
-  - `jj file chmod` replacing `jj chmod`.
-  - `jj file list` replacing `jj files`.
+  * `jj file show`, replacing `jj cat`.
+  * `jj file chmod` replacing `jj chmod`.
+  * `jj file list` replacing `jj files`.
 
 * New command `jj branch move` let you update branches by name pattern or source
   revision.
@@ -5810,7 +5810,7 @@ No changes, only trying to get the automated build to work.
 
 ### Fixed bugs
 
-- Fixed crash when `core.excludesFile` pointed to nonexistent file, and made
+* Fixed crash when `core.excludesFile` pointed to nonexistent file, and made
   leading `~/` in that config expand to `$HOME/`
   [#131](https://github.com/jj-vcs/jj/issues/131)
 

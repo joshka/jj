@@ -157,9 +157,9 @@ bookmarks"](config.md#automatic-tracking-of-bookmarks) for details.
 Currently Jujutsu automatically updates local bookmarks when these conditions are
 met:
 
- * When a commit has been rewritten (e.g, when you rebase) bookmarks and the
+ - When a commit has been rewritten (e.g, when you rebase) bookmarks and the
    working-copy will move along with it.
- * When a commit has been abandoned, all associated bookmarks will be deleted.
+ - When a commit has been abandoned, all associated bookmarks will be deleted.
 
 You could describe the updates as following along the change-id of the
 current bookmark commit, even if it isn't entirely accurate.

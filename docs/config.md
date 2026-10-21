@@ -178,15 +178,15 @@ commit_id = "green"
 
 The following colors are available:
 
-* black
-* red
-* green
-* yellow
-* blue
-* magenta
-* cyan
-* white
-* default
+- black
+- red
+- green
+- yellow
+- blue
+- magenta
+- cyan
+- white
+- default
 
 All of them but "default" come in a bright version too, e.g. "bright red". The
 "default" color can be used to override a color defined by a parent style
@@ -399,9 +399,9 @@ format_signed_off_by_trailer(self)
 
 Some ready-to-use trailer templates are available for frequently used trailers:
 
-* `format_signed_off_by_trailer(commit)` creates a "Signed-off-by" trailer
+- `format_signed_off_by_trailer(commit)` creates a "Signed-off-by" trailer
   using the committer info.
-* `format_gerrit_change_id_trailer(commit)` creates a "Change-Id" trailer
+- `format_gerrit_change_id_trailer(commit)` creates a "Change-Id" trailer
   suitable to be used with Gerrit. It is based Jujutsu's change id.
 
 Existing trailers are also accessible via `commit.trailers()`.
@@ -463,28 +463,28 @@ Because it's difficult to read a diff line with many removed/added words, there'
 a threshold to switch to traditional separate-line format in colorized output.
 You can also change the default number of lines of context shown.
 
-* `max-inline-alternation`: Maximum number of removed/added word alternation to
+- `max-inline-alternation`: Maximum number of removed/added word alternation to
   inline. For example, `<added> ... <added>` sequence has 1 alternation, so the
   line will be inline if `max-inline-alternation >= 1`. `<added> ... <removed>
   ... <added>` sequence has 3 alternation.
 
-  * `0`: disable inlining, making `--color-words` more similar to `--git`
-  * `1`: inline removes-only or adds-only lines
-  * `2`, `3`, ..: inline up to `2`, `3`, .. alternation
-  * `-1`: inline all lines
+  - `0`: disable inlining, making `--color-words` more similar to `--git`
+  - `1`: inline removes-only or adds-only lines
+  - `2`, `3`, ..: inline up to `2`, `3`, .. alternation
+  - `-1`: inline all lines
 
   The default is `3`.
 
   **This parameter is experimental.** The definition is subject to change.
 
-* `conflict`: How conflicts are processed and displayed.
+- `conflict`: How conflicts are processed and displayed.
 
-   * `"materialize"`: compare materialized contents (default)
-   * `"pair"`: compare individual pairs
+   - `"materialize"`: compare materialized contents (default)
+   - `"pair"`: compare individual pairs
 
    **This parameter is experimental.**
 
-* `context`: Number of lines of context to show in the diff. The default is `3`.
+- `context`: Number of lines of context to show in the diff. The default is `3`.
 
 ```toml
 [diff.color-words]
@@ -496,9 +496,9 @@ context = 3
 
 In git diffs you can change the default number of lines of context shown.
 
-* `context`: Number of lines of context to show in the diff. The default is `3`.
+- `context`: Number of lines of context to show in the diff. The default is `3`.
 
-* `show-path-prefix`: Whether to show the `a/` and `b/` path prefixes in
+- `show-path-prefix`: Whether to show the `a/` and `b/` path prefixes in
   `diff --git` output. The default is `true`.
 
 ```toml
@@ -2133,8 +2133,8 @@ Note that if a `Change-Id` or `Link` trailer already exists in a change, then
 hunks and merge them. This can be configured to split hunks further into
 word-level hunks.
 
-* `line`: split into line hunks (default)
-* `word`: split into word hunks
+- `line`: split into line hunks (default)
+- `word`: split into word hunks
 
 ```toml
 [merge]
@@ -2151,8 +2151,8 @@ trade-offs. It also means that repeated 3-way merging of multiple trees may give
 different results depending on the order of merging. To turn it off, set
 `same-change = "keep"`.
 
-* `keep`: leave same-change conflict unresolved
-* `accept`: resolve same-change conflict to new value (default)
+- `keep`: leave same-change conflict unresolved
+- `accept`: resolve same-change conflict to new value (default)
 
 ```toml
 [merge]
@@ -2579,7 +2579,7 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
 
 #### Available condition keys
 
-* `--when.repositories`: List of paths to match the repository path prefix.
+- `--when.repositories`: List of paths to match the repository path prefix.
 
   Paths should be absolute. Each path component (directory or file name, drive
   letter, etc.) is compared case-sensitively on all platforms. A path starting
@@ -2590,13 +2590,13 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
   is in the main workspace if you're using multiple workspaces with `jj
   workspace`.
 
-* `--when.workspaces`: List of paths to match the workspace path prefix.
+- `--when.workspaces`: List of paths to match the workspace path prefix.
 
   The same concerns about the path as for `--when.repositories` applies.
 
   Use `jj root` to see the workspace root directory.
 
-* `--when.hostnames`: List of hostnames to match against the `operation.hostname`
+- `--when.hostnames`: List of hostnames to match against the `operation.hostname`
   config setting.
 
   Hostnames are compared case-sensitively and must match exactly.
@@ -2606,7 +2606,7 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
   --when.hostnames = ["home-desktop", "laptop"]    # matches "home-desktop" *OR* "laptop"
   ```
 
-* `--when.commands`: List of subcommands to match.
+- `--when.commands`: List of subcommands to match.
 
   Subcommands are space-separated and matched by prefix.
 
@@ -2616,7 +2616,7 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
   --when.commands = ["file", "log"] # matches `jj file` *OR* `jj log` (*OR* subcommand of either)
   ```
 
-* `--when.platforms`: List of platforms to match.
+- `--when.platforms`: List of platforms to match.
 
   The values are defined by both
   [`std::env::consts::FAMILY`](https://doc.rust-lang.org/std/env/consts/constant.FAMILY.html)
@@ -2629,7 +2629,7 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
   --when.platforms = ["unix"]               # matches anything in the Unix family (Linux, FreeBSD, macOS, etc.)
   ```
 
-* `--when.environments`: List of environment variable conditions in
+- `--when.environments`: List of environment variable conditions in
   `"NAME=VALUE"` format (check if the variable has the value), or `NAME` to
   check if the variable is set.
 

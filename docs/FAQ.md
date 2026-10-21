@@ -12,8 +12,8 @@ To move bookmarks, use `jj bookmark move`.
 `jj git push --all` pushes all _bookmarks_, not all revisions. You have two
 options:
 
-* Using `jj git push --change` will automatically create a bookmark and push it.
-* Using `jj bookmark` commands to create or move a bookmark to either the commit
+- Using `jj git push --change` will automatically create a bookmark and push it.
+- Using `jj bookmark` commands to create or move a bookmark to either the commit
   you want to push or a descendant of it. Unlike Git, Jujutsu doesn't do this
   automatically (see previous question).
 
@@ -634,12 +634,12 @@ takes a snapshot if needed.
 
 There are some trade-offs and there is no definitive answer yet.
 
-* Using `jj-lib` avoids parsing command output and makes error handling easier.
-* `jj-lib` is not a stable API, so you may have to make changes to your tool
+- Using `jj-lib` avoids parsing command output and makes error handling easier.
+- `jj-lib` is not a stable API, so you may have to make changes to your tool
 when the API changes.
-* The CLI is not stable either, so you may need to make your tool detect the
+- The CLI is not stable either, so you may need to make your tool detect the
 different versions and call the right command.
-* Using the CLI means that your tool will work with custom-built `jj` binaries,
+- Using the CLI means that your tool will work with custom-built `jj` binaries,
 like the one at Google (if you're using the library, you will not be able to
 detect custom backends and more).
 
