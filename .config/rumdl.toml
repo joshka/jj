@@ -17,9 +17,6 @@ include = ["**/*.md", "**/*.mdx"]
 # Symlinks duplicate files already covered by the scan.
 exclude = ["**/node_modules/**", "**/cli/docs/**", "**/docs/governance/GOVERNANCE.md"]
 disable = [
-    # 26 findings. List indentation should be consistent.
-    # https://github.com/rvben/rumdl/blob/main/docs/md005.md
-    "list-indent",
     # 272 findings. Line length should not be excessive.
     # https://github.com/rvben/rumdl/blob/main/docs/md013.md
     "line-length",
