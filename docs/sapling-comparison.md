@@ -57,13 +57,16 @@ Here is a list of some differences between jj and Sapling.
   you `jj undo` a `jj commit`, `jj diff` will show the same changes as
   before `jj commit`, but if you `sl undo` a `sl commit`, the working copy will
   be clean.
+
 * **Git interop:** Sapling supports cloning, pushing, and pulling from a remote
   Git repo. jj also does, and it also supports sharing a working copy with a Git
   repo, so you can use `jj` and `git` interchangeably in the same repo.
+
 * **Polish:** Sapling is more polished and feature-complete. Sapling has very
   nice built-in web UI called
   [Interactive Smartlog](https://sapling-scm.com/docs/addons/isl), which lets
   you drag and drop commits to rebase them, among other things.
+
 * **Forge workflow:** Sapling has `sl pr submit --stack`, which lets you
   push a stack of commits as separate GitHub PRs, including setting the base
   branch. It only supports GitHub. jj doesn't have any direct integration with
