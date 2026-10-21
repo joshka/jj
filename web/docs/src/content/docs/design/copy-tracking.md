@@ -509,7 +509,7 @@ $ jj new B C
 It seems clear that `baz`'s copy graph should inherit from both `foo` and `bar`,
 producing a merge in copy graph. The trees would look like this:
 
-```
+```text
 Commit A:
 name: foo, id: aaa111, copy_id: 1:foo
 name: bar, id: aaa111, copy_id: 2:bar

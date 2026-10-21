@@ -59,9 +59,6 @@ disable = [
     # 18 findings. No bare URLs - wrap URLs in angle brackets.
     # https://github.com/rvben/rumdl/blob/main/docs/md034.md
     "no-bare-urls",
-    # 53 findings. Code blocks should have a language specified.
-    # https://github.com/rvben/rumdl/blob/main/docs/md040.md
-    "fenced-code-language",
     # 7 findings. First line in file should be a top level heading.
     # https://github.com/rvben/rumdl/blob/main/docs/md041.md
     "first-line-heading",
@@ -159,14 +156,6 @@ disable = [
 # fix = false
 # fix-mode = "conservative"
 # strip-wrapper-elements = ["p"]
-
-# [fenced-code-language]
-# allowed-languages = []
-# custom-languages = []
-# disallowed-languages = []
-# preferred-aliases = {}
-# style = "disabled"
-# unknown-language-action = "ignore"
 
 # [first-line-heading]
 # allow-preamble = false

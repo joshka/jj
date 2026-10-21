@@ -103,7 +103,7 @@ literal_template = '"hello" ++ "\n"'
 
 `basic_template` is actually equivalent to this string:
 
-```
+```text
 'hello' ++ "
 "
 ```
@@ -115,7 +115,7 @@ error messages (such as referencing a line that you think shouldn't exist).
 
 On the other hand, `literal_template` is equivalent to:
 
-```
+```text
 "hello" ++ "\n"
 ```
 

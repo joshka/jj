@@ -10,7 +10,7 @@ An attacker that has control over your jj configuration has full control over
 your system when you run specific commands. As an example, an attacker can have
 you enable the following repo config:
 
-```
+```text
 [fix.tools.foo]
 command = ["malicious", "command"]
 ```
@@ -132,7 +132,7 @@ We will store per-repo configuration in
 
 The filesystem structure will look like:
 
-```
+```text
 $HOME/.config/jj/
   repos/
     abc123/

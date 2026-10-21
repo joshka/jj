@@ -279,7 +279,7 @@ the backend caches the verification result.
 :::note
 As opposed to calling any of `.status()`, `.key()`, or `.display()`,
 checking for signature presence through boolean coercion is fast:
-```
+```text
 if(commit.signature(), "commit has a signature", "commit is unsigned")
 ```
 :::

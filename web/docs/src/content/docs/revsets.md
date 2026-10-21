@@ -104,7 +104,7 @@ You can use parentheses to control evaluation order, such as `(x & y) | z` or
 
 Given this history:
 
-```
+```text
 o D
 |\
 | o C
@@ -428,7 +428,7 @@ indicates that all of the following usages are valid:
 
 Given this history:
 
-```
+```text
 o E
 |
 | o D

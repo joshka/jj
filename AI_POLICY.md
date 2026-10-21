@@ -12,7 +12,7 @@ the community, including Discord, issues, and pull requests.
    disclose this by adding an `Assisted-by` trailer at the end of the commit
    message. Examples:
 
-   ```
+   ```text
    Assisted-by: Claude Opus 4.8
    Assisted-by: Kimi K3
    Assisted-by: GPT 5.6 Sol

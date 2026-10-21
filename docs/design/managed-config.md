@@ -61,7 +61,7 @@ problem".
 #### Trust levels
 
 We will add the following fields to metadata:
-```
+```text
 enum TrustLevel {
     // There's no "optional" in protos. It just returns the zero value.
     UNSET = 0;
@@ -256,7 +256,7 @@ These options will also be able to be manually set via `jj config managed
 
 This is the trickiest part of the proposal. Consider the following workflow:
 
-```
+```text
 jj new main@origin
 jj ...
 jj new stable-branch@origin
@@ -305,7 +305,7 @@ All in all, you can see a general pattern.
 This is problematic with `trunk()` because if you add the `--reorder-hooks` and
 then checkout `stable-branch` it will incorrectly attempt to reorder imports
 
-```
+```text
 [fix.tools.rustfmt]
 command = ["rustfmt", "--reorder-imports"]
 ```
@@ -315,13 +315,13 @@ command = ["rustfmt", "--reorder-imports"]
 In practice, it is highly unlikely that a formatter config would be written that
 way. Far more likely, you would see an entry in `config.toml` like:
 
-```
+```text
 [fix.tools.rustfmt]
 command = ["rustfmt"]
 ```
 
 `.rustfmt.toml`:
-```
+```text
 reorder_imports = true
 ```
 
@@ -333,13 +333,13 @@ This simply works out of the box, since the formatter is reading the config from
 As long as the formatter is in-repo, we can just write a wrapper script which
 does this for us.
 
-```
+```text
 [fix.tools.rustfmt]
 command = ["rustfmt.py"]
 ```
 
 `rustfmt.py`:
-```
+```text
 os.execv(["rustfmt", "--reorder-imports"])
 ```
 
@@ -348,7 +348,7 @@ os.execv(["rustfmt", "--reorder-imports"])
 If you write a script for which the API keeps changing, eg. you add / remove
 flags to it, you can do something like this:
 
-```
+```text
 [aliases]
 upload = ["util", "exec", "--", "bash", "-c", "python3", "-c", "$(jj file show -r 'trunk()' upload.py)"]
 ```
@@ -375,7 +375,7 @@ config option.
 Alternatively, a more general approach could be to create some kind of include
 directive in `config.toml` files, like so (this has already been discussed and
 rejected before, so it may not be viable).
-```
+```text
 includes = [
     {
         path = "other_config.toml",

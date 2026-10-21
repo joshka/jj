@@ -466,7 +466,7 @@ $ jj abandon 31a347e0
 
 Now, we have achieved the exact state we desired:
 
-```
+```text
 $ jj log -p --git
 @  pvnrklkn jjfan@example.org 2025-02-28 21:39:29 468104c2
 │  featureB

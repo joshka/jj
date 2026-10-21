@@ -98,7 +98,7 @@ change *B*. First we assume *B/0* and *B/1* evolve directly from a common
 predecessor commit *P*, which is now hidden (no longer visible). Later we look
 at more complex evolution graphs. Note that *P*'s change id is also *B*.
 
-```
+```text
 Evolution graph for examples 1, 2, 3 and 4.
 B/0 and B/1 may have other predecessors for unrelated change-ids, P may have
 predecessors (even for change-id B):
@@ -236,7 +236,7 @@ A
 
 We determine the parent(s) of the solution as follows:
 
-```
+```text
 parents = P⁻ + (B/0⁻ - P⁻) + (B/1⁻ - P⁻)
 ```
 
@@ -247,7 +247,7 @@ parents of the solution.
 Note that this simple algorithm produces the desired output in example 1 and
 example 2. In example 2, the expression looks like this:
 
-```
+```text
 parents = P⁻ + (B/0⁻ - P⁻) + (B/1⁻ - P⁻)
         = {X} + ({A} - {X}) + ({A} - {X})
         = {A} + ({A} - {X})
@@ -276,7 +276,7 @@ X
 
 In this case parents will be
 
-```
+```text
 {X} + ({A} - {X}) + ({C} - {X}) = {A} + ({C} - {X})
 ```
 
@@ -286,7 +286,7 @@ the desired parents for the solution: either *{A}* or *{C}*.
 Assume the user chooses *{C}*. The command then rebases (in memory) *B/0*, *B/1*
 and *P* onto the chosen parents:
 
-```
+```text
 In-memory commits after rebasing B/0, B/1 and P on top of C (edges represent
 parent/child relationship):
 
@@ -352,7 +352,7 @@ complex than the basic 3-commit case. This will serve as motivation for the
 general case. Here is our truncated evolution graph (remember the edges here
 represent change evolution, not parent-child relations):
 
-```
+```text
 Truncated evolution graph. B/0, B/1 and Q may have other predecessors for
 unrelated change-ids. P is the evolution fork point (it may have predecessors,
 even for change-id B):
@@ -392,7 +392,7 @@ starting with the description of the evolution fork point *P*, then adding
 *desc(Y) - desc(X)* terms for each *X->Y* edge in the truncated evolution graph.
 Then we call *try_resolve_deduplicating_same_diffs* to get:
 
-```
+```text
 P + (Q - P) + (B/1 - P) + (B/0 - Q) =
        = v1 + (v2 - v1) + (v2 - v1) + (v3 - v2)    <== collapse duplicate
                                                        (v2 - v1) edge/term
@@ -404,7 +404,7 @@ P + (Q - P) + (B/1 - P) + (B/0 - Q) =
 resolve_trivial (with either SameChange value) would return none. Here is
 another example:
 
-```
+```text
 Truncated evolution graph:
 
 B/0     ( foo.txt contents: "v3" )
