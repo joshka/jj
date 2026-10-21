@@ -38,9 +38,6 @@ disable = [
     # 7 findings. Trailing punctuation in heading.
     # https://github.com/rvben/rumdl/blob/main/docs/md026.md
     "no-trailing-punctuation",
-    # 2 findings. Multiple spaces after quote marker (>).
-    # https://github.com/rvben/rumdl/blob/main/docs/md027.md
-    "no-multiple-space-blockquote",
     # 4 findings. Blank line inside blockquote.
     # https://github.com/rvben/rumdl/blob/main/docs/md028.md
     "no-blanks-blockquote",
@@ -142,9 +139,6 @@ disable = [
 
 # [no-trailing-punctuation]
 # punctuation = ".,;:!"
-
-# [no-multiple-space-blockquote]
-# list-items = false
 
 # [no-blanks-blockquote]
 # fix = false

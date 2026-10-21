@@ -5,7 +5,7 @@ title: Roadmap
 This documents some of the goals we have. Many of them are quite independent.
 
 > **Note:** Most people contributing to Jujutsu do so in their spare time, which
->  means that we cannot attach any target dates to any of the goals below.
+> means that we cannot attach any target dates to any of the goals below.
 
 ## Support for copies and renames
 
