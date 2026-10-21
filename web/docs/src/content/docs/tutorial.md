@@ -13,8 +13,12 @@ This text assumes that the reader is familiar with Git.
 
 ## Preparation
 
+<!-- rumdl-disable existing-relative-links -->
+
 If you haven't already, make sure you
 [install and configure Jujutsu](install-and-setup.md).
+
+<!-- rumdl-enable existing-relative-links -->
 
 ## Cloning a Git repository
 

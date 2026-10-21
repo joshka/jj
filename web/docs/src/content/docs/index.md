@@ -24,6 +24,8 @@ You may want to jump to:
 
 ## Some useful links
 
+<!-- rumdl-disable existing-relative-links -->
+
 - [GitHub repo for `jj`](https://github.com/jj-vcs/jj)
 - Overview of `jj` in the repo's [README](https://github.com/jj-vcs/jj?tab=readme-ov-file#readme)
 - [Installation and setup](install-and-setup.md)
@@ -32,3 +34,5 @@ You may want to jump to:
 - [Working with GitHub](github.md)
 - [Development roadmap](roadmap.md)
 - [Changelog](changelog.md)
+
+<!-- rumdl-enable existing-relative-links -->
