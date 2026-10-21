@@ -1,4 +1,5 @@
-# Rumdl's default rules, with the exceptions below. The merge-conflict rule is
+# Rumdl's default rules, with the exceptions below, plus wrapping at 100
+# columns and aligned tables. The merge-conflict rule is
 # suppressed inline around the examples of conflict markers in the docs.
 # See https://github.com/jj-vcs/jj/issues/10210.
 

@@ -8,8 +8,8 @@ is documented as requiring a non-empty slice as input, it's fine to call `slice[
 
 ## Markdown
 
-Wrap prose at 80 columns. Rumdl checks Markdown in CI, including line length outside code blocks and
-headings.
+Rumdl checks Markdown in CI. Its fix rewraps prose at 100 columns and aligns tables, so run it
+rather than wrapping by hand.
 
 Local installation is optional. To check or fix Markdown with the repository's configuration, run
 `mise check:markdown` or `mise fix:markdown`. Mise installs the pinned rumdl binary as needed.
