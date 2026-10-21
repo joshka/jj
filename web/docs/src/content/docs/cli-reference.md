@@ -13,7 +13,8 @@ does not match the `jj help` output exactly.
 
 Run `jj help <COMMAND>` for more authoritative documentation.
 
-If you see a significant difference, feel free to file a bug, or a PR to note the difference here.
+If you see a significant difference, feel free to file a bug, or a PR to note
+the difference here.
 :::
 
 <!-- rumdl-disable-next-line line-length no-bare-urls -->

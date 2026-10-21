@@ -30,10 +30,10 @@ Find it at [hunk.nvim][hunk.nvim].
 
 ## JayJay
 
-JayJay is a native macOS GUI for Jujutsu built with Rust and SwiftUI. It features
-a DAG graph view, Myers diff with syntax highlighting, side-by-side diffs, conflict
-resolution, bookmark manager, command palette, and AI commit messages. The diff
-engine is available as a standalone Rust crate (`jj-diff`).
+JayJay is a native macOS GUI for Jujutsu built with Rust and SwiftUI. It
+features a DAG graph view, Myers diff with syntax highlighting, side-by-side
+diffs, conflict resolution, bookmark manager, command palette, and AI commit
+messages. The diff engine is available as a standalone Rust crate (`jj-diff`).
 
 Find it at [jayjay][jayjay].
 
@@ -41,7 +41,8 @@ Find it at [jayjay][jayjay].
 
 Centered around the `jj log` graph view, jj-fzf provides previews of diffs, the
 evolution-log, browses the op log and offers a large number of key bindings for
-commonly used `jj` operations from rebase to undo, and helps with divergent commits.
+commonly used `jj` operations from rebase to undo, and helps with divergent
+commits.
 
 Find it at [jj-fzf][jj-fzf].
 
@@ -62,8 +63,11 @@ Find it at [jj_tui][jj_tui].
 
 ## Jujutsu Kaizen
 
-Jujutsu Kaizen is a plugin for Visual Studio Code. The goal of this extension is to bring the great UX of Jujutsu into the VS Code UI.
-Its developers are currently focused on achieving parity for commonly used features of VS Code's built-in Git extension, such as the various operations possible via the Source Control view.
+Jujutsu Kaizen is a plugin for Visual Studio Code. The goal of this extension is
+to bring the great UX of Jujutsu into the VS Code UI. Its developers are
+currently focused on achieving parity for commonly used features of VS Code's
+built-in Git extension, such as the various operations possible via the Source
+Control view.
 
 Find it at [jjk][jjk].
 
@@ -90,13 +94,15 @@ Find it at [visualjj][visualjj].
 
 ## Jujutsu UI
 
-jjui is a terminal user interface for working with Jujutsu version control system.
+jjui is a terminal user interface for working with Jujutsu version control
+system.
 
 Find it at [jjui][jjui].
 
 ## Selvejj
 
-Selvejj is a JetBrains plugin for integrating Jujutsu as a first-class VCS within the IDE.
+Selvejj is a JetBrains plugin for integrating Jujutsu as a first-class VCS
+within the IDE.
 
 Find it at [selvejj][selvejj] and on the [JetBrains
 Marketplace][selvejj-marketplace].
@@ -110,9 +116,11 @@ Marketplace][jj-idea-marketplace].
 
 ## PSCompletions
 
-PSCompletions is powerful shell completions for PowerShell and other shells, powered by Rust and Lua.
+PSCompletions is powerful shell completions for PowerShell and other shells,
+powered by Rust and Lua.
 
-It can provide completions via `psc add jj`, or offer a better interactive menu for the official completions.
+It can provide completions via `psc add jj`, or offer a better interactive menu
+for the official completions.
 
 Find it at [PSCompletions][PSCompletions].
 
@@ -124,15 +132,21 @@ Find it at [LightJJ][LightJJ].
 
 ## JJ View
 
-JJ View is an open-source Visual Studio Code extension that provides a rich, native graphical interface for Jujutsu. It features a Git-style Source Control (SCM) view for easy change management, an interactive visual commit history graph, and built-in commands for common `jj` operations like squashing, abandoning, and absorbing modifications directly from the editor. It also includes native Gerrit integration for streamlined code review workflows.
+JJ View is an open-source Visual Studio Code extension that provides a rich,
+native graphical interface for Jujutsu. It features a Git-style Source Control
+(SCM) view for easy change management, an interactive visual commit history
+graph, and built-in commands for common `jj` operations like squashing,
+abandoning, and absorbing modifications directly from the editor. It also
+includes native Gerrit integration for streamlined code review workflows.
 
 Find it at [jj-view][jj-view].
 
 ## jj-stack
 
-`jj-stack` turns a linear series of local `jj` changes into a stack of GitHub pull requests.
-Rewrite, split, squash, or reorder your changes with `jj`, then run `jj-stack submit` to update
-GitHub. Existing PRs follow their change IDs, keeping comments and review history together.
+`jj-stack` turns a linear series of local `jj` changes into a stack of GitHub
+pull requests. Rewrite, split, squash, or reorder your changes with `jj`, then
+run `jj-stack submit` to update GitHub. Existing PRs follow their change IDs,
+keeping comments and review history together.
 
 Find it at [jj-stack][jj-stack].
 

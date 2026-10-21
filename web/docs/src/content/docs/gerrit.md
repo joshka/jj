@@ -83,18 +83,20 @@ jj gerrit upload -r '@-' --remote-branch main --dry-run
 
 There are a few way of specifying the target remote for your projects:
 
-- Please run `jj config set --user gerrit.default-remote-branch <branch name>` to set your
-  default branch across all repos
-- Please run `jj config set --repo gerrit.default-remote-branch <branch name>` to set your
-  default branch for this specific repo.
-- Use `--remote-branch <branch name>` to override this for one specific occasion.
+- Please run `jj config set --user gerrit.default-remote-branch <branch name>`
+  to set your default branch across all repos
+- Please run `jj config set --repo gerrit.default-remote-branch <branch name>`
+  to set your default branch for this specific repo.
+- Use `--remote-branch <branch name>` to override this for one specific
+  occasion.
 
 The remote used to push is determined as follows:
 
 - If you have more than one origin, or the origin isn't called gerrit, run
   `jj config set --repo gerrit.default-remote <gerrit remote name>` to set-up a
   default remote.
-- To upload to a specific remote as a one-off thing, use `--remote <remote name>`
+- To upload to a specific remote as a one-off thing, use
+  `--remote <remote name>`
 
 ## Updating changes after review
 

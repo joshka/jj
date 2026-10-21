@@ -50,15 +50,20 @@ Examples of `-r` and `-s`:
 Commands that move revisions around also need to specify the destinations.
 
 - `--onto REV` (`-o REV`) places revisions as children of `REV`.
-- `--insert-after REV` (`-A REV`) inserts revisions as children of `REV` and parents of `REV+`.
-- `--insert-before REV` (`-B REV`) inserts revisions as the children of `REV-` and parents of `REV`.
+- `--insert-after REV` (`-A REV`) inserts revisions as children of `REV` and
+  parents of `REV+`.
+- `--insert-before REV` (`-B REV`) inserts revisions as the children of `REV-`
+  and parents of `REV`.
 
 Examples:
 
 - `jj rebase -r REV -o main` rebases revisions in `REV` as children of `main`.
-- `jj rebase -r REV -B yyy` inserts revisions `REV` between `yyy` and its parents.
-- `jj rebase -r REV -A main -B yyy` inserts revisions `REV` between `main` and `yyy`.
-- `jj revert -r xyz -o main` creates a revision that reverts `xyz` then rebases it on top of `main`.
+- `jj rebase -r REV -B yyy` inserts revisions `REV` between `yyy` and its
+  parents.
+- `jj rebase -r REV -A main -B yyy` inserts revisions `REV` between `main` and
+  `yyy`.
+- `jj revert -r xyz -o main` creates a revision that reverts `xyz` then rebases
+  it on top of `main`.
 
 ## Manipulating diffs and file contents
 

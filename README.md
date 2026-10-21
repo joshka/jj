@@ -27,12 +27,13 @@
 
 ## Introduction
 
-Jujutsu is a powerful [version control system](https://en.wikipedia.org/wiki/Version_control)
-for software projects. You use it to get a copy of your code, track changes
-to the code, and finally publish those changes for others to see and use.
-It is designed from the ground up to be easy to use—whether you're new or
-experienced, working on brand new projects alone, or large scale software
-projects with large histories and teams.
+Jujutsu is a powerful
+[version control system](https://en.wikipedia.org/wiki/Version_control) for
+software projects. You use it to get a copy of your code, track changes to the
+code, and finally publish those changes for others to see and use. It is
+designed from the ground up to be easy to use—whether you're new or experienced,
+working on brand new projects alone, or large scale software projects with large
+histories and teams.
 
 Jujutsu is unlike most other systems, because internally it abstracts the user
 interface and version control algorithms from the *storage systems* used to
@@ -60,11 +61,11 @@ systems into a single tool. Some of those sources of inspiration include:
   storage", for wide interoperability and ease of onboarding.
 
 - **Mercurial & Sapling**: There are many Mercurial-inspired features, such as
-  the [revset] language to select commits. There is [no explicit index][no-index]
-  or staging area. Branches are "anonymous" like Mercurial, so you don't need
-  to make up a name for each small change. Primitives for rewriting history are
-  powerful and simple. Formatting output is done with a robust template language
-  that can be configured by the user.
+  the [revset] language to select commits. There is
+  [no explicit index][no-index] or staging area. Branches are "anonymous" like
+  Mercurial, so you don't need to make up a name for each small change.
+  Primitives for rewriting history are powerful and simple. Formatting output is
+  done with a robust template language that can be configured by the user.
 
 - **Darcs**: Jujutsu keeps track of conflicts as [first-class
   objects][conflicts] in its model; they are first-class in the same way commits
@@ -80,18 +81,19 @@ systems into a single tool. Some of those sources of inspiration include:
 
 And it adds several innovative, useful features of its own:
 
-- **Working-copy-as-a-commit**: Changes to files are [recorded automatically][wcc]
-  as normal commits, and amended on every subsequent change. This "snapshot"
-  design simplifies the user-facing data model (commits are the only visible
-  object), simplifies internal algorithms, and completely subsumes features like
-  Git's stashes or the index/staging-area.
+- **Working-copy-as-a-commit**: Changes to files are
+  [recorded automatically][wcc] as normal commits, and amended on every
+  subsequent change. This "snapshot" design simplifies the user-facing data
+  model (commits are the only visible object), simplifies internal algorithms,
+  and completely subsumes features like Git's stashes or the index/staging-area.
 
-- **Operation log & undo**: Jujutsu records every operation that is performed on the
-  repository, from commits, to pulls, to pushes. This makes debugging problems like
-  "what just happened?" or "how did I end up here?" easier, *especially* when
-  you're helping your coworker answer those questions about their repository!
-  And because everything is recorded, you can undo that mistake you just made
-  with ease. Version control has finally entered [the 1960s][undo-history]!
+- **Operation log & undo**: Jujutsu records every operation that is performed on
+  the repository, from commits, to pulls, to pushes. This makes debugging
+  problems like "what just happened?" or "how did I end up here?" easier,
+  *especially* when you're helping your coworker answer those questions about
+  their repository! And because everything is recorded, you can undo that
+  mistake you just made with ease. Version control has finally entered
+  [the 1960s][undo-history]!
 
 - **Automatic rebase and conflict resolution**: When you modify a commit, every
   descendent is automatically rebased on top of the freshly-modified one. This
@@ -109,17 +111,17 @@ And it adds several innovative, useful features of its own:
   repositories to S3? No? Well, now you can!
 
   The fundamental problem with using filesystems like Dropbox and backup tools
-  like `rsync` on your typical Git/Mercurial repositories is that they rely
-  on *local filesystem operations* being atomic, serialized, and non-concurrent
+  like `rsync` on your typical Git/Mercurial repositories is that they rely on
+  *local filesystem operations* being atomic, serialized, and non-concurrent
   with respect to other reads and writes—which is *not* true when operating on
   distributed file systems, or when operations like concurrent file copies (for
   backup) happen while lock files are being held.
 
-  Jujutsu is instead designed to be [safe under concurrent scenarios][conc-safety];
-  simply using rsync or Dropbox and then using that resulting repository
-  should never result in a repository in a *corrupt state*. The worst that
-  *should* happen is that it will expose conflicts between the local and remote
-  state, leaving you to resolve them.
+  Jujutsu is instead designed to be
+  [safe under concurrent scenarios][conc-safety]; simply using rsync or Dropbox
+  and then using that resulting repository should never result in a repository
+  in a *corrupt state*. The worst that *should* happen is that it will expose
+  conflicts between the local and remote state, leaving you to resolve them.
 
 [wcc]: https://docs.jj-vcs.dev/latest/working-copy/
 [undo-history]: https://en.wikipedia.org/wiki/Undo#History
@@ -147,10 +149,11 @@ use the bridge to follow IRC.
   organization.
 - **November 2024**: Version 0.24 is released which adds `jj file annotate`,
   which is equivalent to `git blame` or `hg annotate`.
-- **September 2024**: Martin gave a [presentation about Jujutsu][merge-vid-2024] at
-  Git Merge 2024.
-- **Feb 2024**: Version 0.14 is released, which deprecates ["jj checkout" and "jj merge"](CHANGELOG.md#0140---2024-02-07),
-  as well as `jj init --git`, which is now just called `jj git init`.
+- **September 2024**: Martin gave a [presentation about Jujutsu][merge-vid-2024]
+  at Git Merge 2024.
+- **Feb 2024**: Version 0.14 is released, which deprecates
+  ["jj checkout" and "jj merge"](CHANGELOG.md#0140---2024-02-07), as well as
+  `jj init --git`, which is now just called `jj git init`.
 - **Oct 2023**: Version 0.10.0 is released! Now includes a bundled merge and
   diff editor for all platforms, "immutable revsets" to avoid accidentally
   `edit`-ing the wrong revisions, and lots of polish.
@@ -160,13 +163,15 @@ use the bridge to follow IRC.
 
 ### Related Media
 
-- **Mar 2024**: Chris Krycho started [a YouTube series about Jujutsu][krycho-yt].
-- **Feb 2024**: Chris Krycho published an article about Jujutsu called [jj init][krycho]
-  and Steve Klabnik followed up with the [Jujutsu Tutorial][klabnik].
+- **Mar 2024**: Chris Krycho started
+  [a YouTube series about Jujutsu][krycho-yt].
+- **Feb 2024**: Chris Krycho published an article about Jujutsu called
+  [jj init][krycho] and Steve Klabnik followed up with the
+  [Jujutsu Tutorial][klabnik].
 - **Jan 2024**: Jujutsu was featured in an LWN.net article called
   [Jujutsu: a new, Git-compatible version control system][lwn].
-- **Jan 2023**: Martin's Talk about Jujutsu at Git Merge 2022, [video][merge-talk]
-  and the associated [slides][merge-slides].
+- **Jan 2023**: Martin's Talk about Jujutsu at Git Merge 2022,
+  [video][merge-talk] and the associated [slides][merge-slides].
 
 The wiki also contains a more extensive list of [media references][wiki-media].
 
@@ -196,19 +201,20 @@ tutorial](https://docs.jj-vcs.dev/latest/tutorial). Also see the [Git
 comparison](https://docs.jj-vcs.dev/latest/git-comparison), which
 includes a table of `jj` vs. `git` commands.
 
-As you become more familiar with Jujutsu, the following resources may be helpful:
+As you become more familiar with Jujutsu, the following resources may be
+helpful:
 
 - The [FAQ](https://docs.jj-vcs.dev/latest/FAQ).
 - The [Glossary](https://docs.jj-vcs.dev/latest/glossary).
 - The `jj help` command (e.g. `jj help rebase`).
-- The `jj help -k <keyword>` command (e.g. `jj help -k config`). Use `jj help --help`
-  to see what keywords are available.
+- The `jj help -k <keyword>` command (e.g. `jj help -k config`). Use
+  `jj help --help` to see what keywords are available.
 
 If you are using a **prerelease** version of `jj`, you would want to consult
-[the docs for the prerelease (main branch)
-version](https://docs.jj-vcs.dev/prerelease/). You can also get there
-from the docs for the latest release by using the website's version switcher. The version switcher is visible in
-the header of the website when you scroll to the top of any page.
+[the docs for the prerelease (main branch) version](https://docs.jj-vcs.dev/prerelease/).
+You can also get there from the docs for the latest release by using the
+website's version switcher. The version switcher is visible in the header of the
+website when you scroll to the top of any page.
 
 ## Features
 
@@ -227,8 +233,8 @@ Here is how you can explore a GitHub repository with `jj`.
 
 <img src="demos/git_compat.png" />
 
-You can even have a [colocated local
-workspace](https://docs.jj-vcs.dev/latest/git-compatibility#colocated-jujutsugit-workspaces)
+You can even have a
+[colocated local workspace](https://docs.jj-vcs.dev/latest/git-compatibility#colocated-jujutsugit-workspaces)
 where you can use both `jj` and `git` commands interchangeably.
 
 ### The working copy is automatically committed

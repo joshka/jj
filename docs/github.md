@@ -28,7 +28,8 @@ jj git push --change @- # or -c for short
 
 ### Using a named bookmark
 
-In this example, we create a bookmark named `bar` and then push it to the remote.
+In this example, we create a bookmark named `bar` and then push it to the
+remote.
 
 ```shell
 # Start a new commit off of the default bookmark.
@@ -47,8 +48,8 @@ jj git push
 ```
 
 While it's possible to create a bookmark in advance and commit on top of it in a
-Git-like manner, you will then need to move the bookmark manually when you create
-a new commits. Unlike Git, Jujutsu will not do it automatically.
+Git-like manner, you will then need to move the bookmark manually when you
+create a new commits. Unlike Git, Jujutsu will not do it automatically.
 
 ## Updating the repository
 
@@ -88,8 +89,8 @@ jj git push
 ## Working in a Jujutsu repository
 
 In a Jujutsu repository, the workflow is simplified. If there's no need for
-explicitly named bookmarks, you can just generate one for a change. As Jujutsu is
-able to create a bookmark for a revision.
+explicitly named bookmarks, you can just generate one for a change. As Jujutsu
+is able to create a bookmark for a revision.
 
 ```shell
 # Do your work
@@ -194,8 +195,8 @@ GIT_DIR=$(jj git root) gh issue list
 ```
 
 You can make that automatic by installing [direnv](https://direnv.net) and
-defining hooks in a `.envrc` file in the repository root to configure `$GIT_DIR`.
-Just add this line into `.envrc`:
+defining hooks in a `.envrc` file in the repository root to configure
+`$GIT_DIR`. Just add this line into `.envrc`:
 
 ```shell
 export GIT_DIR=$(jj git root)
@@ -209,8 +210,8 @@ commands like `gh issue list` normally.
 
 ## Useful Revsets
 
-Log all revisions across all local bookmarks that aren't on the main bookmark nor
-on any remote:
+Log all revisions across all local bookmarks that aren't on the main bookmark
+nor on any remote:
 
 ```shell
 jj log -r 'bookmarks() & ~(main | remote_bookmarks())'
@@ -296,8 +297,9 @@ push = "origin"
 ## Git push options
 
 `jj git push` supports passing Git “push options” to the server via
-`-o`/`--option`. These are forwarded to the remote and interpreted by the hosting
-platform, if it supports them. You can repeat `-o` to send multiple options.
+`-o`/`--option`. These are forwarded to the remote and interpreted by the
+hosting platform, if it supports them. You can repeat `-o` to send multiple
+options.
 
 - Syntax: `jj git push -o <push_option>` or `jj git push --option <push_option>`
 - Multiple options: `jj git push -o foo -o bar=val`

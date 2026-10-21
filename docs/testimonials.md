@@ -73,7 +73,8 @@ Jujutsu exists)
 
 &mdash; gul banana, computer programmer
 
-> muwhahaha, I have corrupted my cofounder and now 100% of brontosource dev is on JJ.
+> muwhahaha, I have corrupted my cofounder and now 100% of brontosource dev is
+> on JJ.
 
 &mdash; Matt Kulunkundis, cofounder BrontoSource
 

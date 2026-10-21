@@ -97,16 +97,18 @@ The following functions are defined.
   `separator` between **non-empty** `content`s.
 * `surround(prefix: Template, suffix: Template, content: Template) -> Template`:
   Surround **non-empty** content with texts such as parentheses.
-* `config(name: Stringify) -> ConfigValue`: Look up configuration value by `name`.
+* `config(name: Stringify) -> ConfigValue`: Look up configuration value by
+  `name`.
 * `git_web_url([remote: String]) -> String`: Best-effort conversion of a git
   remote URL to an HTTPS web URL. Defaults to the "origin" remote. Returns an
   empty string on failure. SSH host alias resolution is currently unsupported.
 
 ## Built-in Aliases
 
-* `hyperlink(url, text)`: Creates a clickable hyperlink using [OSC8 escape sequences](https://github.com/Alhadis/OSC8-Adoption).
-  The `text` will be displayed and clickable, linking to the given `url` in
-  terminals that support OSC8 hyperlinks.
+* `hyperlink(url, text)`: Creates a clickable hyperlink using
+  [OSC8 escape sequences](https://github.com/Alhadis/OSC8-Adoption). The `text`
+  will be displayed and clickable, linking to the given `url` in terminals that
+  support OSC8 hyperlinks.
 
 ## Types
 
@@ -119,7 +121,8 @@ The following methods are defined.
 * `.commit() -> Commit`: Commit responsible for changing the relevant line.
 * `.content() -> Template`: Line content including newline character.
 * `.line_number() -> Integer`: 1-based line number.
-* `.original_line_number() -> Integer`: 1-based line number in the original commit.
+* `.original_line_number() -> Integer`: 1-based line number in the original
+  commit.
 * `.first_line_in_hunk() -> Boolean`: False when the directly preceding line
   references the same commit.
 
@@ -166,24 +169,26 @@ This type cannot be printed. The following methods are defined.
   local one.
 * `.local_tags() -> List<CommitRef>`: All local tags pointing to the commit.
 * `.remote_tags() -> List<CommitRef>`: All remote tags pointing to the commit.
-* `.divergent() -> Boolean`: True if the commit's change ID corresponds to multiple
-  visible commits.
-* `.change_offset() -> Option<Integer>`: The [change offset](glossary.md#change-offset)
-  of this commit. May not be available for some commits.
+* `.divergent() -> Boolean`: True if the commit's change ID corresponds to
+  multiple visible commits.
+* `.change_offset() -> Option<Integer>`: The
+  [change offset](glossary.md#change-offset) of this commit. May not be
+  available for some commits.
 * `.hidden() -> Boolean`: True if the commit is not visible (a.k.a. abandoned).
 * `.immutable() -> Boolean`: True if the commit is included in [the set of
   immutable commits](config.md#set-of-immutable-commits).
-* `.contained_in(revset: StringLiteral) -> Boolean`: True if the commit is included in
-  [the provided revset](revsets.md).
+* `.contained_in(revset: StringLiteral) -> Boolean`: True if the commit is
+  included in [the provided revset](revsets.md).
 * `.conflict() -> Boolean`: True if the commit contains merge conflicts.
 * `.conflicted_files() -> List<TreeEntry>`: Conflicted files in this commit.
 * `.empty() -> Boolean`: True if the commit modifies no files.
-* `.diff([files: StringLiteral]) -> TreeDiff`: Changes from the parents within [the
-  `files` expression](filesets.md). All files are compared by default, but it is
-  likely to change in future version to respect the command line path arguments.
-* `.files([files: StringLiteral]) -> List<TreeEntry>`: Files that exist in this commit,
-  matching [the `files` expression](filesets.md). Use `.diff().files()` to list
-  changed files.
+* `.diff([files: StringLiteral]) -> TreeDiff`: Changes from the parents within
+  [the `files` expression](filesets.md). All files are compared by default, but
+  it is likely to change in future version to respect the command line path
+  arguments.
+* `.files([files: StringLiteral]) -> List<TreeEntry>`: Files that exist in this
+  commit, matching [the `files` expression](filesets.md). Use `.diff().files()`
+  to list changed files.
 * `.root() -> Boolean`: True if the commit is the root commit.
 
 ### `CommitEvolutionEntry` type
@@ -308,9 +313,10 @@ This type holds the diff stats per file. The following methods are defined.
 * `.lines_removed() -> Integer`: Number of lines deleted.
 * `.path() -> RepoPath`: Path to the entry. If the entry is a copy/rename, this
   points to the target (or right) entry.
-* `.status() -> String`: One of `"modified"`, `"added"`, `"removed"`, `"copied"`, or `"renamed"`.
-* `.status_char() -> String`: One of `"M"` (modified), `"A"` (added), `"D"` (removed),
-  `"C"` (copied), or `"R"` (renamed).
+* `.status() -> String`: One of `"modified"`, `"added"`, `"removed"`,
+  `"copied"`, or `"renamed"`.
+* `.status_char() -> String`: One of `"M"` (modified), `"A"` (added), `"D"`
+  (removed), `"C"` (copied), or `"R"` (renamed).
 
 ### `Email` type
 
@@ -348,7 +354,8 @@ defined.
 * `.map(|item| expression) -> ListTemplate`: Apply template `expression`
   to each element. Example: `parents.map(|c| c.commit_id().short())`
 * `.any(|item| expression) -> Boolean`: Returns true if any element satisfies
-  the predicate `expression`. Example: `parents.any(|c| c.description().contains("fix"))`
+  the predicate `expression`. Example:
+  `parents.any(|c| c.description().contains("fix"))`
 * `.all(|item| expression) -> Boolean`: Returns true if all elements satisfy
   the predicate `expression`. Example: `parents.all(|c| c.mine())`
 
@@ -491,10 +498,11 @@ defined.
   Supports capture groups in patterns using `$0` (entire match), `$1`, `$2` etc.
 * `.first_line() -> String`
 * `.lines() -> List<String>`: Split into lines excluding newline characters.
-* `.split(separator: StringPattern, [limit: Integer]) -> List<String>`: Split into
-  substrings by the given `separator` pattern. If `limit` is specified, it
-  determines the maximum number of elements in the result, with the remainder
-  of the string returned as the final element. A `limit` of 0 returns an empty list.
+* `.split(separator: StringPattern, [limit: Integer]) -> List<String>`: Split
+  into substrings by the given `separator` pattern. If `limit` is specified, it
+  determines the maximum number of elements in the result, with the remainder of
+  the string returned as the final element. A `limit` of 0 returns an empty
+  list.
 * `.upper() -> String`
 * `.lower() -> String`
 * `.starts_with(needle: Stringify) -> Boolean`
@@ -581,15 +589,15 @@ _Conversion: `Boolean`: no, `Serialize`: yes, `Template`: yes_
 The following methods are defined.
 
 * `.ago() -> String`: Format as relative timestamp.
-* `.format(format: StringLiteral) -> String`: Format with [the specified strftime-like
-  format string](https://docs.rs/chrono/latest/chrono/format/strftime/).
+* `.format(format: StringLiteral) -> String`: Format with
+  [the specified strftime-like format string](https://docs.rs/chrono/latest/chrono/format/strftime/).
 * `.utc() -> Timestamp`: Convert timestamp into UTC timezone.
 * `.local() -> Timestamp`: Convert timestamp into local timezone.
-* `.after(date: StringLiteral) -> Boolean`: True if the timestamp is exactly at or
-  after the given date. Supported date formats are the same as the revset
+* `.after(date: StringLiteral) -> Boolean`: True if the timestamp is exactly at
+  or after the given date. Supported date formats are the same as the revset
   [Date pattern type].
-* `.before(date: StringLiteral) -> Boolean`: True if the timestamp is before, but
-  not including, the given date. Supported date formats are the same as the
+* `.before(date: StringLiteral) -> Boolean`: True if the timestamp is before,
+  but not including, the given date. Supported date formats are the same as the
   revset [Date pattern type].
 
 [Date pattern type]: revsets.md#date-patterns
@@ -742,7 +750,8 @@ Show machine-readable list of full commit and change IDs:
 jj log --no-graph -T 'commit_id ++ " " ++ change_id ++ "\n"'
 ```
 
-Print the description of the current commit, defaulting to `(no description set)`:
+Print the description of the current commit, defaulting to
+`(no description set)`:
 
 ```sh
 jj log -r @ --no-graph -T 'coalesce(description, "(no description set)\n")'

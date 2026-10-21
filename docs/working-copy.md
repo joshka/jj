@@ -26,7 +26,8 @@ tracked with `jj file track`.
 
 You can use `jj file untrack` to untrack a file while keeping it in the working
 copy. However, first [ignore](#ignored-files) them or remove them from the
-`snapshot.auto-track` patterns; otherwise they will be immediately tracked again.
+`snapshot.auto-track` patterns; otherwise they will be immediately tracked
+again.
 
 ## Conflicts
 

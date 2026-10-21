@@ -52,11 +52,11 @@ simplify by removing canceling terms. These two steps are implemented in
 
 For example, let's say commit B is based on A and is rebased to C, where it
 results in conflicts (`C+(B-A)`), which the user leaves unresolved. If the
-commit is then rebased to D, the result will be `D+((C+(B-A))-C)`. That expression
-can be simplified to `D+(B-A)`, which is a regular 3-way merge between D and B
-with A as base (no trace of C). This is what lets the user keep old commits
-rebased to head without resolving conflicts and still not get messy recursive
-conflicts.
+commit is then rebased to D, the result will be `D+((C+(B-A))-C)`. That
+expression can be simplified to `D+(B-A)`, which is a regular 3-way merge
+between D and B with A as base (no trace of C). This is what lets the user keep
+old commits rebased to head without resolving conflicts and still not get messy
+recursive conflicts.
 
 As another example, let's go through what happens when you back out a conflicted
 commit. Let's say we have the usual `E = C+(B-A)` conflict on top of

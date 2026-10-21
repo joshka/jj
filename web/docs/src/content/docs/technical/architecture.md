@@ -4,9 +4,9 @@ title: Architecture
 
 ## Data model
 
-The commit data model is similar
-to [Git's object model](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects)
-, but with some differences.
+The commit data model is similar to
+[Git's object model](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects) ,
+but with some differences.
 
 ## Separation of library from UI
 

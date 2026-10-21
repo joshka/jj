@@ -78,9 +78,8 @@ review others' PRs so the maintainers don't need to spend as much time on them.
 When you address comments on a PR, don't make the changes in a commit on top (as
 is typical on GitHub). Instead, please make the changes in the appropriate
 commit. You can do that by creating a new commit on top of the initial commit
- (`jj new <commit>`) and then squash in the changes when you're done (`jj squash`).
-`jj git push`
-will automatically force-push the bookmark.
+(`jj new <commit>`) and then squash in the changes when you're done
+(`jj squash`). `jj git push` will automatically force-push the bookmark.
 
 Mark conversation threads as resolved when you have addressed them. If you
 realize that a comment requires non-trivial changes, write a reply instead and
@@ -577,8 +576,8 @@ reloaded in your browser automatically.
 
 #### Offline distribution
 
-To build the rendered docs for offline distribution or to view them from your file
-system, run while inside the `jj` repository:
+To build the rendered docs for offline distribution or to view them from your
+file system, run while inside the `jj` repository:
 
 ```shell
 MKDOCS_OFFLINE=true uv run mkdocs build
@@ -609,7 +608,8 @@ Windows, you'll need to understand and adapt the shell script):
 1. Check out `jj` (`jj git clone`), cloned from your fork of `jj` (e.g.
   `github.com/jjfan/jj`). You can also use a pure Git repo if you prefer.
 
-2. Make sure `github.com/jjfan/jj` includes the `gh-pages` bookmark of the jj repo
+2. Make sure `github.com/jjfan/jj` includes the `gh-pages` bookmark of the jj
+   repo
 and run `git fetch origin gh-pages`.
 
 3. Go to the GitHub repository settings, enable GitHub Pages, and configure them
@@ -627,7 +627,8 @@ that is used in GitHub CI (details below):
    deploy it as a new commit to the `gh-pages` bookmark,
    and push the `gh-pages` bookmark to the origin.
 
-5. Now, you should be able to see the full website, including your latest changes
+5. Now, you should be able to see the full website, including your latest
+   changes
 to the `prerelease` version, at `https://jjfan.github.io/jj/prerelease/`.
 
 6. (Optional) The previous steps actually only rebuild
@@ -640,7 +641,8 @@ back and forth, you can also rebuild the docs for the latest release as follows.
     .github/scripts/docs-build-deploy v1.33.1 latest --push
     ```
 
-7. (Optional) When you are done, you may want to reset the `gh-pages` bookmark to the
+7. (Optional) When you are done, you may want to reset the `gh-pages` bookmark
+   to the
 same spot as it is upstream. If you configured the "upstream" remote,
 this can be done with:
 
@@ -712,11 +714,11 @@ turns on `debug` log level for `jj-lib` and `jj-cli` only.
 jj provides two main approaches to profiling:
 
 1. **Tracing-based profiling** - Uses the Rust `tracing` crate to record spans
-   and events. Good for understanding control flow and finding where time is spent
-   in instrumented code.
+   and events. Good for understanding control flow and finding where time is
+   spent in instrumented code.
 2. **Sampling-based profiling** - Uses system profilers (perf, dtrace) to sample
-   the call stack. Good for finding hot spots including in uninstrumented code and
-   external libraries.
+   the call stack. Good for finding hot spots including in uninstrumented code
+   and external libraries.
 
 ### Tracing-based profiling
 
@@ -748,10 +750,12 @@ instrumented, you can add `#[instrument]` attributes to the relevant functions.
 
 ### Sampling-based profiling
 
-Sampling profilers periodically capture the call stack to identify hot spots. This approach:
+Sampling profilers periodically capture the call stack to identify hot spots.
+This approach:
 
 - Has lower overhead than tracing
-- Captures all code, including uninstrumented functions and external libraries (like gitoxide)
+- Captures all code, including uninstrumented functions and external libraries
+  (like gitoxide)
 - May miss short-lived function calls since it samples rather than traces every
   call
 

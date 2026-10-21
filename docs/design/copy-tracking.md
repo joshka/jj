@@ -1,6 +1,7 @@
 # Copy Tracking and Tracing Design
 
-Authors: [Daniel Ploch](mailto:dploch@google.com), [Martin von Zweigbergk](mailto:martinvonz@google.com)
+Authors: [Daniel Ploch](mailto:dploch@google.com),
+[Martin von Zweigbergk](mailto:martinvonz@google.com)
 
 **Summary:** This Document documents an approach to tracking and detecting copy
 information in jj repos, in a way that is compatible with both Git's detection
@@ -311,9 +312,9 @@ the same is true for the `baz` file. Therefore, we break up their diffs into two
 separate diffs for each file.
 
 Among the remaining copy IDs, the shortest path in the copy graph is between
-`foo` on the source side and `baz` on the destination side, so we start with these.
-Since `foo` doesn't exist on the destination side and `baz` doesn't exist on the
-source side (with a related copy ID), we consider it a rename.
+`foo` on the source side and `baz` on the destination side, so we start with
+these. Since `foo` doesn't exist on the destination side and `baz` doesn't exist
+on the source side (with a related copy ID), we consider it a rename.
 
 The remaining file is `bar` on the source side. Its closest relative on the
 destination side is `baz`. Since we already used `baz` as a rename target for
@@ -756,10 +757,10 @@ comparing the full trees.
 
 ### Record logical file identifiers in trees (BitKeeper-like model)
 
-BitKeeper records a file ID (which identifies a logical file, unlike our `FileId`
-type) for each path (or maybe it's a path for each file ID). That way you can
-compare two arbitrary trees, find the added and deleted files and just compare
-the file IDs to figure out which of them are renames.
+BitKeeper records a file ID (which identifies a logical file, unlike our
+`FileId` type) for each path (or maybe it's a path for each file ID). That way
+you can compare two arbitrary trees, find the added and deleted files and just
+compare the file IDs to figure out which of them are renames.
 
 This model doesn't seem to be easily extensible to support copies (it only
 supports renames).

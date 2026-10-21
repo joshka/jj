@@ -21,8 +21,9 @@ These are the config settings available to jj/Jujutsu.
   or found with `jj config path --workspace`. For security reasons, they are not
   located inside the workspace.
 
-- Settings from [environment variable overrides](#environment-variable-overrides)
-  (for example `$JJ_USER` / `$JJ_EMAIL`).
+- Settings from
+  [environment variable overrides](#environment-variable-overrides) (for example
+  `$JJ_USER` / `$JJ_EMAIL`).
 
 - Settings [specified on the command-line].
 
@@ -148,8 +149,9 @@ export JJ_EMAIL="you@example.com"
 
 `$JJ_USER` overrides `user.name` and `$JJ_EMAIL` overrides `user.email`. They
 take precedence over values in config files (but not over `--config` /
-`--config-file`). See [Environment variable overrides](#environment-variable-overrides)
-for the full list. For directory-based switching without env vars, use
+`--config-file`). See
+[Environment variable overrides](#environment-variable-overrides) for the full
+list. For directory-based switching without env vars, use
 [conditional variables](#conditional-variables).
 
 ## UI settings
@@ -459,9 +461,9 @@ In color-words diffs, changed words are displayed inline by default when color
 is enabled. When the formatter cannot emit color, changed words are always shown
 on separate lines because inline changes would not be distinguishable.
 
-Because it's difficult to read a diff line with many removed/added words, there's
-a threshold to switch to traditional separate-line format in colorized output.
-You can also change the default number of lines of context shown.
+Because it's difficult to read a diff line with many removed/added words,
+there's a threshold to switch to traditional separate-line format in colorized
+output. You can also change the default number of lines of context shown.
 
 - `max-inline-alternation`: Maximum number of removed/added word alternation to
   inline. For example, `<added> ... <added>` sequence has 1 alternation, so the
@@ -549,15 +551,16 @@ diff-args = ["--color=always", "$left", "$right"]
 - `$width` is replaced with the number of terminal columns available to the diff
   content.
 
-- If `diff-args` is not specified, `["$left", "$right"]` will be used by default.
+- If `diff-args` is not specified, `["$left", "$right"]` will be used by
+  default.
 
 - If `diff-args = []`, `jj` will refuse to use this tool for diff formatting.
   This is a way to explicitly state that a certain tool (e.g. `mergiraf`) does
   not work for viewing diffs.
 
 By default `jj` will invoke external tools with a directory containing the left
-and right sides. The `diff-invocation-mode` config can change this to file by file
-invocations as follows:
+and right sides. The `diff-invocation-mode` config can change this to file by
+file invocations as follows:
 
 ```toml
 [ui]
@@ -653,8 +656,8 @@ You can configure the template used when no `-T` is specified.
 - `templates.config_list` for `jj config list`
 - `templates.workspace_list` for `jj workspace list`
 
-If you want to see the config variable origin (type and path) when you do `jj config list`
-you can add this to your config:
+If you want to see the config variable origin (type and path) when you do
+`jj config list` you can add this to your config:
 
 ```toml
 [templates]
@@ -665,7 +668,8 @@ config_list = "builtin_config_list_detailed"
 
 ### Default revisions
 
-You can configure the revisions `jj log` would show when neither `-r` nor any paths are specified.
+You can configure the revisions `jj log` would show when neither `-r` nor any
+paths are specified.
 
 ```toml
 [revsets]
@@ -702,12 +706,12 @@ The default value for `revsets.op-diff-changes-in` is
 
 ### Prioritize Revsets in the Log over @
 
-In some situations the default graph can be hard to read, for example when working with big merges.
-To improve this behavior you can configure which revset in the `jj log` graph is displayed on
-the left instead of `@`.
+In some situations the default graph can be hard to read, for example when
+working with big merges. To improve this behavior you can configure which revset
+in the `jj log` graph is displayed on the left instead of `@`.
 
-The following example will prioritize the change with the description "megamerge" with a fallback
-to `trunk()` in case no such change exists:
+The following example will prioritize the change with the description
+"megamerge" with a fallback to `trunk()` in case no such change exists:
 
 ```toml
 [revsets]
@@ -904,8 +908,8 @@ show-cryptographic-signatures = true
 ## Pager
 
 By default, jj will paginate output that would scroll off the screen. It does
-this by passing output through `less -FRXK` on most platforms (on Windows it uses
-[the pager](#builtin-pager) that is built-in to jj).
+this by passing output through `less -FRXK` on most platforms (on Windows it
+uses [the pager](#builtin-pager) that is built-in to jj).
 
 Which pager to use can be customized by setting `ui.pager`. When choosing a
 pager, ensure that it either supports color codes or that you disable color (see
@@ -1205,7 +1209,9 @@ edit-args = ["--newtab", "$left", "$right"]
 
 - If no `edit-args` are specified, `["$left", "$right"]` are set by default.
 
-- If `edit-args = []`, `jj` will refuse to use this tool for diff editing. This is a way to explicitly state that a certain tool (e.g. `mergiraf`) does not work for diff editing.
+- If `edit-args = []`, `jj` will refuse to use this tool for diff editing. This
+  is a way to explicitly state that a certain tool (e.g. `mergiraf`) does not
+  work for diff editing.
 
 Like diff viewing, diff editors are invoked with a directory containing the left
 and right sides by default. The `edit-invocation-mode` config controls this
@@ -1218,7 +1224,8 @@ diff-invocation-mode = "dir"
 edit-invocation-mode = "file-by-file"
 ```
 
-Finally, `ui.diff-editor` can be a list that specifies a command and its arguments.
+Finally, `ui.diff-editor` can be a list that specifies a command and its
+arguments.
 
 Some examples:
 
@@ -1237,7 +1244,8 @@ diff-editor = "binary"
 We offer two special "3-pane" diff editor configs:
 
 - `meld-3`, which requires installing [Meld](https://meldmerge.org/), and
-- `diffedit3`, which requires installing [`diffedit3`](https://github.com/ilyagr/diffedit3/releases).
+- `diffedit3`, which requires installing
+  [`diffedit3`](https://github.com/ilyagr/diffedit3/releases).
 
 `Meld` is a graphical application that is recommended, but can be difficult to
 install in some situations. `diffedit3` is designed to be easy to install and to
@@ -1246,10 +1254,10 @@ forwarding). `diffedit3` starts a local server that can be accessed via a web
 browser, similarly to [Jupyter](https://jupyter.org/).
 
 There is also the `diffedit3-ssh` which is similar to `diffedit3` but does not
-try to open the web browser pointing to the local server (the URL
-printed to the terminal) automatically. `diffedit3-ssh` also always uses ports in between
-17376-17380 and fails if they are all busy. This can be useful when working
-over SSH. Open the fold below for more details of how to set that up.
+try to open the web browser pointing to the local server (the URL printed to the
+terminal) automatically. `diffedit3-ssh` also always uses ports in between
+17376-17380 and fails if they are all busy. This can be useful when working over
+SSH. Open the fold below for more details of how to set that up.
 
 <details>
 <summary> Tips for using `diffedit3-ssh` over SSH </summary>
@@ -1554,10 +1562,10 @@ range argument format expected by your tool. The formatter will be invoked with
 these arguments repeated for each modified line range (e.g. `--lines=10-20
 --lines=30-40`).
 
-Additionally, you can use `run-tool-if-zero-line-ranges` to control the
-behavior when a diff results in zero line ranges (which can happen when lines
-are only deleted or with `--include-unchanged-files`). If `false` (the default),
-`jj` will skip the tool entirely for that file. If `true`, `jj` will run the tool
+Additionally, you can use `run-tool-if-zero-line-ranges` to control the behavior
+when a diff results in zero line ranges (which can happen when lines are only
+deleted or with `--include-unchanged-files`). If `false` (the default), `jj`
+will skip the tool entirely for that file. If `true`, `jj` will run the tool
 even when there are zero line ranges calculated. This is useful for tools that
 perform file-wide operations, such as import sorting.
 
@@ -1678,16 +1686,17 @@ backend = "gpg"
 # key = "signing@example.com"
 ```
 
-By default the gpg backend will look for a `gpg` binary on your path. If you want
-to change the program used or specify a path to `gpg` explicitly you can set:
+By default the gpg backend will look for a `gpg` binary on your path. If you
+want to change the program used or specify a path to `gpg` explicitly you can
+set:
 
 ```toml
 [signing]
 backends.gpg.program = "gpg2"
 ```
 
-Also by default the gpg backend will consider key expiry when verifying commit signatures.
-To consider expired keys as valid you can set:
+Also by default the gpg backend will consider key expiry when verifying commit
+signatures. To consider expired keys as valid you can set:
 
 ```toml
 [signing]
@@ -1708,16 +1717,17 @@ backend = "gpgsm"
 # key = "signing@example.com"
 ```
 
-By default the gpgsm backend will look for a `gpgsm` binary on your path. If you want
-to change the program used or specify a path to `gpgsm` explicitly you can set:
+By default the gpgsm backend will look for a `gpgsm` binary on your path. If you
+want to change the program used or specify a path to `gpgsm` explicitly you can
+set:
 
 ```toml
 [signing]
 backends.gpgsm.program = "gpgsm"
 ```
 
-Also by default the gpgsm backend will consider key expiry when verifying commit signatures.
-To consider expired keys as valid you can set:
+Also by default the gpgsm backend will consider key expiry when verifying commit
+signatures. To consider expired keys as valid you can set:
 
 ```toml
 [signing]
@@ -1735,20 +1745,22 @@ key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGj+J6N6SO+4P8dOZqfR1oiay2yxhhHnagH52
 # key = "~/.ssh/id_for_signing.pub"
 ```
 
-By default the ssh backend will look for a `ssh-keygen` binary on your path. If you want
-to change the program used or specify a path to `ssh-keygen` explicitly you can set:
+By default the ssh backend will look for a `ssh-keygen` binary on your path. If
+you want to change the program used or specify a path to `ssh-keygen` explicitly
+you can set:
 
 ```toml
 [signing]
 backends.ssh.program = "/path/to/ssh-keygen"
 ```
 
-When verifying commit signatures the ssh backend needs to be provided with an allowed-signers
-file containing the public keys of authors whose signatures you want to be able to verify.
+When verifying commit signatures the ssh backend needs to be provided with an
+allowed-signers file containing the public keys of authors whose signatures you
+want to be able to verify.
 
 You can find the format for this file in the
-[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#ALLOWED_SIGNERS). This can be provided
-as follows:
+[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#ALLOWED_SIGNERS). This
+can be provided as follows:
 
 ```toml
 [signing]
@@ -1756,9 +1768,9 @@ backends.ssh.allowed-signers = "/path/to/allowed-signers"
 ```
 
 Additionally, an SSH KRL or list of revoked public keys (see
-[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#KEY_REVOCATION_LISTS)) can be provided
-with the `revocation-list` option. If a public key is found in this file then any signature
-relating to it is marked as invalid.
+[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#KEY_REVOCATION_LISTS))
+can be provided with the `revocation-list` option. If a public key is found in
+this file then any signature relating to it is marked as invalid.
 
 ```toml
 [signing]
@@ -1769,7 +1781,8 @@ backends.ssh.revocation-list = "/path/to/revocation-list"
 
 <!-- rumdl-disable link-fragments -->
 
-You can use [`jj sign`](./cli-reference.md#jj-sign)/[`jj unsign`](./cli-reference.md#jj-unsign)
+You can use
+[`jj sign`](./cli-reference.md#jj-sign)/[`jj unsign`](./cli-reference.md#jj-unsign)
 to sign/unsign commits manually.
 
 <!-- rumdl-enable link-fragments -->
@@ -1784,7 +1797,8 @@ to sign/unsign commits manually.
 ### Automatically signing commits
 
 The `signing.behavior` configuration option has four different options for what
-to do with signing commits on modification of a change (e.g., rebasing or edits).
+to do with signing commits on modification of a change (e.g., rebasing or
+edits).
 
 - `drop`: do not automatically sign; if a change was signed before
   modification, drop that signing after modification.
@@ -1851,7 +1865,8 @@ The setting `git.colocate` is a boolean option that controls whether or not the
 `jj git init` and `jj git clone` commands should create colocated workspace by
 default. Set `git.colocate` to `false` to disable it.
 
-See [Colocated Jujutsu/Git workspaces](git-compatibility.md#colocated-jujutsugit-workspaces)
+See
+[Colocated Jujutsu/Git workspaces](git-compatibility.md#colocated-jujutsugit-workspaces)
 for more information.
 
 ### Default object hash format
@@ -2265,8 +2280,9 @@ automatically update stale working copies by setting:
 auto-update-stale = true
 ```
 
-This is particularly useful if you have [multiple workspaces](working-copy.md#workspaces)
-and want to avoid manually updating each one.
+This is particularly useful if you have
+[multiple workspaces](working-copy.md#workspaces) and want to avoid manually
+updating each one.
 
 For more information on stale working copies, see the [working copy
 documentation](working-copy.md#stale-working-copy).
@@ -2441,10 +2457,12 @@ This enables features like:
 Here are some popular editors with TOML schema validation support:
 
 - VS Code
-  - Install [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+  - Install
+    [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
 
 - Neovim/Vim
-  - Use with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) and [taplo](https://github.com/tamasfe/taplo)
+  - Use with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) and
+    [taplo](https://github.com/tamasfe/taplo)
 
 - Helix
   - Install [taplo](https://github.com/tamasfe/taplo)
@@ -2453,7 +2471,8 @@ Here are some popular editors with TOML schema validation support:
   - Install [TOML](https://plugins.jetbrains.com/plugin/8195-toml) plugin
 
 - Emacs
-  - Install [lsp-mode](https://github.com/emacs-lsp/lsp-mode) and [toml-mode](https://github.com/dryman/toml-mode.el)
+  - Install [lsp-mode](https://github.com/emacs-lsp/lsp-mode) and
+    [toml-mode](https://github.com/dryman/toml-mode.el)
   - Configure [taplo](https://github.com/tamasfe/taplo) as the LSP server
 
 ### Environment variable overrides
@@ -2587,12 +2606,13 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
 
   Paths should be absolute. Each path component (directory or file name, drive
   letter, etc.) is compared case-sensitively on all platforms. A path starting
-  with `~` is expanded to the home directory. On Windows, directory separator may
-  be either `\` or `/`. (Beware that `\` needs escape in double-quoted strings.)
+  with `~` is expanded to the home directory. On Windows, directory separator
+  may be either `\` or `/`. (Beware that `\` needs escape in double-quoted
+  strings.)
 
-  Use `jj root` to see the workspace root directory. Note that the repository path
-  is in the main workspace if you're using multiple workspaces with `jj
-  workspace`.
+  Use `jj root` to see the workspace root directory. Note that the repository
+  path is in the main workspace if you're using multiple workspaces with
+  `jj workspace`.
 
 - `--when.workspaces`: List of paths to match the workspace path prefix.
 
@@ -2600,8 +2620,8 @@ jj config edit --file ~/.config/jj/conf.d/work.toml
 
   Use `jj root` to see the workspace root directory.
 
-- `--when.hostnames`: List of hostnames to match against the `operation.hostname`
-  config setting.
+- `--when.hostnames`: List of hostnames to match against the
+  `operation.hostname` config setting.
 
   Hostnames are compared case-sensitively and must match exactly.
 

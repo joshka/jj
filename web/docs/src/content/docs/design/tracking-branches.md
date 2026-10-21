@@ -8,8 +8,8 @@ This is a plan to implement more Git-like remote tracking branch UX.
 
 `jj` imports all remote branches to local branches by default. As described in
 [#1136], this doesn't interact nicely with Git if we have multiple Git remotes
-with a number of branches. The `git.auto-local-bookmark` config can mitigate this
-problem, but we'll get locally-deleted branches instead.
+with a number of branches. The `git.auto-local-bookmark` config can mitigate
+this problem, but we'll get locally-deleted branches instead.
 
 The goal of this plan is to implement
 

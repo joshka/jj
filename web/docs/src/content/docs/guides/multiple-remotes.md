@@ -103,9 +103,9 @@ Other workflows may be supported. Some general guidance for this:
   rebase against upstream, set it to `main@upstream`.
 
 - Tracking a remote bookmark `main@origin` means it and `main` represent the
-  same branch. When one moves, the other should move with it. If you want them to
-  _automatically_ move together, you should track the remote bookmark. If not, do
-  not track it.
+  same branch. When one moves, the other should move with it. If you want them
+  to _automatically_ move together, you should track the remote bookmark. If
+  not, do not track it.
 
 If you have a workflow that is not well-supported, discussion is welcome in
 [Discord]. There is also an [open discussion] for enhancing how bookmark

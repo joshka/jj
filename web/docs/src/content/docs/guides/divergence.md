@@ -25,8 +25,8 @@ But, a hidden commit can become visible again. This can happen if:
   `REV` visible even if it was hidden before.
 
 - A visible descendant is fetched from a remote. If the hidden commit was pushed
-  to a remote, others may base new commits off of them. When their new commits are
-  fetched, their visibility makes the hidden commit visible again.
+  to a remote, others may base new commits off of them. When their new commits
+  are fetched, their visibility makes the hidden commit visible again.
 
 - It is made the working copy. `jj edit REV` will make `REV` and all its
   ancestors visible if it wasn't already.

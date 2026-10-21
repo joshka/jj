@@ -165,9 +165,9 @@ reflected on the uploaded commit, not your local commit. This means the server
 will have a different commit ID than you do. As a result, you may encounter
 divergence when you fetch a merged change into your local repo. To address this,
 you can abandon your local change or rebase it on top of trunk with
-`jj rebase --skip-emptied ...`, which will resolve the divergence. Alternatively,
-add the above config so that the `Change-Id` trailer is automatically added to
-your local commits before `jj gerrit upload` does.
+`jj rebase --skip-emptied ...`, which will resolve the divergence.
+Alternatively, add the above config so that the `Change-Id` trailer is
+automatically added to your local commits before `jj gerrit upload` does.
 
 ## Alternative `Link` trailer
 

@@ -15,8 +15,10 @@ Redesign Sparse Patterns to accommodate more advanced features for native
 and custom implementations. This includes three main goals:
 
 1. Sparse Patterns should be versioned with the working copy
-1. Sparse Patterns should support more [flexible matching rules](https://github.com/jj-vcs/jj/issues/1896)
-1. Sparse Patterns should support [client path remapping](https://github.com/jj-vcs/jj/issues/2288)
+1. Sparse Patterns should support more
+   [flexible matching rules](https://github.com/jj-vcs/jj/issues/1896)
+1. Sparse Patterns should support
+   [client path remapping](https://github.com/jj-vcs/jj/issues/2288)
 
 ## Current State (as of jj 0.13.0)
 
@@ -108,8 +110,10 @@ If both prefix terms are omitted, then `include:dir:` is assumed. If any prefix
 is specified, both must be specified. The editor and CLI will both accept path
 rules in either format going forward.
 
-- `jj sparse set --add foo/bar` is equal to `jj sparse set --add include:dir:foo/bar`
-- `jj sparse set --add exclude:dir:foo/bar` adds a new `Dir` type rule with `include = false`
+- `jj sparse set --add foo/bar` is equal to
+  `jj sparse set --add include:dir:foo/bar`
+- `jj sparse set --add exclude:dir:foo/bar` adds a new `Dir` type rule with
+  `include = false`
 - `jj sparse set --exclude foo/bar` as a possible shorthand for the above
 - `jj sparse list` will print the explicit rules
 
@@ -186,8 +190,9 @@ form of a `WorkingCopyPatterns` is defined as the form such that:
 This section is intentionally lacking, more research is needed.
 :::
 
-All `WorkingCopyPatterns` will come equipped with a default no-op mapping.
-These mappings are inspired by and similar to [Perforce client views](https://www.perforce.com/manuals/cmdref/Content/CmdRef/views.html).
+All `WorkingCopyPatterns` will come equipped with a default no-op mapping. These
+mappings are inspired by and similar to
+[Perforce client views](https://www.perforce.com/manuals/cmdref/Content/CmdRef/views.html).
 
 ```rust
 vec![WorkingCopyMapping {
@@ -220,7 +225,8 @@ New commands will enable editing of the `WorkingCopyMapping`s:
 TODO: Maybe this should be `jj workspace map ...`?
 
 - `jj map list` will print all mapping pairs.
-- `jj map add --from foo --to bar` will add a new mapping to the end of the list.
+- `jj map add --from foo --to bar` will add a new mapping to the end of the
+  list.
 - `jj map remove --from foo` will remove a specific mapping rule.
 - `jj map edit` will pull up a text editor for manual editing.
 

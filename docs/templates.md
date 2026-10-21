@@ -43,13 +43,13 @@ y) * z`.
 
 3. * `p:x`: String pattern or pattern alias named `p`.
 
-4. * `x * y`, `x / y`, `x % y`: Multiplication / division / remainder. Operands must
-   be `Integer`s.
+4. * `x * y`, `x / y`, `x % y`: Multiplication / division / remainder. Operands
+   must be `Integer`s.
 
 5. * `x + y`, `x - y`: Addition / subtraction. Operands must be `Integer`s.
 
-6. * `x >= y`, `x > y`, `x <= y`, `x < y`: Greater than or equal / greater than /
-   lesser than or equal / lesser than. Operands must be `Integer`s.
+6. * `x >= y`, `x > y`, `x <= y`, `x < y`: Greater than or equal / greater than
+   / lesser than or equal / lesser than. Operands must be `Integer`s.
 
 7. * `x == y`, `x != y`: Equal / not equal. Operands must be either `Boolean`,
    `ByteString`, `Integer`, or `String`.
@@ -93,9 +93,10 @@ The following functions are defined.
   [color label](#color-labels) to the content. The `label` is evaluated as a
   space-separated string.
 * `hyperlink(url: Stringify, text: Template, [fallback: Template]) -> Template`:
-  Render `text` as a hyperlink to `url` using [OSC 8 escape sequences](https://github.com/Alhadis/OSC8-Adoption)
-  when outputting with color enabled. Otherwise, renders `fallback` instead,
-  which defaults to `text`. Use `--color=always` to force hyperlinks when piping
+  Render `text` as a hyperlink to `url` using
+  [OSC 8 escape sequences](https://github.com/Alhadis/OSC8-Adoption) when
+  outputting with color enabled. Otherwise, renders `fallback` instead, which
+  defaults to `text`. Use `--color=always` to force hyperlinks when piping
   output to a terminal emulator that supports OSC 8.
 * `raw_escape_sequence(content: Template) -> Template`: Preserves any escape
   sequences in `content` (i.e., bypasses sanitization) and strips labels.
@@ -111,9 +112,9 @@ The following functions are defined.
   not replaced. The replacement itself is newly formatted template content.
 
   The lambda argument is a [`RegexCaptures`](#regexcaptures-type) value for the
-  current match. Use `.get(index)` to access capture groups by index, `.name(name)`
-  to access named capture groups, and `.len()` to get the number of captures
-  including capture group 0 for the full match.
+  current match. Use `.get(index)` to access capture groups by index,
+  `.name(name)` to access named capture groups, and `.len()` to get the number
+  of captures including capture group 0 for the full match.
 * `stringify(content: Stringify) -> String`: Format `content` to string. This
   effectively removes color labels.
 * `json(value: Serialize) -> String`: Serialize `value` in JSON format. To
@@ -156,7 +157,8 @@ The following methods are defined.
 * `.commit() -> Commit`: Commit responsible for changing the relevant line.
 * `.content() -> ByteString`: Line content including newline character.
 * `.line_number() -> Integer`: 1-based line number.
-* `.original_line_number() -> Integer`: 1-based line number in the original commit.
+* `.original_line_number() -> Integer`: 1-based line number in the original
+  commit.
 * `.first_line_in_hunk() -> Boolean`: False when the directly preceding line
   references the same commit.
 
@@ -285,23 +287,25 @@ This type cannot be printed. The following methods are defined.
   local one.
 * `.local_tags() -> List<CommitRef>`: All local tags pointing to the commit.
 * `.remote_tags() -> List<CommitRef>`: All remote tags pointing to the commit.
-* `.divergent() -> Boolean`: True if the commit's change ID corresponds to multiple
-  visible commits.
+* `.divergent() -> Boolean`: True if the commit's change ID corresponds to
+  multiple visible commits.
 * `.hidden() -> Boolean`: True if the commit is not visible (a.k.a. abandoned).
-* `.change_offset() -> Option<Integer>`: The [change offset](glossary.md#change-offset)
-  of this commit. May not be available for some commits.
+* `.change_offset() -> Option<Integer>`: The
+  [change offset](glossary.md#change-offset) of this commit. May not be
+  available for some commits.
 * `.immutable() -> Boolean`: True if the commit is included in [the set of
   immutable commits](config.md#set-of-immutable-commits).
-* `.contained_in(revset: Stringify) -> Boolean`: True if the commit is included in
-  [the provided revset](revsets.md).
+* `.contained_in(revset: Stringify) -> Boolean`: True if the commit is included
+  in [the provided revset](revsets.md).
 * `.conflict() -> Boolean`: True if the commit contains merge conflicts.
 * `.empty() -> Boolean`: True if the commit modifies no files.
-* `.diff([files: StringLiteral]) -> TreeDiff`: Changes from the parents within [the
-  `files` expression](filesets.md). All files are compared by default, but it is
-  likely to change in future version to respect the command line path arguments.
-* `.files([files: StringLiteral]) -> List<TreeEntry>`: Files that exist in this commit,
-  matching [the `files` expression](filesets.md). Use `.diff().files()` to list
-  changed files.
+* `.diff([files: StringLiteral]) -> TreeDiff`: Changes from the parents within
+  [the `files` expression](filesets.md). All files are compared by default, but
+  it is likely to change in future version to respect the command line path
+  arguments.
+* `.files([files: StringLiteral]) -> List<TreeEntry>`: Files that exist in this
+  commit, matching [the `files` expression](filesets.md). Use `.diff().files()`
+  to list changed files.
 * `.conflicted_files() -> List<TreeEntry>`: Conflicted files in this commit.
 * `.root() -> Boolean`: True if the commit is the root commit.
 
@@ -315,9 +319,9 @@ This type cannot be printed. The following methods are defined.
 * `.operation() -> Operation`: Operation where the commit was created or
   rewritten.
 * `.predecessors() -> List<Commit>`: Predecessor commits of this entry.
-* `.inter_diff([files: StringLiteral]) -> TreeDiff`: Changes between this commit and its
-  predecessor version(s), rebased onto the parents of this commit to avoid unrelated
-  changes (similar to `jj evolog -p`).
+* `.inter_diff([files: StringLiteral]) -> TreeDiff`: Changes between this commit
+  and its predecessor version(s), rebased onto the parents of this commit to
+  avoid unrelated changes (similar to `jj evolog -p`).
 
 ### `CommitId` type
 
@@ -405,12 +409,14 @@ This type holds the diff stats per file. The following methods are defined.
 * `.bytes_delta() -> Integer`: The difference in size of the file, in bytes.
 * `.lines_added() -> Integer`: Number of lines added.
 * `.lines_removed() -> Integer`: Number of lines deleted.
-* `.path() -> RepoPath`: Path to the entry. If the entry is a copy / rename, this
-  points to the target (or right) entry.
-* `.display_diff_path() -> String`: Format path for display, taking into account copy / rename information.
-* `.status() -> String`: One of `"modified"`, `"added"`, `"removed"`, `"copied"`, or `"renamed"`.
-* `.status_char() -> String`: One of `"M"` (modified), `"A"` (added), `"D"` (removed),
-  `"C"` (copied), or `"R"` (renamed).
+* `.path() -> RepoPath`: Path to the entry. If the entry is a copy / rename,
+  this points to the target (or right) entry.
+* `.display_diff_path() -> String`: Format path for display, taking into account
+  copy / rename information.
+* `.status() -> String`: One of `"modified"`, `"added"`, `"removed"`,
+  `"copied"`, or `"renamed"`.
+* `.status_char() -> String`: One of `"M"` (modified), `"A"` (added), `"D"`
+  (removed), `"C"` (copied), or `"R"` (renamed).
 
 ### `DiffStats` type
 
@@ -473,7 +479,8 @@ defined.
 * `.map(|item| expression) -> AnyList`: Apply template `expression`
   to each element. Example: `parents.map(|c| c.commit_id().short())`
 * `.any(|item| expression) -> Boolean`: Returns true if any element satisfies
-  the predicate `expression`. Example: `parents.any(|c| c.description().contains("fix"))`
+  the predicate `expression`. Example:
+  `parents.any(|c| c.description().contains("fix"))`
 * `.all(|item| expression) -> Boolean`: Returns true if all elements satisfy
   the predicate `expression`. Example: `parents.all(|c| c.mine())`
 * `.first() -> Option<T>`: Returns the first element.
@@ -638,8 +645,8 @@ following methods are defined.
 * `.trim_start() -> String`: Removes leading whitespace
 * `.trim_end() -> String`: Removes trailing whitespace
 * `.substr(start: Integer, [end: Integer]) -> String`: Extract substring. The
-  `start` / `end` indices should be specified in units of UTF-8 bytes. Indices are
-  0-based and `end` is exclusive. Negative values count from the end of the
+  `start` / `end` indices should be specified in units of UTF-8 bytes. Indices
+  are 0-based and `end` is exclusive. Negative values count from the end of the
   string, with `-1` being the last byte. If the `start` index is in the middle
   of a UTF-8 codepoint, the codepoint is fully part of the result. If the `end`
   index is in the middle of a UTF-8 codepoint, the codepoint is not part of the
@@ -728,19 +735,20 @@ _Conversion: `Boolean`: no, `Serialize`: yes, `Template`: yes_
 The following methods are defined.
 
 * `.ago() -> String`: Format as relative timestamp.
-* `.format(format: Stringify) -> String`: Format with [the specified strftime-like
-  format string](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
+* `.format(format: Stringify) -> String`: Format with
+  [the specified strftime-like format string](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
 * `.utc() -> Timestamp`: Convert timestamp into UTC timezone.
 * `.local() -> Timestamp`: Convert timestamp into local timezone.
-* `.after(date: StringLiteral) -> Boolean`: True if the timestamp is exactly at or
-  after the given date. Supported date formats are the same as the revset
+* `.after(date: StringLiteral) -> Boolean`: True if the timestamp is exactly at
+  or after the given date. Supported date formats are the same as the revset
   [Date pattern type].
-* `.before(date: StringLiteral) -> Boolean`: True if the timestamp is before, but
-  not including, the given date. Supported date formats are the same as the
+* `.before(date: StringLiteral) -> Boolean`: True if the timestamp is before,
+  but not including, the given date. Supported date formats are the same as the
   revset [Date pattern type].
-* `.since(start: Timestamp) -> TimestampRange`: The TimestampRange between `start` and
-  `self`. It may be used in conjunction with `TimestampRange::duration` to obtain
-  a human-friendly duration between two `Timestamp`s.
+* `.since(start: Timestamp) -> TimestampRange`: The TimestampRange between
+  `start` and `self`. It may be used in conjunction with
+  `TimestampRange::duration` to obtain a human-friendly duration between two
+  `Timestamp`s.
 
 [Date pattern type]: revsets.md#date-patterns
 
@@ -785,13 +793,15 @@ _Conversion: `Boolean`: no, `Serialize`: no, `Template`: no_
 
 This type cannot be printed. The following methods are defined.
 
-* `.path() -> RepoPath`: Path to the entry. If the entry is a copy / rename, this
-  points to the target (or right) entry.
-* `.display_diff_path() -> String`: Format path for display, taking into account copy / rename information.
+* `.path() -> RepoPath`: Path to the entry. If the entry is a copy / rename,
+  this points to the target (or right) entry.
+* `.display_diff_path() -> String`: Format path for display, taking into account
+  copy / rename information.
 * `.status() -> String`: One of `"modified"`, `"added"`, `"removed"`,
   `"copied"`, or `"renamed"`.
-* `.status_char() -> String`: Single-character status indicator: `"M"` for modified,
-  `"A"` for added, `"D"` for removed, `"C"` for copied, or `"R"` for renamed.
+* `.status_char() -> String`: Single-character status indicator: `"M"` for
+  modified, `"A"` for added, `"D"` for removed, `"C"` for copied, or `"R"` for
+  renamed.
 * `.source() -> TreeEntry`: The source (or left) entry.
 * `.target() -> TreeEntry`: The target (or right) entry.
 
@@ -802,12 +812,12 @@ _Conversion: `Boolean`: no, `Serialize`: no, `Template`: no_
 This type cannot be printed. The following methods are defined.
 
 * `.path() -> RepoPath`: Path to the entry.
-* `.normal_value() -> Option<TreeValue>`: The resolved value of the entry, or none
-  if the entry is absent or conflicted. Here, "normal" means resolved, not just a
-  regular file: symlinks, trees, and Git submodules are also included.
+* `.normal_value() -> Option<TreeValue>`: The resolved value of the entry, or
+  none if the entry is absent or conflicted. Here, "normal" means resolved, not
+  just a regular file: symlinks, trees, and Git submodules are also included.
 * `.conflict() -> Boolean`: True if the entry is a merge conflict.
-* `.conflict_side_count() -> Integer`: Number of sides in the merge conflict (1 if not
-  conflicted, 2 or more for multi-way merges).
+* `.conflict_side_count() -> Integer`: Number of sides in the merge conflict (1
+  if not conflicted, 2 or more for multi-way merges).
 * `.file_type() -> String`: One of `"file"`, `"symlink"`, `"tree"`,
   `"git-submodule"`, or `"conflict"`.
 * `.executable() -> Boolean`: True if the entry is an executable file.
@@ -959,7 +969,8 @@ Show machine-readable list of full commit and change IDs:
 jj log -G -T 'commit_id ++ " " ++ change_id ++ "\n"'
 ```
 
-Print the description of the current commit, defaulting to `(no description set)`:
+Print the description of the current commit, defaulting to
+`(no description set)`:
 
 ```sh
 jj log -G -r @ -T 'coalesce(description, "(no description set)\n")'

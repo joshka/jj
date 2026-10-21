@@ -42,7 +42,8 @@ The deeper understanding of conflicts has many advantages:
   can easily keep all your work-in-progress commits rebased onto upstream's head
   if you like.
 * [Criss-cross merges](https://stackoverflow.com/questions/26370185/how-do-criss-cross-merges-arise-in-git)
-  and [octopus merges](https://git-scm.com/docs/git-merge#Documentation/git-merge.txt-octopus)
+  and
+  [octopus merges](https://git-scm.com/docs/git-merge#Documentation/git-merge.txt-octopus)
   become trivial (implementation-wise); some cases that Git can't currently
   handle, or that would result in nested conflict markers, can be automatically
   resolved.

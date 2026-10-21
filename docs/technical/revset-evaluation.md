@@ -23,7 +23,8 @@ Revsets are expanded as follows:
 
 * `trunk()` expands to `main@origin`
 * `f(trunk(), 2)` expands to `main@origin | ancestors(main@origin.., 2)`
-* `f(main | tags(), 2)` expands to `(main | tags()) | ancestors((main | tags()).., 2)`
+* `f(main | tags(), 2)` expands to
+  `(main | tags()) | ancestors((main | tags()).., 2)`
 
 Notably, revset expansion works similarly to macro expansion in other languages;
 if a revset alias uses a parameter twice, then the entire argument is
@@ -284,7 +285,8 @@ Since `::x` is equivalent to `::heads(x)`, this pass also inserts
 `heads_range()` operations inside of `ancestors()` when possible:
 
 * `::(x..y)` => `::heads_range(x, y)`
-* `::(~mine())` => `::heads_range(none(), visible_heads_or_referenced(), ~mine())`
+* `::(~mine())` =>
+  `::heads_range(none(), visible_heads_or_referenced(), ~mine())`
 
 ### 10. Fold ranges and differences
 

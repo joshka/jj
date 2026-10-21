@@ -51,8 +51,8 @@ See [design doc][api-design-doc].
 ## Open-source cloud-based repos (server and daemon process)
 
 Google has an internal Jujutsu server backed by a database. This server allows
-commits and repos (operation logs) to be stored in the cloud (i.e. the database).
-Working copies can still be stored locally.
+commits and repos (operation logs) to be stored in the cloud (i.e. the
+database). Working copies can still be stored locally.
 
 In order to reduce latency, there is a local daemon process that caches reads
 and writes. It also prefetches of objects it thinks the client might ask for

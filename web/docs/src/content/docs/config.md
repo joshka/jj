@@ -21,7 +21,8 @@ located in `.jj/repo/config.toml`.
 - The workspace settings. These can be edited with `jj config edit --workspace`
 and are located in `.jj/workspace-config.toml` in the workspace root.
 
-- Settings [specified in the command-line](#specifying-config-on-the-command-line).
+- Settings
+  [specified in the command-line](#specifying-config-on-the-command-line).
 
 These are listed in the order they are loaded; the settings from earlier items
 in the list are overridden by the settings from later items if they disagree.
@@ -67,9 +68,9 @@ colors."commit_id prefix".bold = true
 "commit_id prefix" = { bold = true }
 ```
 
-The docs below refer to keys in text using dotted notation, but example
-blocks will use heading notation to be unambiguous. If you are confident with TOML
-then use whichever suits you in your config. If you mix dotted keys and headings,
+The docs below refer to keys in text using dotted notation, but example blocks
+will use heading notation to be unambiguous. If you are confident with TOML then
+use whichever suits you in your config. If you mix dotted keys and headings,
 **you must put the dotted keys before the first heading**.
 
 That's probably enough TOML to keep you out of trouble but the [syntax guide] is
@@ -168,8 +169,8 @@ commit_id = "green"
 Parts of the style that are not overridden - such as the foreground color in the
 example above - are inherited from the style of the parent label.
 
-Which elements can be colored is not yet documented, but see
-the [default color configuration](https://github.com/jj-vcs/jj/blob/main/cli/src/config/colors.toml)
+Which elements can be colored is not yet documented, but see the
+[default color configuration](https://github.com/jj-vcs/jj/blob/main/cli/src/config/colors.toml)
 for some examples of what's possible.
 
 ### Default command
@@ -237,10 +238,11 @@ tag-list-sort-keys = ["name"]
 ```
 
 The configuration works identically to using the `--sort` option for
-`jj bookmark list`. The following sort keys are supported: `name`, `author-name`,
-`author-email`, `author-date`, `committer-name`, `committer-email`,
-`committer-date`. Suffix the key with `-` to sort in descending order. Multiple
-keys can be supplied here, the first key is the most significant.
+`jj bookmark list`. The following sort keys are supported: `name`,
+`author-name`, `author-email`, `author-date`, `committer-name`,
+`committer-email`, `committer-date`. Suffix the key with `-` to sort in
+descending order. Multiple keys can be supplied here, the first key is the most
+significant.
 
 When the `--sort` option is used with `jj bookmark list`, the configuration
 is ignored.
@@ -385,15 +387,16 @@ diff-args = ["--color=always", "$left", "$right"]
 - `$width` is replaced with the number of terminal columns available to the diff
   content.
 
-- If `diff-args` is not specified, `["$left", "$right"]` will be used by default.
+- If `diff-args` is not specified, `["$left", "$right"]` will be used by
+  default.
 
 - If `diff-args = []`, `jj` will refuse to use this tool for diff formatting.
   This is a way to explicitly state that a certain tool (e.g. `mergiraf`) does
   not work for viewing diffs.
 
 By default `jj` will invoke external tools with a directory containing the left
-and right sides. The `diff-invocation-mode` config can change this to file by file
-invocations as follows:
+and right sides. The `diff-invocation-mode` config can change this to file by
+file invocations as follows:
 
 ```toml
 [ui]
@@ -494,8 +497,8 @@ You can configure the template used when no `-T` is specified.
 config_list = "builtin_config_list"
 ```
 
-If you want to see the config variable origin (type and path) when you do `jj config list`
-you can add this to your config:
+If you want to see the config variable origin (type and path) when you do
+`jj config list` you can add this to your config:
 
 ```toml
 [templates]
@@ -506,7 +509,8 @@ config_list = "builtin_config_list_detailed"
 
 ### Default revisions
 
-You can configure the revisions `jj log` would show when neither `-r` nor any paths are specified.
+You can configure the revisions `jj log` would show when neither `-r` nor any
+paths are specified.
 
 ```toml
 [revsets]
@@ -519,12 +523,12 @@ The default value for `revsets.log` is
 
 ### Prioritize Revsets in the Log over @
 
-In some situations the default graph can be hard to read, for example when working with big merges.
-To improve this behavior you can configure which revset in the `jj log` graph is displayed on
-the left instead of `@`.
+In some situations the default graph can be hard to read, for example when
+working with big merges. To improve this behavior you can configure which revset
+in the `jj log` graph is displayed on the left instead of `@`.
 
-The following example will prioritize the change with the description "megamerge" with a fallback
-to `trunk()` in case no such change exists:
+The following example will prioritize the change with the description
+"megamerge" with a fallback to `trunk()` in case no such change exists:
 
 ```toml
 [revsets]
@@ -721,8 +725,8 @@ show-cryptographic-signatures = true
 ## Pager
 
 By default, jj will paginate output that would scroll off the screen. It does
-this by passing output through `less -FRXK` on most platforms (on Windows it uses
-[the pager](#builtin-pager) that is built-in to jj).
+this by passing output through `less -FRXK` on most platforms (on Windows it
+uses [the pager](#builtin-pager) that is built-in to jj).
 
 Which pager to use can be customized by setting `ui.pager`. When choosing a
 pager, ensure that it either supports color codes or that you disable color (see
@@ -964,9 +968,12 @@ edit-args = ["--newtab", "$left", "$right"]
 
 - If no `edit-args` are specified, `["$left", "$right"]` are set by default.
 
-- If `edit-args = []`, `jj` will refuse to use this tool for diff editing. This is a way to explicitly state that a certain tool (e.g. `mergiraf`) does not work for diff editing.
+- If `edit-args = []`, `jj` will refuse to use this tool for diff editing. This
+  is a way to explicitly state that a certain tool (e.g. `mergiraf`) does not
+  work for diff editing.
 
-Finally, `ui.diff-editor` can be a list that specifies a command and its arguments.
+Finally, `ui.diff-editor` can be a list that specifies a command and its
+arguments.
 
 Some examples:
 
@@ -985,7 +992,8 @@ diff-editor = "binary"
 We offer two special "3-pane" diff editor configs:
 
 - `meld-3`, which requires installing [Meld](https://meldmerge.org/), and
-- `diffedit3`, which requires installing [`diffedit3`](https://github.com/ilyagr/diffedit3/releases).
+- `diffedit3`, which requires installing
+  [`diffedit3`](https://github.com/ilyagr/diffedit3/releases).
 
 `Meld` is a graphical application that is recommended, but can be difficult to
 install in some situations. `diffedit3` is designed to be easy to install and to
@@ -994,10 +1002,10 @@ forwarding). `diffedit3` starts a local server that can be accessed via a web
 browser, similarly to [Jupyter](https://jupyter.org/).
 
 There is also the `diffedit3-ssh` which is similar to `diffedit3` but does not
-try to open the web browser pointing to the local server (the URL
-printed to the terminal) automatically. `diffedit3-ssh` also always uses ports in between
-17376-17380 and fails if they are all busy. This can be useful when working
-over SSH. Open the fold below for more details of how to set that up.
+try to open the web browser pointing to the local server (the URL printed to the
+terminal) automatically. `diffedit3-ssh` also always uses ports in between
+17376-17380 and fails if they are all busy. This can be useful when working over
+SSH. Open the fold below for more details of how to set that up.
 
 <details>
 <summary> Tips for using `diffedit3-ssh` over SSH </summary>
@@ -1343,16 +1351,17 @@ backend = "gpg"
 # key = "signing@example.com"
 ```
 
-By default the gpg backend will look for a `gpg` binary on your path. If you want
-to change the program used or specify a path to `gpg` explicitly you can set:
+By default the gpg backend will look for a `gpg` binary on your path. If you
+want to change the program used or specify a path to `gpg` explicitly you can
+set:
 
 ```toml
 [signing]
 backends.gpg.program = "gpg2"
 ```
 
-Also by default the gpg backend will consider key expiry when verifying commit signatures.
-To consider expired keys as valid you can set:
+Also by default the gpg backend will consider key expiry when verifying commit
+signatures. To consider expired keys as valid you can set:
 
 ```toml
 [signing]
@@ -1373,16 +1382,17 @@ backend = "gpgsm"
 # key = "signing@example.com"
 ```
 
-By default the gpgsm backend will look for a `gpgsm` binary on your path. If you want
-to change the program used or specify a path to `gpgsm` explicitly you can set:
+By default the gpgsm backend will look for a `gpgsm` binary on your path. If you
+want to change the program used or specify a path to `gpgsm` explicitly you can
+set:
 
 ```toml
 [signing]
 backends.gpgsm.program = "gpgsm"
 ```
 
-Also by default the gpgsm backend will consider key expiry when verifying commit signatures.
-To consider expired keys as valid you can set:
+Also by default the gpgsm backend will consider key expiry when verifying commit
+signatures. To consider expired keys as valid you can set:
 
 ```toml
 [signing]
@@ -1400,20 +1410,22 @@ key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGj+J6N6SO+4P8dOZqfR1oiay2yxhhHnagH52
 # key = "~/.ssh/id_for_signing.pub"
 ```
 
-By default the ssh backend will look for a `ssh-keygen` binary on your path. If you want
-to change the program used or specify a path to `ssh-keygen` explicitly you can set:
+By default the ssh backend will look for a `ssh-keygen` binary on your path. If
+you want to change the program used or specify a path to `ssh-keygen` explicitly
+you can set:
 
 ```toml
 [signing]
 backends.ssh.program = "/path/to/ssh-keygen"
 ```
 
-When verifying commit signatures the ssh backend needs to be provided with an allowed-signers
-file containing the public keys of authors whose signatures you want to be able to verify.
+When verifying commit signatures the ssh backend needs to be provided with an
+allowed-signers file containing the public keys of authors whose signatures you
+want to be able to verify.
 
 You can find the format for this file in the
-[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#ALLOWED_SIGNERS). This can be provided
-as follows:
+[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#ALLOWED_SIGNERS). This
+can be provided as follows:
 
 ```toml
 [signing]
@@ -1421,9 +1433,9 @@ backends.ssh.allowed-signers = "/path/to/allowed-signers"
 ```
 
 Additionally, an SSH KRL or list of revoked public keys (see
-[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#KEY_REVOCATION_LISTS)) can be provided
-with the `revocation-list` option. If a public key is found in this file then any signature
-relating to it is marked as invalid.
+[ssh-keygen man page](https://man.openbsd.org/ssh-keygen#KEY_REVOCATION_LISTS))
+can be provided with the `revocation-list` option. If a public key is found in
+this file then any signature relating to it is marked as invalid.
 
 ```toml
 [signing]
@@ -1434,7 +1446,8 @@ backends.ssh.revocation-list = "/path/to/revocation-list"
 
 <!-- rumdl-disable link-fragments -->
 
-You can use [`jj sign`](./cli-reference.md#jj-sign)/[`jj unsign`](./cli-reference.md#jj-unsign)
+You can use
+[`jj sign`](./cli-reference.md#jj-sign)/[`jj unsign`](./cli-reference.md#jj-unsign)
 to sign/unsign commits manually.
 
 <!-- rumdl-enable link-fragments -->
@@ -1449,7 +1462,8 @@ signature (see [this issue](https://github.com/jj-vcs/jj/issues/5786)).
 ### Automatically signing commits
 
 The `signing.behavior` configuration option has four different options for what
-to do with signing commits on modification of a change (e.g., rebasing or edits).
+to do with signing commits on modification of a change (e.g., rebasing or
+edits).
 
 - `drop`: do not automatically sign; if a change was signed before
   modification, drop that signing after modification.
@@ -1502,7 +1516,8 @@ The setting `git.colocate` is a boolean option that controls whether or not the
 `jj git init` and `jj git clone` commands should create colocated workspace by
 default. Set `git.colocate` to `false` to disable it.
 
-See [Colocated Jujutsu/Git workspaces](git-compatibility.md#colocated-jujutsugit-repos)
+See
+[Colocated Jujutsu/Git workspaces](git-compatibility.md#colocated-jujutsugit-repos)
 for more information.
 
 ### Default remotes for `jj git fetch` and `jj git push`
@@ -1794,8 +1809,9 @@ automatically update stale working copies by setting:
 auto-update-stale = true
 ```
 
-This is particularly useful if you have [multiple workspaces](working-copy.md#workspaces)
-and want to avoid manually updating each one.
+This is particularly useful if you have
+[multiple workspaces](working-copy.md#workspaces) and want to avoid manually
+updating each one.
 
 For more information on stale working copies, see the [working copy
 documentation](working-copy.md#stale-working-copy).
@@ -1896,24 +1912,26 @@ and `<PLATFORM_SPECIFIC>` represents the platform-specific configuration
 directory shown in the table below. The platform-specific location is
 recommended for better integration with platform services.
 
-The files in the `conf.d` directory are loaded in lexicographic order. This allows
-configs to be split across multiple files and combines well
-with [Conditional Variables](#conditional-variables).
+The files in the `conf.d` directory are loaded in lexicographic order. This
+allows configs to be split across multiple files and combines well with
+[Conditional Variables](#conditional-variables).
 
 | Platform        | Location of `<PLATFORM_SPECIFIC>` dir | Example config file location                              |
 | :-------------- | :------------------------------------ | :-------------------------------------------------------- |
 | Linux and macOS | `$XDG_CONFIG_HOME` or `$HOME/.config` | `/home/alice/.config/jj/config.toml`                      |
 | Windows         | `{FOLDERID_RoamingAppData}`           | `C:\Users\Alice\AppData\Roaming\jj\config.toml`           |
 
-The location of the `jj` user config files/directories can also be overridden with the
-`JJ_CONFIG` environment variable. If it is not empty, it will be used instead
-of any configuration files in the default locations. If it is a path to a TOML
-file, then that file will be loaded instead. If it is a path to a directory,
-then all the TOML files in that directory will be loaded in lexicographic order
-and merged. Multiple paths can be specified by separating them with a
-platform-specific path separator (`:` on Unix-like systems, `;` on Windows).
+The location of the `jj` user config files/directories can also be overridden
+with the `JJ_CONFIG` environment variable. If it is not empty, it will be used
+instead of any configuration files in the default locations. If it is a path to
+a TOML file, then that file will be loaded instead. If it is a path to a
+directory, then all the TOML files in that directory will be loaded in
+lexicographic order and merged. Multiple paths can be specified by separating
+them with a platform-specific path separator (`:` on Unix-like systems, `;` on
+Windows).
 
-For example, the following could be used to run `jj` without loading any user configs:
+For example, the following could be used to run `jj` without loading any user
+configs:
 
 ```bash
 JJ_CONFIG= jj log       # Ignores any settings specified in the config file.
@@ -1950,10 +1968,12 @@ This enables features like:
 Here are some popular editors with TOML schema validation support:
 
 - VS Code
-  - Install [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+  - Install
+    [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
 
 - Neovim/Vim
-  - Use with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) and [taplo](https://github.com/tamasfe/taplo)
+  - Use with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) and
+    [taplo](https://github.com/tamasfe/taplo)
 
 - Helix
   - Install [taplo](https://github.com/tamasfe/taplo)
@@ -1962,7 +1982,8 @@ Here are some popular editors with TOML schema validation support:
   - Install [TOML](https://plugins.jetbrains.com/plugin/8195-toml) plugin
 
 - Emacs
-  - Install [lsp-mode](https://github.com/emacs-lsp/lsp-mode) and [toml-mode](https://github.com/dryman/toml-mode.el)
+  - Install [lsp-mode](https://github.com/emacs-lsp/lsp-mode) and
+    [toml-mode](https://github.com/dryman/toml-mode.el)
   - Configure [taplo](https://github.com/tamasfe/taplo) as the LSP server
 
 ### Specifying config on the command-line
@@ -2066,12 +2087,13 @@ wip = ["log", "-r", "work"]
 
   Paths should be absolute. Each path component (directory or file name, drive
   letter, etc.) is compared case-sensitively on all platforms. A path starting
-  with `~` is expanded to the home directory. On Windows, directory separator may
-  be either `\` or `/`. (Beware that `\` needs escape in double-quoted strings.)
+  with `~` is expanded to the home directory. On Windows, directory separator
+  may be either `\` or `/`. (Beware that `\` needs escape in double-quoted
+  strings.)
 
-  Use `jj root` to see the workspace root directory. Note that the repository path
-  is in the main workspace if you're using multiple workspaces with `jj
-  workspace`.
+  Use `jj root` to see the workspace root directory. Note that the repository
+  path is in the main workspace if you're using multiple workspaces with
+  `jj workspace`.
 
 - `--when.workspaces`: List of paths to match the workspace path prefix.
 
@@ -2079,8 +2101,8 @@ wip = ["log", "-r", "work"]
 
   Use `jj root` to see the workspace root directory.
 
-- `--when.hostnames`: List of hostnames to match against the `operation.hostname`
-  config setting.
+- `--when.hostnames`: List of hostnames to match against the
+  `operation.hostname` config setting.
 
   Hostnames are compared case-sensitively and must match exactly.
 
@@ -2112,12 +2134,12 @@ wip = ["log", "-r", "work"]
   --when.platforms = ["unix"]               # matches anything in the Unix family (Linux, FreeBSD, macOS, etc.)
   ```
 
-- `--when.environments`: List of environment variable conditions, any of
-  which must match.
+- `--when.environments`: List of environment variable conditions, any of which
+  must match.
 
-  Each entry is either `"NAME=VALUE"` (matches if the variable is set to
-  that exact value) or `"NAME"` (matches if the variable is set, regardless
-  of its value).
+  Each entry is either `"NAME=VALUE"` (matches if the variable is set to that
+  exact value) or `"NAME"` (matches if the variable is set, regardless of its
+  value).
 
   ```toml
   --when.environments = ["CI=true"]                     # matches when CI is set to "true"

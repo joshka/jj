@@ -2,8 +2,9 @@
 
 ## Why does my bookmark not move to the new commit after `jj new/commit`?
 
-If you're familiar with Git, you might expect the current bookmark to move forward
-when you commit. However, Jujutsu does not have a concept of a "current bookmark".
+If you're familiar with Git, you might expect the current bookmark to move
+forward when you commit. However, Jujutsu does not have a concept of a "current
+bookmark".
 
 To move bookmarks, use `jj bookmark move`.
 
@@ -74,31 +75,41 @@ $ jj log -r 'connected(tyl|mus)'
 
 ### How can I get `jj log` to show me what `git log` would show me?
 
-Use `jj log -r ..`. The `..` [operator] lists all visible commits in the repo, excluding the root (which is never interesting and is shared by all repos).
+Use `jj log -r ..`. The `..` [operator] lists all visible commits in the repo,
+excluding the root (which is never interesting and is shared by all repos).
 
 ### Can I monitor how `jj log` evolves?
 
-The simplest way to monitor how the history as shown by `jj log` evolves is by using the [watch(1)](https://man7.org/linux/man-pages/man1/watch.1.html) command (or [hwatch](https://github.com/blacknon/hwatch?tab=readme-ov-file#configuration) or [viddy](https://github.com/sachaos/viddy)).
-For example:
+The simplest way to monitor how the history as shown by `jj log` evolves is by
+using the [watch(1)](https://man7.org/linux/man-pages/man1/watch.1.html) command
+(or
+[hwatch](https://github.com/blacknon/hwatch?tab=readme-ov-file#configuration) or
+[viddy](https://github.com/sachaos/viddy)). For example:
 
 ```sh
 watch --color jj --ignore-working-copy log --color=always
 ```
 
-This will continuously update the (colored) log output in the terminal.
-The `--ignore-working-copy` option avoids conflicts with manual operations during the creation of snapshots.
-Martin used watch in a [tmux](https://github.com/tmux/tmux/wiki) pane during his presentation [Jujutsu - A Git-compatible VCS](https://www.youtube.com/watch?v=LV0JzI8IcCY).
+This will continuously update the (colored) log output in the terminal. The
+`--ignore-working-copy` option avoids conflicts with manual operations during
+the creation of snapshots. Martin used watch in a
+[tmux](https://github.com/tmux/tmux/wiki) pane during his presentation
+[Jujutsu - A Git-compatible VCS](https://www.youtube.com/watch?v=LV0JzI8IcCY).
 
-A similar result can be achieved with [watchexec](https://github.com/watchexec/watchexec),
-which triggers on op log changes instead of using a two-second interval:
+A similar result can be achieved with
+[watchexec](https://github.com/watchexec/watchexec), which triggers on op log
+changes instead of using a two-second interval:
 
 ```sh
 watchexec --quiet --clear --restart --watch=.jj/repo/op_heads/heads --ignore-nothing --wrap-process=none -- jj --ignore-working-copy log
 ```
 
-Alternatively, you can use [jj-fzf](https://github.com/tim-janik/jj-fzf), where the central piece is the `jj log` view and common operations can be carried out via key bindings while the log view updates.
+Alternatively, you can use [jj-fzf](https://github.com/tim-janik/jj-fzf), where
+the central piece is the `jj log` view and common operations can be carried out
+via key bindings while the log view updates.
 
-The wiki lists additional TUIs and GUIs beyond the terminal: [GUI-and-TUI](https://github.com/jj-vcs/jj/wiki/GUI-and-TUI)
+The wiki lists additional TUIs and GUIs beyond the terminal:
+[GUI-and-TUI](https://github.com/jj-vcs/jj/wiki/GUI-and-TUI)
 
 ### How do I convert an existing Git repo into a Jujutsu repo?
 
@@ -186,9 +197,8 @@ Then future edits will go into a new working-copy commit on top of the now
 former working-copy commit. Whenever you are happy with another set of edits,
 use `jj squash` to amend the previous commit.
 
-If you have changes you _never_ want to put in a public commit, see: [How can I
-keep my scratch files in the repository without committing
-them?](#how-can-i-keep-my-scratch-files-in-the-repository-without-committing-them)
+If you have changes you _never_ want to put in a public commit, see:
+[How can I keep my scratch files in the repository without committing them?](#how-can-i-keep-my-scratch-files-in-the-repository-without-committing-them)
 
 For more options see the next question.
 
@@ -510,17 +520,17 @@ $ jj diff --from 31a --to @  # No output means these are identical
 
 ### How do I resume working on an existing change?
 
-There are two ways to resume working on an earlier change: `jj new` then `jj squash`,
-and `jj edit`. The first is generally recommended, but `jj edit` can be useful. When
-you use `jj edit`, the revision is directly amended with your new changes, making it
-difficult to tell what exactly you change. You should avoid using `jj edit` when the
-revision has a conflict, as you may accidentally break the plain-text annotations on
-your state without realizing.
+There are two ways to resume working on an earlier change: `jj new` then
+`jj squash`, and `jj edit`. The first is generally recommended, but `jj edit`
+can be useful. When you use `jj edit`, the revision is directly amended with
+your new changes, making it difficult to tell what exactly you change. You
+should avoid using `jj edit` when the revision has a conflict, as you may
+accidentally break the plain-text annotations on your state without realizing.
 
-To start, use `jj new <rev>` to create a change based on that earlier revision. Make
-your edits, then use `jj squash` to update the earlier revision with those edits.
-For when you would use git stashing, use `jj edit <rev>` for expected behavior.
-Other workflows may prefer `jj edit` as well.
+To start, use `jj new <rev>` to create a change based on that earlier revision.
+Make your edits, then use `jj squash` to update the earlier revision with those
+edits. For when you would use git stashing, use `jj edit <rev>` for expected
+behavior. Other workflows may prefer `jj edit` as well.
 
 ### Why are most merge commits marked as "(empty)"?
 
@@ -572,14 +582,14 @@ See: [Handling divergent commits](guides/divergence.md).
 
 ### How do I deal with conflicted bookmarks ('??' after bookmark name)?
 
-A [conflicted bookmark][bookmarks_conflicts] is a bookmark that refers to multiple
-different commits because jj couldn't fully resolve its desired position.
-Resolving conflicted bookmarks is usually done by setting the bookmark to the
-correct commit using `jj bookmark move <name> --to <commit ID>`.
+A [conflicted bookmark][bookmarks_conflicts] is a bookmark that refers to
+multiple different commits because jj couldn't fully resolve its desired
+position. Resolving conflicted bookmarks is usually done by setting the bookmark
+to the correct commit using `jj bookmark move <name> --to <commit ID>`.
 
-Usually, the different commits associated with the conflicted bookmark should all
-appear in the log, but if they don't you can use `jj bookmark list`to show all the
-commits associated with it.
+Usually, the different commits associated with the conflicted bookmark should
+all appear in the log, but if they don't you can use `jj bookmark list`to show
+all the commits associated with it.
 
 ### I'm experiencing `jj` command issues in a Vite/Vitest project, how do I fix this?
 
@@ -590,9 +600,10 @@ When using Vite or Vitest in a Jujutsu repository, you may experience:
 - Errors with 3rd party visual tools like `jjk` or `visual-jj`
 - Corrupted `working_copy.lock` files
 
-This happens because Vite watches the `.jj` directory where Jujutsu stores its internal state.
-This creates unnecessary overhead as Vite processes Jujutsu's frequent internal file changes,
-which can slow down both tools and occasionally cause file access conflicts.
+This happens because Vite watches the `.jj` directory where Jujutsu stores its
+internal state. This creates unnecessary overhead as Vite processes Jujutsu's
+frequent internal file changes, which can slow down both tools and occasionally
+cause file access conflicts.
 
 **Solution**: Configure Vite to ignore the `.jj` directory by adding it to the
 `server.watch.ignored` array inside your Vite configuration, for example:
@@ -611,8 +622,9 @@ export default defineConfig({
 })
 ```
 
-Note: There was a [request](https://github.com/vitejs/vite/issues/20036) to include `.jj`
-in the default ignore list, but manual configuration remains the recommended approach.
+Note: There was a [request](https://github.com/vitejs/vite/issues/20036) to
+include `.jj` in the default ignore list, but manual configuration remains the
+recommended approach.
 
 ### How can I manually trigger (e.g., periodic) snapshots?
 

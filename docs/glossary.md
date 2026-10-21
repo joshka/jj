@@ -223,8 +223,8 @@ directories contained directly in the directory it represents.
 
 ## Tracked bookmarks and tracking bookmarks
 
-A remote bookmark can be made "tracked" with the `jj bookmark track` command. This
-results in a "tracking" local bookmark that tracks the remote bookmark.
+A remote bookmark can be made "tracked" with the `jj bookmark track` command.
+This results in a "tracking" local bookmark that tracks the remote bookmark.
 
 See [the bookmarks documentation](bookmarks.md#terminology-summary) for a more
 detailed definition of these terms.

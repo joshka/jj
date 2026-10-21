@@ -35,7 +35,8 @@ Find it at [hunk.nvim][hunk.nvim].
 
 Centered around the `jj log` graph view, jj-fzf provides previews of diffs, the
 evolution-log, browses the op log and offers a large number of key bindings for
-commonly used `jj` operations from rebase to undo, and helps with divergent commits.
+commonly used `jj` operations from rebase to undo, and helps with divergent
+commits.
 
 Find it at [jj-fzf][jj-fzf].
 
@@ -48,8 +49,11 @@ Find it at [jj_tui][jj_tui].
 
 ## Jujutsu Kaizen
 
-Jujutsu Kaizen is a plugin for Visual Studio Code. The goal of this extension is to bring the great UX of Jujutsu into the VS Code UI.
-Its developers are currently focused on achieving parity for commonly used features of VS Code's built-in Git extension, such as the various operations possible via the Source Control view.
+Jujutsu Kaizen is a plugin for Visual Studio Code. The goal of this extension is
+to bring the great UX of Jujutsu into the VS Code UI. Its developers are
+currently focused on achieving parity for commonly used features of VS Code's
+built-in Git extension, such as the various operations possible via the Source
+Control view.
 
 Find it at [jjk][jjk].
 
@@ -76,21 +80,25 @@ Find it at [visualjj][visualjj].
 
 ## Jujutsu UI
 
-jjui is a terminal user interface for working with Jujutsu version control system.
+jjui is a terminal user interface for working with Jujutsu version control
+system.
 
 Find it at [jjui][jjui].
 
 ## Selvejj
 
-Selvejj is a JetBrains plugin for integrating Jujutsu as a first-class VCS within the IDE.
+Selvejj is a JetBrains plugin for integrating Jujutsu as a first-class VCS
+within the IDE.
 
 Find it at [selvejj][selvejj].
 
 ## PSCompletions
 
-PSCompletions is powerful shell completions for PowerShell and other shells, powered by Rust and Lua.
+PSCompletions is powerful shell completions for PowerShell and other shells,
+powered by Rust and Lua.
 
-It can provide completions via `psc add jj`, or offer a better interactive menu for the official completions.
+It can provide completions via `psc add jj`, or offer a better interactive menu
+for the official completions.
 
 Find it at [PSCompletions][PSCompletions].
 

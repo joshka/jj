@@ -2,10 +2,13 @@
 title: Introducing JJ run
 ---
 
-Authors: [Philip Metzger](mailto:philipmetzger@bluewin.ch), [Martin von Zweigberk](mailto:martinvonz@google.com), [Danny Hooper](mailto:hooper@google.com), [Waleed Khan](mailto:me@waleedkhan.name)
+Authors: [Philip Metzger](mailto:philipmetzger@bluewin.ch),
+[Martin von Zweigberk](mailto:martinvonz@google.com),
+[Danny Hooper](mailto:hooper@google.com),
+[Waleed Khan](mailto:me@waleedkhan.name)
 
-Initial Version, 10.12.2022 ([full
-history](https://docs.google.com/document/d/14BiAoEEy_e-BRPHYpXRFjvHMfgYVKh-pKWzzTDi-v-g/edit))
+Initial Version, 10.12.2022
+([full history](https://docs.google.com/document/d/14BiAoEEy_e-BRPHYpXRFjvHMfgYVKh-pKWzzTDi-v-g/edit))
 
 **Summary:** This Document documents the design of a new `run` command for
 Jujutsu which will be used to seamlessly integrate with build systems, linters
@@ -49,8 +52,10 @@ regular local-disk working copies.
 
 ### Goals
 
-* We should be able to apply the command to any revision, published or unpublished.
-* We should be able to parallelize running the actual command, while preserving a
+* We should be able to apply the command to any revision, published or
+  unpublished.
+* We should be able to parallelize running the actual command, while preserving
+  a
 good console output.
 * The run command should be able to work in any commit, the working-copy commit
 itself or any other commit.
@@ -233,7 +238,8 @@ command)
 (may alias another command)
 * --clean, remove existing workspaces and remove the ignored files
 * --readonly, ignore changes across multiple run invocations
-* --error-strategy=`continue|stop|fatal`, see [Dealing with failure](#dealing-with-failure)
+* --error-strategy=`continue|stop|fatal`, see
+  [Dealing with failure](#dealing-with-failure)
 
 ### Integrating with other commands
 
@@ -260,7 +266,8 @@ needed working copies.
 to materialize.
 * Customized failure messages, this maybe useful for bots, it could be similar
 to Bazel's `select(..., message = "arch not supported for $project")`.
-* Make `jj run` asynchronous by spawning a `main` process, directly return to the
+* Make `jj run` asynchronous by spawning a `main` process, directly return to
+  the
 user and incrementally updating the output of `jj st`.
 
 [git-branchless]: https://github.com/arxanas/git-branchless

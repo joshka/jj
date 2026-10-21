@@ -32,8 +32,8 @@ to symlink `.jj/repo/config.toml` to a file in the repository. This has several
 drawbacks:
 
 * It doesn’t work out-of-the-box. I need to manually symlink it
-* It has no security guarantees. If I update the file in the repo, the user has no
-  opportunity to review it.
+* It has no security guarantees. If I update the file in the repo, the user has
+  no opportunity to review it.
 * This prevents a user from having their own repo configuration on top of it.
 
 ## Objective
@@ -115,7 +115,8 @@ If a repository has a managed config and unset trust, we first use
 
 * If we are in a TUI, we ask the user what trust level they would like.
 * If we are not in a TUI, we warn them that we are ignoring the repo config (we
-  return `IGNORE`), and that they can run `jj config managed --ignore/notify/trust` in a terminal to configure this.
+  return `IGNORE`), and that they can run
+  `jj config managed --ignore/notify/trust` in a terminal to configure this.
 
 ##### Ignored
 

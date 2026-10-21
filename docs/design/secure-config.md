@@ -197,11 +197,11 @@ the errors.
 
 ##### Without config files
 
-If `$repo/.jj/repo/config.toml` does not exist, the repo doesn't have any config,
-and thus requires no config ID.
+If `$repo/.jj/repo/config.toml` does not exist, the repo doesn't have any
+config, and thus requires no config ID.
 
-Note that the expected way to generate a config-ID would be for the user to either
-run `jj config edit` or `jj config path`.
+Note that the expected way to generate a config-ID would be for the user to
+either run `jj config edit` or `jj config path`.
 
 ##### With config files
 
@@ -229,7 +229,8 @@ After the migration period is over, we will:
 * If the config file was previously created by auto-migration, delete it
   * `zip` follows symlinks by default, so this would reveal the content of your
     config to an attacker if they convinced you to send them your repo.
-* If the config file exists, print a warning that the config file has been ignored.
+* If the config file exists, print a warning that the config file has been
+  ignored.
 
 #### No config directory for the config-ID
 
@@ -294,9 +295,9 @@ a warning is printed instead.
 
 Unfortunately, there is no way to distinguish copying / moving from a replay
 attack. The attacker, if they know a config ID that exists on your system, can
-create a repo with the same config ID. However, the fact that the config itself is
-stored out of repo inherently prevents simple replay attacks. In order for the
-attacker to exploit this, they would need to:
+create a repo with the same config ID. However, the fact that the config itself
+is stored out of repo inherently prevents simple replay attacks. In order for
+the attacker to exploit this, they would need to:
 
 * Know your config ID (requires uploading a zip file or something similar)
 * Get lucky by the victim having a “risky” per-repo config
@@ -306,9 +307,9 @@ attacker to exploit this, they would need to:
   know any of this without some social engineering
 
 Given the impossibility of distinguishing copying / moving from a replay attack,
-any security measures we come up with to deal with this would have false positives
-whenever you do a copy / move, creating a significant UX cost. Thus, we
-intentionally choose not to deal with this kind of attack in the initial
+any security measures we come up with to deal with this would have false
+positives whenever you do a copy / move, creating a significant UX cost. Thus,
+we intentionally choose not to deal with this kind of attack in the initial
 version, and have no current intention to solve it in future versions either.
 
 We could potentially deal with this attack vector as an opt-in feature in the
