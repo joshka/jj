@@ -1,23 +1,22 @@
 # Filesets
 
-Jujutsu supports a functional language for selecting a set of files.
-Expressions in this language are called "filesets" (the idea comes from
-[Mercurial](https://repo.mercurial-scm.org/hg/help/filesets)). The language
-consists of file patterns, operators, and functions.
+Jujutsu supports a functional language for selecting a set of files. Expressions in this language
+are called "filesets" (the idea comes from
+[Mercurial](https://repo.mercurial-scm.org/hg/help/filesets)). The language consists of file
+patterns, operators, and functions.
 
 ## Quoting file names
 
-Many `jj` commands accept fileset expressions as positional arguments. File
-names passed to these commands [must be quoted][string-literals] if they contain
-whitespace or meta characters. However, as a special case, quotes can be omitted
-if the expression has no operators nor function calls. For example:
+Many `jj` commands accept fileset expressions as positional arguments. File names passed to these
+commands [must be quoted][string-literals] if they contain whitespace or meta characters. However,
+as a special case, quotes can be omitted if the expression has no operators nor function calls. For
+example:
 
 * `jj diff 'Foo Bar'` (shell quotes are required, but inner quotes are optional)
 * `jj diff '~"Foo Bar"'` (both shell and inner quotes are required)
 * `jj diff '"Foo(1)"'` (both shell and inner quotes are required)
 
-Glob characters aren't considered meta characters, but shell quotes are still
-required:
+Glob characters aren't considered meta characters, but shell quotes are still required:
 
 * `jj diff '~glob:**/*.rs'`
 
@@ -25,45 +24,40 @@ required:
 
 ## File patterns
 
-The following patterns are supported. In all cases, we do not mention any shell
-quoting that might be necessary, and the quotes around `"path"` are optional if
-the path [has no special characters](#quoting-file-names).
+The following patterns are supported. In all cases, we do not mention any shell quoting that might
+be necessary, and the quotes around `"path"` are optional if the path
+[has no special characters](#quoting-file-names).
 
-By default, `"path"` is parsed as a `prefix-glob:` pattern, which matches
-cwd-relative path prefix.
+By default, `"path"` is parsed as a `prefix-glob:` pattern, which matches cwd-relative path prefix.
 
-* `cwd:"path"`: Matches cwd-relative path prefix (file or files under directory
-  recursively.)
+* `cwd:"path"`: Matches cwd-relative path prefix (file or files under directory recursively.)
 * `file:"path"` or `cwd-file:"path"`: Matches cwd-relative file (or exact) path.
-* `glob:"pattern"` or `cwd-glob:"pattern"`: Matches file paths with cwd-relative
-  Unix-style shell [wildcard `pattern`][glob]. For example, `glob:"*.c"` will
-  match all `.c` files in the current working directory non-recursively.
-* `prefix-glob:"pattern"` or `cwd-prefix-glob:"pattern"`: Like `glob:`, but also
-  matches path prefix (file or files under directory recursively.) For example,
-  `prefix-glob:"*.d"` is equivalent to `glob:"*.d" | glob:"*.d/**"`.
-* `root:"path"`: Matches workspace-relative path prefix (file or files under
-  directory recursively.)
+* `glob:"pattern"` or `cwd-glob:"pattern"`: Matches file paths with cwd-relative Unix-style shell
+  [wildcard `pattern`][glob]. For example, `glob:"*.c"` will match all `.c` files in the current
+  working directory non-recursively.
+* `prefix-glob:"pattern"` or `cwd-prefix-glob:"pattern"`: Like `glob:`, but also matches path prefix
+  (file or files under directory recursively.) For example, `prefix-glob:"*.d"` is equivalent to
+  `glob:"*.d" | glob:"*.d/**"`.
+* `root:"path"`: Matches workspace-relative path prefix (file or files under directory recursively.)
 * `root-file:"path"`: Matches workspace-relative file (or exact) path.
-* `root-glob:"pattern"`: Matches file paths with workspace-relative Unix-style
-  shell [wildcard `pattern`][glob].
-* `root-prefix-glob:"pattern"`: Like `root-glob:`, but also matches path prefix
-  (file or files under directory recursively.)
+* `root-glob:"pattern"`: Matches file paths with workspace-relative Unix-style shell
+  [wildcard `pattern`][glob].
+* `root-prefix-glob:"pattern"`: Like `root-glob:`, but also matches path prefix (file or files under
+  directory recursively.)
 
-Glob patterns support case-insensitive matching by appending `-i` to the pattern
-name. For example, `glob-i:"*.TXT"` will match both `file.txt` and `FILE.TXT`.
+Glob patterns support case-insensitive matching by appending `-i` to the pattern name. For example,
+`glob-i:"*.TXT"` will match both `file.txt` and `FILE.TXT`.
 
 [glob]: https://docs.rs/globset/latest/globset/#syntax
 
 ## Operators
 
-The following operators are supported. `x` and `y` below can be any fileset
-expressions.
+The following operators are supported. `x` and `y` below can be any fileset expressions.
 
-Operators are listed in order of binding power from strongest to weakest, e.g.
-`x | y & z` is interpreted as `x | (y & z)` since `&` has stronger binding power
-than `|`. Infix operators of the same binding power are parsed from left to
-right, e.g. `x ~ y & z` is interpreted as `(x ~ y) & z` rather than `x ~ (y &
-z)`.
+Operators are listed in order of binding power from strongest to weakest, e.g. `x | y & z` is
+interpreted as `x | (y & z)` since `&` has stronger binding power than `|`. Infix operators of the
+same binding power are parsed from left to right, e.g. `x ~ y & z` is interpreted as `(x ~ y) & z`
+rather than `x ~ (y & z)`.
 
 As seen above, parentheses can be used to control evaluation order, e.g. `(x &
 y) | z` or `x & (y | z)`.
@@ -88,12 +82,11 @@ You can also specify patterns by using functions.
 
 ## Aliases
 
-New symbols, functions, and `<name>:<value>` patterns can be defined in the
-config file, by using any combination of the predefined symbols / functions and
-other aliases.
+New symbols, functions, and `<name>:<value>` patterns can be defined in the config file, by using
+any combination of the predefined symbols / functions and other aliases.
 
-Alias functions can be overloaded by the number of parameters. However, builtin
-function will be shadowed by name, and can't co-exist with aliases.
+Alias functions can be overloaded by the number of parameters. However, builtin function will be
+shadowed by name, and can't co-exist with aliases.
 
 For example:
 
@@ -105,8 +98,8 @@ LOCK = '**/Cargo.lock | **/package-lock.json | **/uv.lock'
 
 ### Alias descriptions
 
-Alias descriptions can be surfaced in shell completions by defining the alias
-as a table with `.doc` and `.definition` properties. For example:
+Alias descriptions can be surfaced in shell completions by defining the alias as a table with `.doc`
+and `.definition` properties. For example:
 
 ```toml
 [fileset-aliases]

@@ -15,9 +15,7 @@ Feel free to remove any of the sections below if they don't seem useful. -->
 
 ## Steps to Reproduce the Problem
 
-1.
-1.
-1.
+1. 1. 1.
 
 ## Expected Behavior
 

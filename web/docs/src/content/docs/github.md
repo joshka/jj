@@ -6,10 +6,9 @@ This guide assumes a basic understanding of either Git or Mercurial.
 
 ## Basic workflow
 
-The simplest way to start with Jujutsu is to create a stack of commits first.
-You will only need to create a bookmark when you need to push the stack to a
-remote. There are two primary workflows: using a generated bookmark name or
-naming a bookmark.
+The simplest way to start with Jujutsu is to create a stack of commits first. You will only need to
+create a bookmark when you need to push the stack to a remote. There are two primary workflows:
+using a generated bookmark name or naming a bookmark.
 
 ### Using a generated bookmark name
 
@@ -30,8 +29,7 @@ jj git push -c @-
 
 ### Using a named bookmark
 
-In this example, we create a bookmark named `bar` and then push it to the
-remote.
+In this example, we create a bookmark named `bar` and then push it to the remote.
 
 ```shell
 # Start a new commit off of the default bookmark.
@@ -49,29 +47,27 @@ jj bookmark track bar
 jj git push
 ```
 
-While it's possible to create a bookmark in advance and commit on top of it in a
-Git-like manner, you will then need to move the bookmark manually when you
-create a new commits. Unlike Git, Jujutsu will not do it automatically.
+While it's possible to create a bookmark in advance and commit on top of it in a Git-like manner,
+you will then need to move the bookmark manually when you create a new commits. Unlike Git, Jujutsu
+will not do it automatically.
 
 ## Updating the repository
 
 As of October 2023, Jujutsu has no equivalent to a `git pull` command (see
-[issue #1039][sync-issue]). Until such a command is added, you need to use
-`jj git fetch` followed by a `jj rebase -o $main_bookmark` to update your
-changes.
+[issue #1039][sync-issue]). Until such a command is added, you need to use `jj git fetch` followed
+by a `jj rebase -o $main_bookmark` to update your changes.
 
 [sync-issue]: https://github.com/jj-vcs/jj/issues/1039
 
 ## Working in a Git colocated workspaces
 
-After doing `jj git init`, which
-[colocates](git-compatibility.md#colocated-jujutsugit-repos) the `.jj` and
-`.git` directories, Git will be in a [detached HEAD state][detached], which is
-unusual, as Git mainly works with named branches; jj does not.
+After doing `jj git init`, which [colocates](git-compatibility.md#colocated-jujutsugit-repos) the
+`.jj` and `.git` directories, Git will be in a [detached HEAD state][detached], which is unusual, as
+Git mainly works with named branches; jj does not.
 
-In a colocated workspace, every `jj` command will automatically synchronize
-Jujutsu's view of the repo with Git's view. For example, `jj commit` updates the
-HEAD of the Git repository, enabling an incremental migration.
+In a colocated workspace, every `jj` command will automatically synchronize Jujutsu's view of the
+repo with Git's view. For example, `jj commit` updates the HEAD of the Git repository, enabling an
+incremental migration.
 
 ```shell
 nvim docs/tutorial.md
@@ -85,9 +81,9 @@ jj git push
 
 ## Working in a Jujutsu repository
 
-In a Jujutsu repository, the workflow is simplified. If there's no need for
-explicitly named bookmarks, you can just generate one for a change. As Jujutsu
-is able to create a bookmark for a revision.
+In a Jujutsu repository, the workflow is simplified. If there's no need for explicitly named
+bookmarks, you can just generate one for a change. As Jujutsu is able to create a bookmark for a
+revision.
 
 ```shell
 # Do your work
@@ -99,16 +95,15 @@ jj git push --change mw
 
 ## Addressing review comments
 
-There are two workflows for addressing review comments, depending on your
-project's preference. Many projects prefer that you address comments by adding
-commits to your bookmark[^1]. Some projects (such as Jujutsu and LLVM) instead
-prefer that you keep your commits clean by rewriting them and then
-force-pushing[^2].
+There are two workflows for addressing review comments, depending on your project's preference. Many
+projects prefer that you address comments by adding commits to your bookmark[^1]. Some projects
+(such as Jujutsu and LLVM) instead prefer that you keep your commits clean by rewriting them and
+then force-pushing[^2].
 
 ### Adding new commits
 
-If your project prefers that you address review comments by adding commits on
-top, you can do that by doing something like this:
+If your project prefers that you address review comments by adding commits on top, you can do that
+by doing something like this:
 
 ```shell
 # Create a new commit on top of the `your-feature` bookmark from above.
@@ -123,12 +118,12 @@ jj bookmark move your-feature --to @-
 jj git push
 ```
 
-Notably, the above workflow creates a new commit for you. The same can be
-achieved without creating a new commit.
+Notably, the above workflow creates a new commit for you. The same can be achieved without creating
+a new commit.
 
 :::caution
-We strongly suggest to `jj new` after the example below, as all further edits
-still get amended to the previous commit.
+We strongly suggest to `jj new` after the example below, as all further edits still get amended to
+the previous commit.
 :::
 
 ```shell
@@ -146,8 +141,7 @@ jj git push
 
 ### Rewriting commits
 
-If your project prefers that you keep commits clean, you can do that by doing
-something like this:
+If your project prefers that you keep commits clean, you can do that by doing something like this:
 
 ```shell
 # Create a new commit on top of the second-to-last commit in `your-feature`,
@@ -166,54 +160,48 @@ The hyphen after `your-feature` comes from the [revset](revsets.md) syntax.
 
 ## Working with other people's bookmarks
 
-By default, `jj git clone` imports the default remote bookmark (which is usually
-`main` or `master`), but `jj git fetch` doesn't import new remote bookmarks to
-local bookmarks. This means that if you want to iterate or test another
-contributor's bookmark, you'll need to do `jj new <bookmark>@<remote>` onto it.
+By default, `jj git clone` imports the default remote bookmark (which is usually `main` or
+`master`), but `jj git fetch` doesn't import new remote bookmarks to local bookmarks. This means
+that if you want to iterate or test another contributor's bookmark, you'll need to do
+`jj new <bookmark>@<remote>` onto it.
 
 If you want to import all remote bookmarks including inactive ones, set
-`remotes.<name>.auto-track-bookmarks = "*"` in the config file. Then you can
-specify a contributor's bookmark as `jj new <bookmark>` instead of `jj new
-<bookmark>@<remote>`.
+`remotes.<name>.auto-track-bookmarks = "*"` in the config file. Then you can specify a contributor's
+bookmark as `jj new <bookmark>` instead of `jj new <bookmark>@<remote>`.
 
 See [automatic bookmark creation][auto-bookmark] for more on that setting.
 
 ## Using GitHub CLI
 
-GitHub CLI will have trouble finding the proper Git repository path in jj repos
-that aren't [colocated](./git-compatibility.md#colocated-jujutsugit-repos)
-(see [issue #1008]). You can configure the `$GIT_DIR` environment variable to
-point it to the right path:
+GitHub CLI will have trouble finding the proper Git repository path in jj repos that aren't
+[colocated](./git-compatibility.md#colocated-jujutsugit-repos) (see [issue #1008]). You can
+configure the `$GIT_DIR` environment variable to point it to the right path:
 
 ```shell
 GIT_DIR=.jj/repo/store/git gh issue list
 ```
 
-You can make that automatic by installing [direnv](https://direnv.net) and
-defining hooks in a `.envrc` file in the repository root to configure
-`$GIT_DIR`. Just add this line into `.envrc`:
+You can make that automatic by installing [direnv](https://direnv.net) and defining hooks in a
+`.envrc` file in the repository root to configure `$GIT_DIR`. Just add this line into `.envrc`:
 
 ```shell
 export GIT_DIR=$PWD/.jj/repo/store/git
 ```
 
-and run `direnv allow` to approve it for direnv to run. Then GitHub CLI will
-work automatically even in workspaces that aren't colocated so you can execute
-commands like `gh issue list` normally.
+and run `direnv allow` to approve it for direnv to run. Then GitHub CLI will work automatically even
+in workspaces that aren't colocated so you can execute commands like `gh issue list` normally.
 
 [issue #1008]: https://github.com/jj-vcs/jj/issues/1008
 
 ## Useful Revsets
 
-Log all revisions across all local bookmarks that aren't on the main bookmark
-nor on any remote:
+Log all revisions across all local bookmarks that aren't on the main bookmark nor on any remote:
 
 ```shell
 jj log -r 'bookmarks() & ~(main | remote_bookmarks())'
 ```
 
-Log all revisions that you authored, across all bookmarks that aren't on any
-remote:
+Log all revisions that you authored, across all bookmarks that aren't on any remote:
 
 ```shell
 jj log -r 'mine() & bookmarks() & ~remote_bookmarks()'
@@ -233,8 +221,7 @@ jj log -r 'remote_bookmarks()..@'
 
 ## Merge conflicts
 
-For a detailed overview, how Jujutsu handles conflicts, revisit
-the [tutorial][tut].
+For a detailed overview, how Jujutsu handles conflicts, revisit the [tutorial][tut].
 
 [^1]:
     This is a GitHub-style review, as GitHub currently only is able to compare
@@ -251,10 +238,9 @@ the [tutorial][tut].
 
 ## Using several remotes
 
-It is common to use several remotes when contributing to a shared repository.
-For example, "upstream" can designate the remote where the changes will be
-merged through a pull-request while "origin" is your private fork of the
-project.
+It is common to use several remotes when contributing to a shared repository. For example,
+"upstream" can designate the remote where the changes will be merged through a pull-request while
+"origin" is your private fork of the project.
 
 ```shell
 jj git clone --remote upstream https://github.com/upstream-org/repo
@@ -262,13 +248,11 @@ cd repo
 jj git remote add origin git@github.com:your-org/your-repo-fork
 ```
 
-This will automatically setup your repository to track the main
-bookmark from the upstream repository, typically `main@upstream`
-or `master@upstream`.
+This will automatically setup your repository to track the main bookmark from the upstream
+repository, typically `main@upstream` or `master@upstream`.
 
-You might want to `jj git fetch` from "upstream" and to `jj git push`
-to "origin". You can configure the default remotes to fetch from and
-push to in your configuration file (for example,
+You might want to `jj git fetch` from "upstream" and to `jj git push` to "origin". You can configure
+the default remotes to fetch from and push to in your configuration file (for example,
 `.jj/repo/config.toml`):
 
 ```toml
@@ -279,9 +263,9 @@ push = "origin"
 
 The default for both `git.fetch` and `git.push` is "origin".
 
-If you usually work on a project from several computers, you may
-configure `jj` to fetch from both repositories by default, in order to
-keep your own bookmarks synchronized through your `origin` repository:
+If you usually work on a project from several computers, you may configure `jj` to fetch from both
+repositories by default, in order to keep your own bookmarks synchronized through your `origin`
+repository:
 
 ```toml
 [git]

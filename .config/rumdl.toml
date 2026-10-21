@@ -1,4 +1,5 @@
-# Rumdl's default rules, with the exceptions below. The merge-conflict rule is
+# Rumdl's default rules, with the exceptions below, plus wrapping at 100
+# columns and aligned tables. The merge-conflict rule is
 # suppressed inline around the examples of conflict markers in the docs.
 # See https://github.com/jj-vcs/jj/issues/10210.
 
@@ -27,3 +28,13 @@ allowed-elements = ["a", "br", "code", "details", "div", "figure", "img", "p", "
 # MkDocs admonition bodies count as code blocks.
 code-blocks = false
 headings = false
+line-length = 100
+# Rewrap prose on fix, joining short lines as well as splitting long ones.
+reflow = true
+reflow-mode = "normalize"
+# Keep tables aligned even when their contents require wider lines.
+tables = false
+
+[table-format]
+enabled = true
+style = "aligned"
