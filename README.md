@@ -1,3 +1,4 @@
+<!-- rumdl-disable first-line-heading -->
 <div class="title-block" style="text-align: center;" align="center">
 
 # Jujutsu—a version control system

@@ -1,3 +1,4 @@
+<!-- rumdl-disable first-line-heading -->
 To report a security issue, please use the "Report a vulnerability" button on
 GitHub's Security tab for `jj`'s main repo, under
 [Advisories](https://github.com/jj-vcs/jj/security/advisories).
