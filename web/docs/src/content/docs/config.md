@@ -1432,8 +1432,12 @@ backends.ssh.revocation-list = "/path/to/revocation-list"
 
 ### Manually signing commits
 
+<!-- rumdl-disable link-fragments -->
+
 You can use [`jj sign`](./cli-reference.md#jj-sign)/[`jj unsign`](./cli-reference.md#jj-unsign)
 to sign/unsign commits manually.
+
+<!-- rumdl-enable link-fragments -->
 
 :::caution
 `jj sign` always signs commits, even if they are already signed by the
