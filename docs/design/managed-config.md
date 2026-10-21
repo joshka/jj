@@ -16,11 +16,11 @@ your config is a security risk.
 There is a need for a repository to impose requirements upon users. Examples of
 these things include, but are not limited to:
 
-*   Formatter configuration (eg. [Chromium Formatter Config])
-*   Pre-upload checks (eg. [Chromium Pre-upload Checks])
-*   Syncing scripts (eg. [Chromium Syncing Scripts])
-*   Custom aliases / revsets documented by some kind of “getting started with
-    &lt;project&gt;” document
+* Formatter configuration (eg. [Chromium Formatter Config])
+* Pre-upload checks (eg. [Chromium Pre-upload Checks])
+* Syncing scripts (eg. [Chromium Syncing Scripts])
+* Custom aliases / revsets documented by some kind of “getting started with
+  &lt;project&gt;” document
 
 It should be fairly obvious that there is a strong benefit to doing so. However,
 controlling a user’s config is sufficient to get root access to their machine,
@@ -31,19 +31,19 @@ This is currently achieved by projects such as chromium by instructing the user
 to symlink `.jj/repo/config.toml` to a file in the repository. This has several
 drawbacks:
 
-*   It doesn’t work out-of-the-box. I need to manually symlink it
-*   It has no security guarantees. If I update the file in the repo, the user has no
-    opportunity to review it.
-*   This prevents a user from having their own repo configuration on top of it.
+* It doesn’t work out-of-the-box. I need to manually symlink it
+* It has no security guarantees. If I update the file in the repo, the user has no
+  opportunity to review it.
+* This prevents a user from having their own repo configuration on top of it.
 
 ## Objective
 
-*   Create a new layer of configuration between user configuration and repo
-    configuration.
-  *   This configuration will be stored in version control and henceforth be
-      referred to as “managed” configuration.
-*   Implement it in a secure manner so that an attacker cannot take control over
-    the managed config.
+* Create a new layer of configuration between user configuration and repo
+  configuration.
+  * This configuration will be stored in version control and henceforth be
+    referred to as “managed” configuration.
+* Implement it in a secure manner so that an attacker cannot take control over
+  the managed config.
 
 ## Detailed Design
 
@@ -113,9 +113,9 @@ does not have a managed config, we skip everything here.
 If a repository has a managed config and unset trust, we first use
 `ui.can_prompt()` to determine whether we are in a TUI.
 
-*   If we are in a TUI, we ask the user what trust level they would like.
-*   If we are not in a TUI, we warn them that we are ignoring the repo config (we
-    return `IGNORE`), and that they can run `jj config managed --ignore/notify/trust` in a terminal to configure this.
+* If we are in a TUI, we ask the user what trust level they would like.
+* If we are not in a TUI, we warn them that we are ignoring the repo config (we
+  return `IGNORE`), and that they can run `jj config managed --ignore/notify/trust` in a terminal to configure this.
 
 ##### Ignored
 
@@ -270,8 +270,8 @@ jj new stable-branch@origin
 
 There are some edge cases we need to consider:
 
-*   `stable-branch` may have existed before the config was added
-*   `stable-branch` may have a different copy of the managed config
+* `stable-branch` may have existed before the config was added
+* `stable-branch` may have a different copy of the managed config
 
 The naive assumption would be that you want to read the config from `@`, as the
 config will always match the version of the code you're using. However, it turns
@@ -280,31 +280,31 @@ from `trunk()`.
 
 Consider several different use cases:
 
-*   My formatter was previously `clang-format --foo`, but the option `--foo` was
-    deprecated in the latest version of `clang-format`
-  *   Here, you want to read from `trunk()`
-*   My formatter was previously `$repo/formatter --foo`, but the option `--foo`
-    was deprecated in the latest version of `formatter`
-  *   Here, you want to read from `@`
-*   We decide to split long lines and add a new formatter (or pre-upload hook)
-    config `formatter --line-length=80`
-  *   Here, you probably want to read from `@`
-*   We decide to add a pre-upload check that validates that all commit
-    descriptions contain a reference to a bug
-  *   This should be applied to old branches as well, so you want `trunk()`
-*   We add a new helpful alias / revset
-  *   This should be applied to old branches as well, so you want `trunk()`
-*   We move our formatter
-  *   If it’s external, you want to read from `trunk()`
-  *   If it’s internal, you want to read from `@`
+* My formatter was previously `clang-format --foo`, but the option `--foo` was
+  deprecated in the latest version of `clang-format`
+  * Here, you want to read from `trunk()`
+* My formatter was previously `$repo/formatter --foo`, but the option `--foo`
+  was deprecated in the latest version of `formatter`
+  * Here, you want to read from `@`
+* We decide to split long lines and add a new formatter (or pre-upload hook)
+  config `formatter --line-length=80`
+  * Here, you probably want to read from `@`
+* We decide to add a pre-upload check that validates that all commit
+  descriptions contain a reference to a bug
+  * This should be applied to old branches as well, so you want `trunk()`
+* We add a new helpful alias / revset
+  * This should be applied to old branches as well, so you want `trunk()`
+* We move our formatter
+  * If it’s external, you want to read from `trunk()`
+  * If it’s internal, you want to read from `@`
 
 All in all, you can see a general pattern.
 
-*   If something refers to an in-repo tool, you **probably** want the config to
-    be read from `@`
-*   Otherwise, you **probably** want to read from `trunk()`
-*   I say probably, because the split long lines example doesn’t conform to this
-    rule.
+* If something refers to an in-repo tool, you **probably** want the config to
+  be read from `@`
+* Otherwise, you **probably** want to read from `trunk()`
+* I say probably, because the split long lines example doesn’t conform to this
+  rule.
 
 #### Problematic examples
 

@@ -101,15 +101,15 @@ of the transitive closure of files that can be accessed via jj configs to solve.
 
 ### Goals
 
-*   Prevent as many of the above attack vectors as possible
-*   Have minimal negative impacts on UX
+* Prevent as many of the above attack vectors as possible
+* Have minimal negative impacts on UX
 
 ### Non-goals (Optional)
 
-*   Use strategies such as sandboxing to mitigate damage
-  *   We could do this for formatters, for example, but then repo hooks would
-      have the same problem
-  *   These options are not mutually exclusive
+* Use strategies such as sandboxing to mitigate damage
+  * We could do this for formatters, for example, but then repo hooks would
+    have the same problem
+  * These options are not mutually exclusive
 
 ## Detailed Design
 
@@ -217,11 +217,11 @@ config ID has not yet been generated, we will silently perform the following
     config file
 4.  Atomically generate a `config-id` file containing `abc123`
 5.  Remove the original config file
-6.  For the user's convenience, and for older version of jj, we:
-  *   Try to symlink the old config to the new config
-  *   If this fails (symlinks don't play nice on windows), we replace it with
-      the same file content, with an extra comment at the top telling the user
-      not to edit the file, and set it to readonly.
+6. For the user's convenience, and for older version of jj, we:
+   * Try to symlink the old config to the new config
+   * If this fails (symlinks don't play nice on windows), we replace it with
+     the same file content, with an extra comment at the top telling the user
+     not to edit the file, and set it to readonly.
 
 After the migration period is over, we will:
 
@@ -321,18 +321,18 @@ is the replay attack I mentioned above.
 
 ### UX issues
 
-*   Copying the repo is essentially a symlink to an old config until you update
-    it
-*   Multiple users on the same system would each have different per-repo configs
-  *   This can be solved by simply symlinking `$HOME/.config/jj` to
-      `%APPDATA%/jj` (or vice versa) to solve this issue. You were probably
-      doing this anyway with specifically the user config file instead of the
-      directory.
-*   The repo config will no longer be available across machines if the user is
-    using something like a distributed file system. This is probably OK, since
-    if the user has a complex setup like this, they will also have issues with
-    the config of every other application not being shared, and could easily
-    solve this by sharing `~/.config`.
+* Copying the repo is essentially a symlink to an old config until you update
+  it
+* Multiple users on the same system would each have different per-repo configs
+  * This can be solved by simply symlinking `$HOME/.config/jj` to
+    `%APPDATA%/jj` (or vice versa) to solve this issue. You were probably
+    doing this anyway with specifically the user config file instead of the
+    directory.
+* The repo config will no longer be available across machines if the user is
+  using something like a distributed file system. This is probably OK, since
+  if the user has a complex setup like this, they will also have issues with
+  the config of every other application not being shared, and could easily
+  solve this by sharing `~/.config`.
 
 ## Alternatives considered
 
@@ -350,13 +350,13 @@ If we don't, we leave ourselved exposed to additional attack vectors
 
 ##### How to sign the content of the repo config?
 
-*   We could not sign it at all, but that would leave ourselves exposed to
-    additional attack vectors.
-*   We could sign the content of the repo config, but then when the user
-    manually edits the file we have additional UX we need to introduce.
-*   We could store both the content and the signature in the repo protobuf, but
-    the config would no longer exist on disk as a regular file, and thus you
-    couldn't use standard tools to read and write the config.
+* We could not sign it at all, but that would leave ourselves exposed to
+  additional attack vectors.
+* We could sign the content of the repo config, but then when the user
+  manually edits the file we have additional UX we need to introduce.
+* We could store both the content and the signature in the repo protobuf, but
+  the config would no longer exist on disk as a regular file, and thus you
+  couldn't use standard tools to read and write the config.
 
 All of these options were discussed in the original PR (#7761), which, unlike
 the current approach, introduced user interventions and a review process. The
