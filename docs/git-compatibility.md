@@ -166,7 +166,7 @@ Colocation can be disabled because it does have some disadvantages:
   ids](glossary.md#divergent-change). These never lose data, but can be
   annoying.
 
-    Such interleaving can happen unknowingly. For example, some IDEs can cause
+  Such interleaving can happen unknowingly. For example, some IDEs can cause
   it because they automatically run `git fetch` in the background from time to
   time.
 

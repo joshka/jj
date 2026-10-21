@@ -44,15 +44,15 @@ y) * z`.
 3. * `p:x`: String pattern or pattern alias named `p`.
 
 4. * `x * y`, `x / y`, `x % y`: Multiplication / division / remainder. Operands must
-     be `Integer`s.
+   be `Integer`s.
 
 5. * `x + y`, `x - y`: Addition / subtraction. Operands must be `Integer`s.
 
 6. * `x >= y`, `x > y`, `x <= y`, `x < y`: Greater than or equal / greater than /
-     lesser than or equal / lesser than. Operands must be `Integer`s.
+   lesser than or equal / lesser than. Operands must be `Integer`s.
 
 7. * `x == y`, `x != y`: Equal / not equal. Operands must be either `Boolean`,
-     `ByteString`, `Integer`, or `String`.
+   `ByteString`, `Integer`, or `String`.
 
 8. * `x && y`: Logical and, short-circuiting.
 
@@ -135,7 +135,7 @@ The following functions are defined.
 * `surround(prefix: Template, suffix: Template, content: Template) -> Template`:
   Surround **non-empty** content with texts such as parentheses.
 * `config(name: Stringify) -> Option<ConfigValue>`: Look up configuration
-   value by `name`.
+  value by `name`.
 * `revset(revset: Stringify) -> List<Commit>`: Evaluates [a revset](revsets.md).
 
   The revset is evaluated once during template parsing if its value evaluates to
@@ -347,7 +347,7 @@ The following methods are defined.
 * `.tracked() -> Boolean`: True if the ref is tracked by a local ref. The local
   ref might have been deleted (but not pushed yet.)
 * `.tracking_present() -> Boolean`: True if the ref is tracked by a local ref,
-    and if the local ref points to any commit.
+  and if the local ref points to any commit.
 * `.tracking_ahead_count() -> SizeHint`: Number of commits ahead of the tracking
   local ref.
 * `.tracking_behind_count() -> SizeHint`: Number of commits behind of the

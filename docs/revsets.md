@@ -83,7 +83,7 @@ y) | z` or `x & (y | z)`.
 3. * `p:x`: String/date pattern or pattern alias named `p`.
 
 4. * `x::`: Descendants of `x`, including the commits in `x` itself. Equivalent to
-     `x::visible_heads()` if no hidden revisions are mentioned.
+   `x::visible_heads()` if no hidden revisions are mentioned.
    * `x..`: Revisions that are not ancestors of `x`. Equivalent to `~::x`, and
      `x..visible_heads()` if no hidden revisions are mentioned.
    * `::x`: Ancestors of `x`, including the commits in `x` itself. Shorthand for
@@ -91,7 +91,7 @@ y) | z` or `x & (y | z)`.
    * `..x`: Ancestors of `x`, including the commits in `x` itself, but excluding
      the root commit. Shorthand for `root()..x`. Equivalent to `::x ~ root()`.
    * `x::y`: Descendants of `x` that are also ancestors of `y`. Equivalent
-      to `x:: & ::y`. This is what `git log` calls `--ancestry-path x..y`.
+     to `x:: & ::y`. This is what `git log` calls `--ancestry-path x..y`.
    * `x..y`: Ancestors of `y` that are not also ancestors of `x`. Equivalent to
      `::y ~ ::x`. This is what `git log` calls `x..y` (i.e. the same as we call it).
      Note that this is *not* a "path" between `x` and `y` in the commit graph -- `x`

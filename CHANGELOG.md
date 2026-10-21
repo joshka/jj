@@ -901,7 +901,7 @@ None
   selectable and are dimmed by default.
 
 * `jj arrange` uses the default log template (`builtin_log_compact`) instead of
-   the shorter commit summary style.
+  the shorter commit summary style.
 
 * In the `jj arrange` TUI, the "swap up/down" actions now move along graph edges
   even if the commit rows are not adjacent.
@@ -2782,7 +2782,7 @@ Thanks to the people who made this release happen!
   quotes. Example: `jj bookmark create -r@- "'name with space'"`
 
 * `jj bookmark create`, `jj bookmark set` and `jj bookmark move` onto a hidden
-   commit make it visible.
+  commit make it visible.
 
 * `jj bookmark forget` now untracks any corresponding remote bookmarks instead
   of forgetting them, since forgetting a remote bookmark can be unintuitive.
@@ -2852,7 +2852,7 @@ Thanks to the people who made this release happen!
   immutable commits that would be rewritten if used and a link to the docs.
 
 * `jj undo` now shows a hint when undoing an undo operation that the user may
-   be looking for `jj op restore` instead.
+  be looking for `jj op restore` instead.
 
 ### Fixed bugs
 
@@ -2988,9 +2988,9 @@ Thanks to the people who made this release happen!
 ### New features
 
 * `jj git {push,clone,fetch}` can now spawn an external `git` subprocess, via
-   the `git.subprocess = true` config knob. This provides an alternative that,
-   when turned on, fixes SSH bugs when interacting with Git remotes due to
-   `libgit2`s limitations [#4979](https://github.com/jj-vcs/jj/issues/4979).
+  the `git.subprocess = true` config knob. This provides an alternative that,
+  when turned on, fixes SSH bugs when interacting with Git remotes due to
+  `libgit2`s limitations [#4979](https://github.com/jj-vcs/jj/issues/4979).
 
 * `jj describe` now accepts `--edit`.
 
@@ -3341,8 +3341,8 @@ Thanks to the people who made this release happen!
   were resolved.
 
 * `jj simplify-parents` now supports configuring the default revset when no
-   `--source` or `--revisions` arguments are provided with the
-   `revsets.simplify-parents` config.
+  `--source` or `--revisions` arguments are provided with the
+  `revsets.simplify-parents` config.
 
 ### Fixed bugs
 
@@ -3427,8 +3427,8 @@ Thanks to the people who made this release happen!
   config variable.
 
 * `jj bookmark list` gained a `--remote REMOTE` option to display bookmarks
-   belonging to a remote. This option can be combined with `--tracked` or
-   `--conflicted`.
+  belonging to a remote. This option can be combined with `--tracked` or
+  `--conflicted`.
 
 * New command `jj config unset` that unsets config values. For example,
   `jj config unset --user user.name`.
@@ -3585,7 +3585,7 @@ Thanks to the people who made this release happen!
   content.
 
 * `jj git fetch -b <remote-git-branch-name>` will now warn if the branch(es)
-   can not be found in any of the specified/configured remotes.
+  can not be found in any of the specified/configured remotes.
 
 * `jj split` now lets the user select all changes in interactive mode. This may be used
   to keeping all changes into the first commit while keeping the current commit
@@ -3761,7 +3761,7 @@ Thanks to the people who made this release happen!
 * `jj backout` can now back out multiple commits at once.
 
 * `jj git clone some/nested/path` now creates the full directory tree for
-   nested destination paths if they don't exist.
+  nested destination paths if they don't exist.
 
 * String patterns now support case‐insensitive matching by suffixing any
   pattern kind with `-i`. `mine()` uses case‐insensitive matching on your email

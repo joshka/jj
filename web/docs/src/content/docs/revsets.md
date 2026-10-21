@@ -78,7 +78,7 @@ only symbols.
 * `..x`: Ancestors of `x`, including the commits in `x` itself, but excluding
   the root commit. Shorthand for `root()..x`. Equivalent to `::x ~ root()`.
 * `x::y`: Descendants of `x` that are also ancestors of `y`. Equivalent
-   to `x:: & ::y`. This is what `git log` calls `--ancestry-path x..y`.
+  to `x:: & ::y`. This is what `git log` calls `--ancestry-path x..y`.
 * `x..y`: Ancestors of `y` that are not also ancestors of `x`. Equivalent to
   `::y ~ ::x`. This is what `git log` calls `x..y` (i.e. the same as we call it).
 * `::`: All visible commits in the repo. Equivalent to `all()`, and
@@ -578,8 +578,8 @@ for a comprehensive list.
 
 * `builtin_immutable_heads()`: Resolves to
   `present(trunk()) | tags() | untracked_remote_bookmarks()`. It is used as the
-   default definition for `immutable_heads()` below. It is not recommended to
-   redefine this alias. Prefer to redefine `immutable_heads()` instead.
+  default definition for `immutable_heads()` below. It is not recommended to
+  redefine this alias. Prefer to redefine `immutable_heads()` instead.
 
 * `immutable_heads()`: Resolves to `present(trunk()) | tags() |
   untracked_remote_bookmarks()` by default. It is actually defined as

@@ -41,9 +41,6 @@ disable = [
     # 4 findings. List item spacing should be consistent.
     # https://github.com/rvben/rumdl/blob/main/docs/md076.md
     "list-item-spacing",
-    # 39 findings. List continuation content indentation.
-    # https://github.com/rvben/rumdl/blob/main/docs/md077.md
-    "list-continuation-indent",
 ]
 
 # Commented settings below show the disabled rules' default options, as reported
@@ -112,5 +109,3 @@ disable = [
 # allow-loose-continuation = false
 # style = "consistent"
 
-# [list-continuation-indent]
-# style = "any"

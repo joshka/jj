@@ -543,9 +543,9 @@ that is used in GitHub CI (details below):
     .github/scripts/docs-build-deploy prerelease main --push
     ```
 
-    This should build the version of the docs from the current commit,
-    deploy it as a new commit to the `gh-pages` bookmark,
-    and push the `gh-pages` bookmark to the origin.
+   This should build the version of the docs from the current commit,
+   deploy it as a new commit to the `gh-pages` bookmark,
+   and push the `gh-pages` bookmark to the origin.
 
 5. Now, you should be able to see the full website, including your latest changes
 to the `prerelease` version, at `https://jjfan.github.io/jj/prerelease/`.
@@ -571,8 +571,8 @@ this can be done with:
     jj git push --remote origin --bookmark gh-pages
     ```
 
-    If you want to preserve some of the changes you made, you can do `jj bookmark
-    set my-changes -r gh-pages` BEFORE running the above commands.
+   If you want to preserve some of the changes you made, you can do `jj bookmark
+   set my-changes -r gh-pages` BEFORE running the above commands.
 
 ### Explanation of the `docs-build-deploy` script
 

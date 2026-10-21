@@ -34,7 +34,7 @@ links to more details where applicable and available. There's a
   branch', and new commits will automatically update the branch. This is
   necessary in Git because Git might otherwise lose track of the new commits.
 
-    Jujutsu does not have a corresponding concept of a 'current bookmark';
+  Jujutsu does not have a corresponding concept of a 'current bookmark';
   instead, you update bookmarks manually. For example, if you start work on top
   of a commit with a bookmark, new commits are created on top of the bookmark,
   then you issue a later command to update the bookmark.
