@@ -471,13 +471,13 @@ Working on feature B
 
 #### Step 3: Move any bookmarks to the original revision
 
-```console
+```shell
 $ jj bookmark move --from 31a347e0 --to b8004ea8
 ```
 
 #### Step 4: Abandon the unwanted revision
 
-```console
+```shell
 $ jj abandon 31a347e0
 ```
 
