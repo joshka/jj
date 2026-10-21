@@ -17,9 +17,6 @@ include = ["**/*.md", "**/*.mdx"]
 # Symlinks duplicate files already covered by the scan.
 exclude = ["**/node_modules/**", "**/cli/docs/**", "**/docs/governance/GOVERNANCE.md"]
 disable = [
-    # 272 findings. Line length should not be excessive.
-    # https://github.com/rvben/rumdl/blob/main/docs/md013.md
-    "line-length",
     # 44 findings. Code blocks should use a consistent style.
     # https://github.com/rvben/rumdl/blob/main/docs/md046.md
     "code-block-style",
@@ -28,28 +25,6 @@ disable = [
 # Commented settings below show the disabled rules' default options, as reported
 # by rumdl config --defaults. Rules without options need only removal from disable.
 
-# [line-length]
-# abbreviations = []
-# atomic-spans = true
-# blockquotes = true
-# bracket-display-math = false
-# code-blocks = true
-# code-spans = true
-# headings = true
-# ignore-link-urls = true
-# length-mode = "visual"
-# line-length = 80
-# math-blocks = true
-# paragraphs = true
-# reflow = false
-# reflow-break-link-text = false
-# reflow-length-exemptions = false
-# reflow-mode = "default"
-# require-sentence-capital = true
-# stern = false
-# strict = false
-# tables = false
-
 # [code-block-style]
 # style = "consistent"
 
@@ -57,3 +32,9 @@ disable = [
 # HTML the docs use on purpose: heading anchors, collapsible sections, images
 # and the README's centered title block.
 allowed-elements = ["a", "br", "code", "details", "div", "figure", "img", "p", "summary"]
+
+[line-length]
+# Long commands, output and headings can't be wrapped without changing them.
+# MkDocs admonition bodies count as code blocks.
+code-blocks = false
+headings = false
