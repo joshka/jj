@@ -17,9 +17,6 @@ include = ["**/*.md", "**/*.mdx"]
 # Symlinks duplicate files already covered by the scan.
 exclude = ["**/node_modules/**", "**/cli/docs/**", "**/docs/governance/GOVERNANCE.md"]
 disable = [
-    # 4 findings. Heading levels should only increment by one level at a time.
-    # https://github.com/rvben/rumdl/blob/main/docs/md001.md
-    "heading-increment",
     # 159 findings. Use consistent style for unordered list markers.
     # https://github.com/rvben/rumdl/blob/main/docs/md004.md
     "ul-style",
@@ -81,9 +78,6 @@ disable = [
 
 # Commented settings below show the disabled rules' default options, as reported
 # by rumdl config --defaults. Rules without options need only removal from disable.
-
-# [heading-increment]
-# front-matter-title = true
 
 # [ul-style]
 # style = "consistent"

@@ -338,7 +338,7 @@ is the replay attack I mentioned above.
 There are a few questions we would need to resolve here, all with significant
 drawbacks:
 
-##### Do we include paths in the signature?
+#### Do we include paths in the signature?
 
 If we do, we introduce a whole bunch of additional annoying UX to the user when
 they move repos around.
