@@ -13,7 +13,6 @@ assignees: ''
 For questions, use https://github.com/jj-vcs/jj/discussions/new instead.
 Feel free to remove any of the sections below if they don't seem useful. -->
 
-
 ## Steps to Reproduce the Problem
 
 1.
@@ -21,7 +20,6 @@ Feel free to remove any of the sections below if they don't seem useful. -->
 1.
 
 ## Expected Behavior
-
 
 ## Actual Behavior
 

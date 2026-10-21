@@ -690,7 +690,6 @@ Thanks to the people who made this release happen!
 
 ### New features
 
-
 * Shell completions now surface descriptions for custom aliases,
   revset-aliases, template-aliases, and fileset-aliases. Descriptions are
   extracted from the `.doc` field of the alias definition if it is a table

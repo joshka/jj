@@ -29,9 +29,6 @@ disable = [
     # 58 findings. Unordered list indentation.
     # https://github.com/rvben/rumdl/blob/main/docs/md007.md
     "ul-indent",
-    # 3 findings. Multiple consecutive blank lines.
-    # https://github.com/rvben/rumdl/blob/main/docs/md012.md
-    "no-multiple-blanks",
     # 272 findings. Line length should not be excessive.
     # https://github.com/rvben/rumdl/blob/main/docs/md013.md
     "line-length",
@@ -123,9 +120,6 @@ disable = [
 # start-indent = 2
 # start-indented = false
 # style = "text-aligned"
-
-# [no-multiple-blanks]
-# maximum = 1
 
 # [line-length]
 # abbreviations = []
