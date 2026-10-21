@@ -20,9 +20,6 @@ disable = [
     # 272 findings. Line length should not be excessive.
     # https://github.com/rvben/rumdl/blob/main/docs/md013.md
     "line-length",
-    # 4 findings. Blank line inside blockquote.
-    # https://github.com/rvben/rumdl/blob/main/docs/md028.md
-    "no-blanks-blockquote",
     # 37 findings. Inline HTML is not allowed.
     # https://github.com/rvben/rumdl/blob/main/docs/md033.md
     "no-inline-html",
@@ -64,9 +61,6 @@ disable = [
 # stern = false
 # strict = false
 # tables = false
-
-# [no-blanks-blockquote]
-# fix = false
 
 # [no-inline-html]
 # allowed-elements = []
