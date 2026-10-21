@@ -32,9 +32,6 @@ disable = [
     # 4 findings. Link fragments should reference valid headings.
     # https://github.com/rvben/rumdl/blob/main/docs/md051.md
     "link-fragments",
-    # 3 findings. Relative links should point to existing files.
-    # https://github.com/rvben/rumdl/blob/main/docs/md057.md
-    "existing-relative-links",
 ]
 
 # Commented settings below show the disabled rules' default options, as reported
@@ -86,13 +83,4 @@ disable = [
 # check-frontmatter = false
 # ignore-case = true
 # ignore-frontmatter-fields = []
-
-# [existing-relative-links]
-# absolute-links = "ignore"
-# check-frontmatter = false
-# compact-paths = false
-# ignore-frontmatter-fields = []
-# roots = []
-# search-paths = []
-# self-referential-links = false
 
