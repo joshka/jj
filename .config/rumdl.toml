@@ -38,9 +38,6 @@ disable = [
     # 3 findings. Relative links should point to existing files.
     # https://github.com/rvben/rumdl/blob/main/docs/md057.md
     "existing-relative-links",
-    # 4 findings. List item spacing should be consistent.
-    # https://github.com/rvben/rumdl/blob/main/docs/md076.md
-    "list-item-spacing",
 ]
 
 # Commented settings below show the disabled rules' default options, as reported
@@ -104,8 +101,4 @@ disable = [
 # roots = []
 # search-paths = []
 # self-referential-links = false
-
-# [list-item-spacing]
-# allow-loose-continuation = false
-# style = "consistent"
 
