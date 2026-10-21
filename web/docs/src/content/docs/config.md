@@ -333,8 +333,8 @@ the default number of lines of context shown.
 
 - `conflict`: How conflicts are processed and displayed.
 
-   - `"materialize"`: compare materialized contents (default)
-   - `"pair"`: compare individual pairs
+  - `"materialize"`: compare materialized contents (default)
+  - `"pair"`: compare individual pairs
 
    **This parameter is experimental.**
 
@@ -1216,23 +1216,23 @@ The file is only rewritten if the subprocess produces a successful exit code.
 Tools are defined in a table where the keys are arbitrary identifiers and
 the values have the following properties:
 
- - `command`: The arguments used to run the tool. The first argument is the
-   path to an executable file. Arguments can contain these variables that will
-   be replaced:
-   - `$root` will be replaced with the workspace root path (the directory
-     containing the .jj directory).
-   - `$path` will be replaced with the repo-relative path of the file being
-     fixed. It is useful to provide the path to tools that include the path
-     in error messages, or behave differently based on the directory or file
-     name.
- - `patterns`: List of filesets (see: `jj help -k filesets`), determining
-   which files the tool will affect based on their path. If this list is
-   empty, no files will be affected by the tool. If there are multiple
-   patterns, the tool is applied only once to each file in the union of the
-   patterns.
- - `enabled`: Enables or disables the tool. If omitted, the tool is enabled.
-   This is useful for defining disabled tools in user configuration that can
-   be enabled in individual repositories with one config setting.
+- `command`: The arguments used to run the tool. The first argument is the
+  path to an executable file. Arguments can contain these variables that will
+  be replaced:
+  - `$root` will be replaced with the workspace root path (the directory
+    containing the .jj directory).
+  - `$path` will be replaced with the repo-relative path of the file being
+    fixed. It is useful to provide the path to tools that include the path
+    in error messages, or behave differently based on the directory or file
+    name.
+- `patterns`: List of filesets (see: `jj help -k filesets`), determining
+  which files the tool will affect based on their path. If this list is
+  empty, no files will be affected by the tool. If there are multiple
+  patterns, the tool is applied only once to each file in the union of the
+  patterns.
+- `enabled`: Enables or disables the tool. If omitted, the tool is enabled.
+  This is useful for defining disabled tools in user configuration that can
+  be enabled in individual repositories with one config setting.
 
 `jj fix` provides the file content anonymously on standard input, but the name
 of the file being formatted may be important for include sorting or other output

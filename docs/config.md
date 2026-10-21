@@ -479,8 +479,8 @@ You can also change the default number of lines of context shown.
 
 - `conflict`: How conflicts are processed and displayed.
 
-   - `"materialize"`: compare materialized contents (default)
-   - `"pair"`: compare individual pairs
+  - `"materialize"`: compare materialized contents (default)
+  - `"pair"`: compare individual pairs
 
    **This parameter is experimental.**
 

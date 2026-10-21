@@ -1683,13 +1683,13 @@ Thanks to the people who made this release happen!
 
 ### Deprecations
 
- * `jj bisect run --command <cmd>` is deprecated in favor of
-   `jj bisect run -- <cmd>`.
+* `jj bisect run --command <cmd>` is deprecated in favor of
+  `jj bisect run -- <cmd>`.
 
- * `jj metaedit --update-committer-timestamp` was renamed to
-   `jj metaedit --force-rewrite` since the old name (and help text)
-   incorrectly suggested that the committer name and email would *not*
-   be updated.
+* `jj metaedit --update-committer-timestamp` was renamed to
+  `jj metaedit --force-rewrite` since the old name (and help text)
+  incorrectly suggested that the committer name and email would *not*
+  be updated.
 
 ### New features
 

@@ -679,15 +679,15 @@ to adjust the `site_url` to something like `https://jjfan.github.io/jj`.
  storage format. In this case, you will need to add a few steps to the above
  workflow.
 
- - Install the `protoc` compiler. This usually means either `apt-get install
-   protobuf-compiler` or downloading [an official release]. The
-   `prost` [library docs] have additional advice.
- - Run `cargo run -p gen-protos` regularly (or after every edit to a `.proto`
-   file). This is the same as running `cargo run` from `lib/gen-protos`. The
-   `gen-protos` binary will use the `prost-build` library to compile the
-   `.proto` files into `.rs` files.
- - If you are adding a new `.proto` file, you will need to edit the list of
-   these files in `lib/gen-protos/src/main.rs`.
+- Install the `protoc` compiler. This usually means either `apt-get install
+  protobuf-compiler` or downloading [an official release]. The
+  `prost` [library docs] have additional advice.
+- Run `cargo run -p gen-protos` regularly (or after every edit to a `.proto`
+  file). This is the same as running `cargo run` from `lib/gen-protos`. The
+  `gen-protos` binary will use the `prost-build` library to compile the
+  `.proto` files into `.rs` files.
+- If you are adding a new `.proto` file, you will need to edit the list of
+  these files in `lib/gen-protos/src/main.rs`.
 
 [an official release]: https://github.com/protocolbuffers/protobuf/releases
 [library docs]: https://docs.rs/prost-build/latest/prost_build/#sourcing-protoc

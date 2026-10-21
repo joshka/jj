@@ -20,9 +20,6 @@ disable = [
     # 26 findings. List indentation should be consistent.
     # https://github.com/rvben/rumdl/blob/main/docs/md005.md
     "list-indent",
-    # 58 findings. Unordered list indentation.
-    # https://github.com/rvben/rumdl/blob/main/docs/md007.md
-    "ul-indent",
     # 272 findings. Line length should not be excessive.
     # https://github.com/rvben/rumdl/blob/main/docs/md013.md
     "line-length",
@@ -54,12 +51,6 @@ disable = [
 
 # Commented settings below show the disabled rules' default options, as reported
 # by rumdl config --defaults. Rules without options need only removal from disable.
-
-# [ul-indent]
-# indent = 2
-# start-indent = 2
-# start-indented = false
-# style = "text-aligned"
 
 # [line-length]
 # abbreviations = []
