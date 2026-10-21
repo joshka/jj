@@ -692,8 +692,8 @@ to adjust the `site_url` to something like `https://jjfan.github.io/jj`.
 [an official release]: https://github.com/protocolbuffers/protobuf/releases
 [library docs]: https://docs.rs/prost-build/latest/prost_build/#sourcing-protoc
 
- The `.rs` files generated from `.proto` files are included in the repository,
- and there is a GitHub CI check that will complain if they do not match.
+The `.rs` files generated from `.proto` files are included in the repository,
+and there is a GitHub CI check that will complain if they do not match.
 
 ## Logging
 

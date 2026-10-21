@@ -336,7 +336,7 @@ the default number of lines of context shown.
   - `"materialize"`: compare materialized contents (default)
   - `"pair"`: compare individual pairs
 
-   **This parameter is experimental.**
+  **This parameter is experimental.**
 
 - `context`: Number of lines of context to show in the diff. The default is `3`.
 
