@@ -20,13 +20,13 @@ Gerrit remote:
 
 ```shell
 # Option 1: Start JJ in an existing Git repo with Gerrit remotes
-$ jj git init
+jj git init
 
 # Option 2: Add a Gerrit remote to a JJ repo
-$ jj git remote add gerrit https://review.gerrithub.io/yourname/yourproject
+jj git remote add gerrit https://review.gerrithub.io/yourname/yourproject
 
 # Option 3: Clone the repo via jj
-$ jj git clone https://review.gerrithub.io/your/project
+jj git clone https://review.gerrithub.io/your/project
 ```
 
 If you used option 2, you can configure default values in your repository config
@@ -57,10 +57,10 @@ the bottom of the commit description in JJ.
 
 ```shell
 # Uploads `@` if it has a description, otherwise uploads `@-`.
-$ jj gerrit upload
+jj gerrit upload
 
 # Or explicitly specify a revision to upload.
-$ jj gerrit upload -r @-
+jj gerrit upload -r @-
 ```
 
 ## Selecting revisions (revsets)
@@ -79,7 +79,7 @@ Use `--dry-run` to see which commits would be modified and pushed, and where,
 without changing anything or contacting the remote.
 
 ```shell
-$ jj gerrit upload -r '@-' --remote-branch main --dry-run
+jj gerrit upload -r '@-' --remote-branch main --dry-run
 ```
 
 ## Target branch and remote selection
@@ -115,9 +115,9 @@ Examples:
 
 ```shell
 # Edit an earlier commit in the stack
-$ jj edit xyz  # position on the stack to edit
+jj edit xyz  # position on the stack to edit
 # Apply needed edits, then upload the updates
-$ jj gerrit upload -r xyz
+jj gerrit upload -r xyz
 ```
 
 ## `Change-Id` management

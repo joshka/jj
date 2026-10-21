@@ -919,13 +919,13 @@ Examples:
 
 ```shell
 # Pipe output through `less -FRXK` (default on non-Windows platforms)
-$ jj config set --user ui.pager "less -FRXK"
+jj config set --user ui.pager "less -FRXK"
 
 # Use the built-in pager (default on Windows)
-$ jj config set --user ui.pager :builtin
+jj config set --user ui.pager :builtin
 
 # Use `$PAGER` environment variable if set (on non-Windows platforms)
-$ jj config set --user ui.pager '["sh", "-c", "exec ${PAGER:-less -FRXK}"]'
+jj config set --user ui.pager '["sh", "-c", "exec ${PAGER:-less -FRXK}"]'
 ```
 
 Additionally, paging behavior can be toggled via `ui.paginate` like so:
@@ -1631,7 +1631,7 @@ patterns = ["glob:'**/*.rs'"]
 Then to use the tool in a specific repository, set the `enabled` config:
 
 ```shell
-$ jj config set --repo fix.tools.rustfmt.enabled true
+jj config set --repo fix.tools.rustfmt.enabled true
 ```
 
 ## `run`: Running commands across revisions {: #run }

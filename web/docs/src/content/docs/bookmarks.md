@@ -93,16 +93,16 @@ untrack it or it is deleted on the remote.
 Example:
 
 ```sh
-$ # List all available bookmarks, as we want our colleague's bookmark.
-$ jj bookmark list --all
-$ # Find the bookmark.
-$ # [...]
-$ # Actually track the bookmark.
-$ jj bookmark track <bookmark name> --remote=<remote name> # Example: jj bookmark track my-feature --remote=origin
-$ # From this point on, <bookmark name> will be imported when fetching from <remote name>.
-$ jj git fetch --remote <remote name>
-$ # A local bookmark <bookmark name> should have been created or updated while fetching.
-$ jj new <bookmark name> # Do some local testing, etc.
+# List all available bookmarks, as we want our colleague's bookmark.
+jj bookmark list --all
+# Find the bookmark.
+# [...]
+# Actually track the bookmark.
+jj bookmark track <bookmark name> --remote=<remote name> # Example: jj bookmark track my-feature --remote=origin
+# From this point on, <bookmark name> will be imported when fetching from <remote name>.
+jj git fetch --remote <remote name>
+# A local bookmark <bookmark name> should have been created or updated while fetching.
+jj new <bookmark name> # Do some local testing, etc.
 ```
 
 ### Untracking a bookmark
@@ -114,15 +114,15 @@ the position of the remote bookmark.
 Example:
 
 ```sh
-$ # List all local and remote bookmarks.
-$ jj bookmark list --all
-$ # Find the bookmark we no longer want to track.
-$ # [...]
+# List all local and remote bookmarks.
+jj bookmark list --all
+# Find the bookmark we no longer want to track.
+# [...]
 # # Actually untrack it.
-$ jj bookmark untrack <bookmark name> --remote=<remote name> # Example: jj bookmark untrack stuff --remote=origin
-$ # From this point on, this remote bookmark won't be imported anymore.
-$ # The local bookmark (e.g. stuff) is unaffected. It may or may not still
-$ # be tracking bookmarks on other remotes (e.g. stuff@upstream).
+jj bookmark untrack <bookmark name> --remote=<remote name> # Example: jj bookmark untrack stuff --remote=origin
+# From this point on, this remote bookmark won't be imported anymore.
+# The local bookmark (e.g. stuff) is unaffected. It may or may not still
+# be tracking bookmarks on other remotes (e.g. stuff@upstream).
 ```
 
 ### Listing tracked bookmarks

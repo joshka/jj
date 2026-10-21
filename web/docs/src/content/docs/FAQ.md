@@ -455,13 +455,13 @@ Working on feature B
 #### Step 3: Move any bookmarks to the original revision
 
 ```shell
-$ jj bookmark move --from 31a347e0 --to b8004ea8
+jj bookmark move --from 31a347e0 --to b8004ea8
 ```
 
 #### Step 4: Abandon the unwanted revision
 
 ```shell
-$ jj abandon 31a347e0
+jj abandon 31a347e0
 ```
 
 Now, we have achieved the exact state we desired:

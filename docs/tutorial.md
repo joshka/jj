@@ -584,8 +584,8 @@ If you already have a local Git checkout, you can start using Jujutsu in that
 directory instead of cloning:
 
 ```shell
-$ cd path/to/my-git-repo
-$ jj git init
+cd path/to/my-git-repo
+jj git init
 ```
 
 This creates a [colocated

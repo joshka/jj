@@ -89,8 +89,8 @@ To create a Jujutsu repo *in the Git repository itself* (a repo with a
 directory and run:
 
 ```shell
-$ cd path/to/git-repo
-$ jj git init
+cd path/to/git-repo
+jj git init
 ```
 
 Jujutsu reuses the existing Git repository as its backing store, so both `.jj/`
@@ -106,8 +106,8 @@ its own working-copy files (similar to a
 that is not already a Git checkout and point it at the Git repo:
 
 ```shell
-$ cd path/to/new/jj-repo
-$ jj git init --git-repo=path/to/git-repo
+cd path/to/new/jj-repo
+jj git init --git-repo=path/to/git-repo
 ```
 
 (`path/to/git-repo` may be absolute, or relative to the current directory.) See

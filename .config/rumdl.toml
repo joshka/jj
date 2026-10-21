@@ -29,9 +29,6 @@ disable = [
     # 272 findings. Line length should not be excessive.
     # https://github.com/rvben/rumdl/blob/main/docs/md013.md
     "line-length",
-    # 203 findings. Commands in code blocks should show output.
-    # https://github.com/rvben/rumdl/blob/main/docs/md014.md
-    "commands-show-output",
     # 4 findings. Blank line inside blockquote.
     # https://github.com/rvben/rumdl/blob/main/docs/md028.md
     "no-blanks-blockquote",
@@ -103,9 +100,6 @@ disable = [
 # stern = false
 # strict = false
 # tables = false
-
-# [commands-show-output]
-# show-output = true
 
 # [no-blanks-blockquote]
 # fix = false

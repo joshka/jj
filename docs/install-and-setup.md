@@ -224,8 +224,8 @@ You will need git 2.42.0 or above. On older systems (e.g. Debian 11, Ubuntu
 You may want to configure your name and email so commits are made in your name.
 
 ```shell
-$ jj config set --user user.name "Martin von Zweigbergk"
-$ jj config set --user user.email "martinvonz@google.com"
+jj config set --user user.name "Martin von Zweigbergk"
+jj config set --user user.email "martinvonz@google.com"
 ```
 
 ## Command-line completion
