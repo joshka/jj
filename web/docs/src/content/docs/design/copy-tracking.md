@@ -634,7 +634,7 @@ note and leaves it at that.
 The model and algorithm described in this document would result in a conflict
 in the copy ID at both paths after propagating the renames.
 
-#### Example: @jonathantanmy's test case:
+#### Example: @jonathantanmy's test case
 
 TODO: fill this out
 

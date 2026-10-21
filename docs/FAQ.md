@@ -172,7 +172,7 @@ You can also use `jj evolog -r` on revisions that were previously the
 working-copy revisions (or on any other revisions). Use `jj evolog -p` as an
 easy way to see the evolution of the commit's contents.
 
-### Can I prevent Jujutsu from recording my unfinished work? I'm not ready to commit it.
+### Can I prevent Jujutsu from recording my unfinished work? I'm not ready to commit it
 
 Jujutsu automatically records new files in the current working-copy commit and
 doesn't provide a way to prevent that.

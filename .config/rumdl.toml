@@ -32,9 +32,6 @@ disable = [
     # 203 findings. Commands in code blocks should show output.
     # https://github.com/rvben/rumdl/blob/main/docs/md014.md
     "commands-show-output",
-    # 7 findings. Trailing punctuation in heading.
-    # https://github.com/rvben/rumdl/blob/main/docs/md026.md
-    "no-trailing-punctuation",
     # 4 findings. Blank line inside blockquote.
     # https://github.com/rvben/rumdl/blob/main/docs/md028.md
     "no-blanks-blockquote",
@@ -112,9 +109,6 @@ disable = [
 
 # [commands-show-output]
 # show-output = true
-
-# [no-trailing-punctuation]
-# punctuation = ".,;:!"
 
 # [no-blanks-blockquote]
 # fix = false

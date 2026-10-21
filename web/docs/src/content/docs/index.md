@@ -6,7 +6,7 @@ title: "Jujutsu—a version control system"
 <img title="jj logo" src="images/jj-logo.svg" width="320" height="320">
 </figure>
 
-## Welcome to `jj`'s documentation website!
+## Welcome to `jj`'s documentation website
 
 <!-- This only applies to the website, not to the GitHub interface -->
 The complete list of the available documentation pages is located in

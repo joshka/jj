@@ -171,7 +171,7 @@ semantics. If a config is not approved / rejected, we have 3 options:
 
 Consider the following examples
 
-###### User is working on config file.
+###### User is working on config file
 
 1. User runs `vim .config/jj/config.toml`
 2. User tries to test out the config, but needs to manually approve their own
