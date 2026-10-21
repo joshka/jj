@@ -59,9 +59,6 @@ disable = [
     # 18 findings. No bare URLs - wrap URLs in angle brackets.
     # https://github.com/rvben/rumdl/blob/main/docs/md034.md
     "no-bare-urls",
-    # 6 findings. Spaces inside code span elements.
-    # https://github.com/rvben/rumdl/blob/main/docs/md038.md
-    "no-space-in-code",
     # 53 findings. Code blocks should have a language specified.
     # https://github.com/rvben/rumdl/blob/main/docs/md040.md
     "fenced-code-language",

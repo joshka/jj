@@ -39,7 +39,7 @@ test and document.
 The commit message should describe the changes in the commit;
 the PR description can even be empty, but feel free to include a personal
 message. We don't use [Conventional Commits] and instead start the commit
-message with `<topic>: ` rather than like `chore: `, `feat: ` and `fix: `.
+message with `<topic>:` rather than like `chore: `, `feat:` and `fix: `.
 This means if you modified a command in the CLI, use its name as the topic, e.g.
 `next/prev: <your-modification>` or `conflicts: <your-modification>`. We don't
 currently have a specific guidelines on what to write in the topic field, but
