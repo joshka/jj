@@ -3,8 +3,4 @@
  --- This file only exposes it to the website.
  -->
 
-{%
-  include-markdown "../CHANGELOG.md"
-  rewrite-relative-urls=true
-  comments=true
-%}
+{% include-markdown "../CHANGELOG.md" rewrite-relative-urls=true comments=true %}

@@ -27,3 +27,9 @@ allowed-elements = ["a", "br", "code", "details", "div", "figure", "img", "p", "
 # MkDocs admonition bodies count as code blocks.
 code-blocks = false
 headings = false
+line-length = 100
+# Rewrap prose on fix, joining short lines as well as splitting long ones.
+reflow = true
+reflow-mode = "normalize"
+# Keep tables aligned even when their contents require wider lines.
+tables = false

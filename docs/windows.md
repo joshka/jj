@@ -1,16 +1,14 @@
 # Working on Windows
 
-Jujutsu works the same on all platforms, but there are some caveats that Windows
-users should be aware of.
+Jujutsu works the same on all platforms, but there are some caveats that Windows users should be
+aware of.
 
 ## Line endings conversion
 
-Jujutsu has a setting,
-[`working-copy.eol-conversion`](config.md#eol-conversion-setting), similar to
-Git's [`core.autocrlf`][git-autocrlf][^1], but does not currently honor
-`.gitattributes` and the `core.autocrlf` Git config, so it is recommended to
-keep the `working-copy.eol-conversion` setting and the `core.autocrlf` Git
-config in sync[^1].
+Jujutsu has a setting, [`working-copy.eol-conversion`](config.md#eol-conversion-setting), similar to
+Git's [`core.autocrlf`][git-autocrlf][^1], but does not currently honor `.gitattributes` and the
+`core.autocrlf` Git config, so it is recommended to keep the `working-copy.eol-conversion` setting
+and the `core.autocrlf` Git config in sync[^1].
 
 !!! note
 
@@ -19,15 +17,14 @@ config in sync[^1].
     the `working-copy.eol-conversion` setting correctly and run `jj abandon` to
     fix it.
 
-Regardless of this setting, the line endings conversion is skipped on binary
-files based on a [heuristic](config.md#binary-file-detection). This behavior is
-subject to change when we support the `text` Git attribute.
+Regardless of this setting, the line endings conversion is skipped on binary files based on a
+[heuristic](config.md#binary-file-detection). This behavior is subject to change when we support the
+`text` Git attribute.
 
-Jujutsu may incorrectly determine whether a file is a binary file and apply line
-endings conversion incorrectly, but currently, Jujutsu doesn't support per-file
-configuration of line endings conversion. If this occurs, you can disable line
-endings conversion by setting the `working-copy.eol-conversion` config to `none`
-or just removing the config altogether.
+Jujutsu may incorrectly determine whether a file is a binary file and apply line endings conversion
+incorrectly, but currently, Jujutsu doesn't support per-file configuration of line endings
+conversion. If this occurs, you can disable line endings conversion by setting the
+`working-copy.eol-conversion` config to `none` or just removing the config altogether.
 
 ```powershell
 PS> git config core.autocrlf input
@@ -38,10 +35,9 @@ PS> jj config set --repo working-copy.eol-conversion none
 PS> jj abandon
 ```
 
-This means that line endings will be checked out exactly as they are committed
-and committed exactly as authored, ensuring Git will check out files with LF
-line endings without converting them to CRLF. You'll want to make sure any
-tooling you use, especially IDEs, preserve LF line endings.
+This means that line endings will be checked out exactly as they are committed and committed exactly
+as authored, ensuring Git will check out files with LF line endings without converting them to CRLF.
+You'll want to make sure any tooling you use, especially IDEs, preserve LF line endings.
 
 [^1]: This poses the question of whether we should support reading the
       `core.autocrlf` setting in colocated workspaces. See details at the
@@ -52,12 +48,12 @@ tooling you use, especially IDEs, preserve LF line endings.
 
 ## Pagination
 
-On Windows, `jj` will use its integrated pager called `streampager` by default,
-unless the config `ui.pager` is explicitly set. See the [pager section of the
-config docs](config.md#pager) for more details.
+On Windows, `jj` will use its integrated pager called `streampager` by default, unless the config
+`ui.pager` is explicitly set. See the [pager section of the config docs](config.md#pager) for more
+details.
 
-If the built-in pager doesn't meet your needs and you have Git installed, you
-can switch to using Git's pager as follows:
+If the built-in pager doesn't meet your needs and you have Git installed, you can switch to using
+Git's pager as follows:
 
 ```powershell
 PS> jj config set --user ui.pager '["C:\\Program Files\\Git\\usr\\bin\\less.exe", "-FRX"]'
@@ -66,16 +62,15 @@ PS> jj config set --user ui.paginate auto
 
 ## Typing `@` in PowerShell
 
-PowerShell uses `@` as part the [array sub-expression operator][array-op], so it
-often needs to be escaped or quoted in commands:
+PowerShell uses `@` as part the [array sub-expression operator][array-op], so it often needs to be
+escaped or quoted in commands:
 
 ```powershell
 PS> jj log -r `@
 PS> jj log -r '@'
 ```
 
-One solution is to create a revset alias. For example, to make `HEAD` an alias
-for `@`:
+One solution is to create a revset alias. For example, to make `HEAD` an alias for `@`:
 
 ```powershell
 PS> jj config set --user revset-aliases.HEAD '@'
@@ -84,17 +79,15 @@ PS> jj log -r HEAD
 
 ## WSL sets the execute bit on all files
 
-When viewing a Windows drive from WSL (via _/mnt/c_ or a similar path), Windows
-exposes all files with the execute bit set. Since Jujutsu automatically records
-changes to the working copy, this sets the execute bit on all files committed in
-your repository.
+When viewing a Windows drive from WSL (via _/mnt/c_ or a similar path), Windows exposes all files
+with the execute bit set. Since Jujutsu automatically records changes to the working copy, this sets
+the execute bit on all files committed in your repository.
 
-If you only need to access the repository in WSL, the best solution is to clone
-the repository in the Linux file system (for example, in
-`~/my-repo`).
+If you only need to access the repository in WSL, the best solution is to clone the repository in
+the Linux file system (for example, in `~/my-repo`).
 
-If you need to use the repository in both WSL and Windows, one solution is to
-create a workspace in the Linux file system:
+If you need to use the repository in both WSL and Windows, one solution is to create a workspace in
+the Linux file system:
 
 ```powershell
 PS> jj workspace add --name wsl ~/my-repo
@@ -106,10 +99,9 @@ Then only use the `~/my-repo` workspace from Linux.
 
 ## Symbolic link support
 
-`jj` supports symlinks on Windows only when they are enabled by the operating
-system. This requires Windows 10 version 14972 or higher, as well as Developer
-Mode. If those conditions are not satisfied, `jj` will materialize symlinks as
-ordinary files.
+`jj` supports symlinks on Windows only when they are enabled by the operating system. This requires
+Windows 10 version 14972 or higher, as well as Developer Mode. If those conditions are not
+satisfied, `jj` will materialize symlinks as ordinary files.
 
-For colocated workspaces, Git support must also be enabled using the
-`git config` option `core.symlinks=true`.
+For colocated workspaces, Git support must also be enabled using the `git config` option
+`core.symlinks=true`.

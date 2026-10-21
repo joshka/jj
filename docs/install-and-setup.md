@@ -4,21 +4,21 @@
 
 ### Download pre-built binaries for a release
 
-There are [pre-built binaries] of the last released version of `jj` for
-Windows, Mac, or Linux (the "musl" version should work on all distributions).
+There are [pre-built binaries] of the last released version of `jj` for Windows, Mac, or Linux (the
+"musl" version should work on all distributions).
 
 #### Cargo Binstall
 
-If you use [`cargo-binstall`][cargo-binstall], you
-can install binaries of the latest `jj` release from GitHub as follows:
+If you use [`cargo-binstall`][cargo-binstall], you can install binaries of the latest `jj` release
+from GitHub as follows:
 
 ```shell
 # Will put the jj binary for the latest release in ~/.cargo/bin by default
 cargo binstall --strategies crate-meta-data jj-cli
 ```
 
-Without the `--strategies` option, you may get equivalent binaries that should
-be compiled from the same source code.
+Without the `--strategies` option, you may get equivalent binaries that should be compiled from the
+same source code.
 
 !!! note
 
@@ -29,8 +29,8 @@ be compiled from the same source code.
 
 #### From Source
 
-First make sure that you have a Rust version >= 1.97.1 and that the
-`build-essential` package is installed by running something like this:
+First make sure that you have a Rust version >= 1.97.1 and that the `build-essential` package is
+installed by running something like this:
 
 ```shell
 sudo apt-get install build-essential
@@ -59,8 +59,7 @@ You can install the `jujutsu` package from the
 pacman -S jujutsu
 ```
 
-Or install from the
-[AUR repository](https://aur.archlinux.org/packages/jujutsu-git) with an
+Or install from the [AUR repository](https://aur.archlinux.org/packages/jujutsu-git) with an
 [AUR Helper](https://wiki.archlinux.org/title/AUR_helpers):
 
 ```shell
@@ -72,15 +71,15 @@ yay -S jujutsu-git
 If you're on NixOS you can install a **released** version of `jj` using the
 [nixpkgs `jujutsu` package](https://search.nixos.org/packages?channel=unstable&show=jujutsu).
 
-To install a **prerelease** version, you can use the flake for this repository.
-For example, if you want to run `jj` loaded from the flake, use:
+To install a **prerelease** version, you can use the flake for this repository. For example, if you
+want to run `jj` loaded from the flake, use:
 
 ```shell
 nix run 'github:jj-vcs/jj'
 ```
 
-You can also add this flake url to your system input flakes. Or you can
-install the flake to your user profile:
+You can also add this flake url to your system input flakes. Or you can install the flake to your
+user profile:
 
 ```shell
 # Installs the prerelease version from the main branch
@@ -98,13 +97,11 @@ brew install jj
 
 #### Gentoo Linux
 
-`dev-vcs/jj` is available in the
-[GURU](https://wiki.gentoo.org/wiki/Project:GURU) repository. Details on how to
-enable the GURU repository are in the [GURU guide for end
-users](https://wiki.gentoo.org/wiki/Project:GURU/Information_for_End_Users).
+`dev-vcs/jj` is available in the [GURU](https://wiki.gentoo.org/wiki/Project:GURU) repository.
+Details on how to enable the GURU repository are in the
+[GURU guide for end users](https://wiki.gentoo.org/wiki/Project:GURU/Information_for_End_Users).
 
-Once you have synced the GURU repository, you can install `dev-vcs/jj` via
-Portage:
+Once you have synced the GURU repository, you can install `dev-vcs/jj` via Portage:
 
 ```shell
 emerge -av dev-vcs/jj
@@ -122,8 +119,8 @@ zypper install jujutsu
 
 #### Fedora Linux
 
-`jujutsu` has an unofficial [COPR
-repo](https://copr.fedorainfracloud.org/coprs/aldantanneo/jj-vcs) for Fedora:
+`jujutsu` has an unofficial [COPR repo](https://copr.fedorainfracloud.org/coprs/aldantanneo/jj-vcs)
+for Fedora:
 
 ```shell
 sudo dnf copr enable aldantanneo/jj-vcs
@@ -134,8 +131,7 @@ sudo dnf install jj-cli
 
 #### From Source
 
-First make sure that you have a Rust version >= 1.97.1. You may also need to
-run:
+First make sure that you have a Rust version >= 1.97.1. You may also need to run:
 
 ```shell
 xcode-select --install
@@ -167,8 +163,7 @@ brew install jj
 
 #### MacPorts
 
-You can also install `jj` via [the MacPorts `jujutsu`
-port][macports]:
+You can also install `jj` via [the MacPorts `jujutsu` port][macports]:
 
 ```shell
 # Installs the latest release
@@ -207,8 +202,7 @@ scoop install main/jj
 
 ### FreeBSD
 
-`devel/jujutsu` is [available](https://www.freshports.org/devel/jujutsu) in the
-ports.
+`devel/jujutsu` is [available](https://www.freshports.org/devel/jujutsu) in the ports.
 
 Install pre-built pkg:
 
@@ -226,8 +220,8 @@ cd /usr/ports/devel/jujutsu/ && make install clean
 
 ## Runtime Requirements
 
-You will need git 2.42.0 or above. On older systems (e.g. Debian 11, Ubuntu
-22.04) you will need to [upgrade Git](https://git-scm.com/install/).
+You will need git 2.42.0 or above. On older systems (e.g. Debian 11, Ubuntu 22.04) you will need to
+[upgrade Git](https://git-scm.com/install/).
 
 ## Initial configuration
 
@@ -244,22 +238,18 @@ Jujutsu provides 2 different command-line completion scripts.
 
 ### Standard completions
 
-The standard completion script provides completions for `jj` subcommands and
-options.
+The standard completion script provides completions for `jj` subcommands and options.
 
 ### Dynamic completions
 
-The dynamic completion script provides completions for `jj` subcommands and
-options, as well as additional completions, including bookmarks,
-aliases, revisions, operations and files. Dynamic completions can be context
-aware, for example they respect the global flags `--repository` and
-`--at-operation` as well as some command-specific ones like `--revision`,
-`--from`, and `--to`.
+The dynamic completion script provides completions for `jj` subcommands and options, as well as
+additional completions, including bookmarks, aliases, revisions, operations and files. Dynamic
+completions can be context aware, for example they respect the global flags `--repository` and
+`--at-operation` as well as some command-specific ones like `--revision`, `--from`, and `--to`.
 
 Dynamic completions are not the default/only option since the underlying engine
-[is still labeled unstable][clap]. We expect to transition to them as the
-default once the engine is stabilized. Please let us know if you encounter any
-issues with dynamic completions.
+[is still labeled unstable][clap]. We expect to transition to them as the default once the engine is
+stabilized. Please let us know if you encounter any issues with dynamic completions.
 
 !!! info "Which completion script should I use?"
 
@@ -346,8 +336,8 @@ issues with dynamic completions.
     Remove-Item Env:\COMPLETE
     ```
 
-Insert the above into your `$PROFILE` file
-(usually `$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`).
+Insert the above into your `$PROFILE` file (usually
+`$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`).
 
 !!! note
 
