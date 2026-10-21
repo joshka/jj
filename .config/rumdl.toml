@@ -77,9 +77,6 @@ disable = [
     # 44 findings. Code blocks should use a consistent style.
     # https://github.com/rvben/rumdl/blob/main/docs/md046.md
     "code-block-style",
-    # 1 finding. Files should end with a single newline character.
-    # https://github.com/rvben/rumdl/blob/main/docs/md047.md
-    "single-trailing-newline",
     # 7 findings. Emphasis style should be consistent.
     # https://github.com/rvben/rumdl/blob/main/docs/md049.md
     "emphasis-style",
