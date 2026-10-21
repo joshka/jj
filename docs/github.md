@@ -310,14 +310,19 @@ full list and behavior.
 Examples with GitLab push options (see GitLab docs for details):
 
 - Skip CI for a push:
+
   ```shell
   jj git push -o ci.skip
   ```
+
 - Pass CI variables to the created pipeline:
+
   ```shell
   jj git push -o 'ci.variable=MAX_RETRIES=10' -o 'ci.variable=MAX_TIME=600'
   ```
+
 - Create a merge request with metadata on push:
+
   ```shell
   jj git push \
     -o merge_request.create \
@@ -326,20 +331,26 @@ Examples with GitLab push options (see GitLab docs for details):
     -o 'merge_request.description=Implements X with tests' \
     -o merge_request.draft
   ```
+
 - Auto-merge when pipeline succeeds and remove the source branch:
+
   ```shell
   jj git push \
     -o merge_request.merge_when_pipeline_succeeds \
     -o merge_request.remove_source_branch
   ```
+
 - Add and remove labels:
+
   ```shell
   jj git push \
     -o 'merge_request.label=label1' \
     -o 'merge_request.label=label2' \
     -o 'merge_request.unlabel=label3'
   ```
+
 - Assign and unassign users:
+
   ```shell
   jj git push \
     -o 'merge_request.assign=user1' \

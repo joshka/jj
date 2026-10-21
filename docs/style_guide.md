@@ -261,10 +261,12 @@ Specifically for `jj` command arguments / options:
     command line simpler and more consistent.
     - Note that the name of the struct field can be different from the name of
       the argument according to `clap`:
+
       ```rust
       #[arg(long = "flag")]
       my_values: MyType,
       ```
+
       This section is mostly discussing the user-facing argument / option names;
       how you name variables is up to you.
 

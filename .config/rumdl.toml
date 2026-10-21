@@ -47,9 +47,6 @@ disable = [
     # 144 findings. Spaces after list markers should be consistent.
     # https://github.com/rvben/rumdl/blob/main/docs/md030.md
     "list-marker-space",
-    # 19 findings. Fenced code blocks should be surrounded by blank lines.
-    # https://github.com/rvben/rumdl/blob/main/docs/md031.md
-    "blanks-around-fences",
     # 40 findings. Lists should be surrounded by blank lines.
     # https://github.com/rvben/rumdl/blob/main/docs/md032.md
     "blanks-around-lists",
@@ -140,9 +137,6 @@ disable = [
 # ol-single = 1
 # ul-multi = 1
 # ul-single = 1
-
-# [blanks-around-fences]
-# list-items = true
 
 # [blanks-around-lists]
 # allow-lazy-continuation = true

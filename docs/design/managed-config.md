@@ -61,6 +61,7 @@ problem".
 #### Trust levels
 
 We will add the following fields to metadata:
+
 ```text
 enum TrustLevel {
     // There's no "optional" in protos. It just returns the zero value.
@@ -321,6 +322,7 @@ command = ["rustfmt"]
 ```
 
 `.rustfmt.toml`:
+
 ```text
 reorder_imports = true
 ```
@@ -339,6 +341,7 @@ command = ["rustfmt.py"]
 ```
 
 `rustfmt.py`:
+
 ```text
 os.execv(["rustfmt", "--reorder-imports"])
 ```
@@ -375,6 +378,7 @@ config option.
 Alternatively, a more general approach could be to create some kind of include
 directive in `config.toml` files, like so (this has already been discussed and
 rejected before, so it may not be viable).
+
 ```text
 includes = [
     {
