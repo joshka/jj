@@ -489,7 +489,8 @@ defined.
   the first matching part of the string for the given pattern.
 
   An empty string is returned if there is no match.
-* `.replace(pattern: StringPattern, replacement: Stringify, [limit: Integer]) -> String`:
+* `.replace(pattern: StringPattern, replacement: Stringify,
+  [limit: Integer]) -> String`:
   Replace occurrences of the given `pattern` with the `replacement` string.
 
   By default, all occurrences are replaced. If `limit` is specified, at most

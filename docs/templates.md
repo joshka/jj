@@ -103,7 +103,8 @@ The following functions are defined.
   Note: This function is intended for escape sequences and as such, its output
   is expected to be invisible / of no display width. Outputting content with
   nonzero display width may break wrapping, indentation etc.
-* `replace(pattern: StringPattern, content: Template, replacement: |RegexCaptures| -> Template) -> Template`:
+* `replace(pattern: StringPattern, content: Template,
+  replacement: |RegexCaptures| -> Template) -> Template`:
   Replace every match of `pattern` in `content` by formatting the `replacement`
   lambda for each match.
 
