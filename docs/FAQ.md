@@ -584,6 +584,7 @@ commits associated with it.
 ### I'm experiencing `jj` command issues in a Vite/Vitest project, how do I fix this?
 
 When using Vite or Vitest in a Jujutsu repository, you may experience:
+
 - Very slow vitest startup times
 - Timeout errors in `jj` terminal commands
 - Errors with 3rd party visual tools like `jjk` or `visual-jj`

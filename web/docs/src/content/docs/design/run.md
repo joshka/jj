@@ -17,6 +17,7 @@ across multiple revisions. For more details, read the
 The goal of this Design Document is to specify the correct behavior of `jj run`.
 The points we decide on here I (Philip Metzger) will try to implement. There
 exists some prior work in other DVCS:
+
 * `git test`: part of [git-branchless]. Similar to this proposal for `jj run`.
 * `hg run`: Google's internal Mercurial extension. Similar to this proposal for
 `jj run`.
@@ -202,6 +203,7 @@ undesirable state, e.g partially formatted, may confuse users.
 
 It will be useful to constrain the execution to prevent resource exhaustion.
 Relevant resources could include:
+
 - CPU and memory available on the machine running the commands. `jj run` can
 provide some simple mitigations like limiting parallelism to "number of CPUs"
 by default, and limiting parallelism by dividing "available memory" by some
@@ -216,6 +218,7 @@ communicate that information to jj.
 
 The base command of any jj command should be usable. By default `jj run` works
 on the `@` the current working copy.
+
 * --command, explicit name of the first argument
 * -x, for git compatibility (may alias another command)
 * -j, --jobs, the amount of parallelism to use

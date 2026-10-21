@@ -120,6 +120,7 @@ precisely the same technique for workspace configs.
 ### Storing config out-of-repo
 
 We start by creating the concept of a "config ID".
+
 * A config ID is a randomly generated ID used to identify a configuration.
 * It should be stored in the repo
 * It should uniquely identify a single repository / workspace
@@ -181,6 +182,7 @@ fn load_repo_config_path(repo: &Path) -> Result<PathBuf, ConfigLoadError> {
 #### Happy path
 
 Normally we will simply:
+
 1. Load the `config-id` file
 2. Check that `$HOME/.config/jj/repos/$CONFIG_ID` exists
 3. Validate that the path in `$HOME/.config/jj/repos/$CONFIG_ID/metadata.binpb`
@@ -223,6 +225,7 @@ config ID has not yet been generated, we will silently perform the following
         not to edit the file, and set it to readonly.
 
 After the migration period is over, we will:
+
 * Stop the auto-migration
 * If the config file was previously created by auto-migration, delete it
   * `zip` follows symlinks by default, so this would reveal the content of your
@@ -236,6 +239,7 @@ rebooted into windows on the same computer, and attempted to access that repo.
 
 In this event, the user probably expects their config to be attached to the
 repository, and they expect it to still work on linux, so we will:
+
 * Create a new `$HOME/.config/jj/repo/$CONFIG_ID` directory for the same config
   ID (to ensure that the config still works on windows)
 * Print a warning that if there was any per-repo configuration, it is no longer
@@ -251,6 +255,7 @@ repos should not point to the same config.
 To achieve this, we point the repo at the config, and the config back at the
 repo. If the path stored in the config doesn't match, we know that something has
 happened. To decide precisely what happened:
+
 * If the path stored in the config no longer exists, we assume it's a move
   * We update `metadata.path` to point to the new path
 * Otherwise, we attempt to write to a temporary file in `$NEW_REPO/.jj/repo`.
@@ -261,6 +266,7 @@ happened. To decide precisely what happened:
 
 Note that with a copy, we only actually copy the config when the user runs a
 `jj` command. This means that you can end up in a situation where you:
+
 1. `cp -r old_repo new_repo`
 2. In `old_repo`, `jj config set --repo`
 3. Run a jj command in the copy. This copies the config, including the config
@@ -274,6 +280,7 @@ unavoidable.
 We could, in the future, add a `gc` command to garbage-collect configs to
 deleted repo configs. However, there are some things to consider before doing
 so:
+
 * Each config would likely be very small, so cleaning it up may have limited
   benefit.
 * It is impossible to distinguish "deleted" from "moved".

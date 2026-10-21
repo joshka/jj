@@ -155,6 +155,7 @@ is unclear (and much harder to implement than the other options).
 
 The biggest problem with this is that there is not a clear "correct" set of
 semantics. If a config is not approved / rejected, we have 3 options:
+
 * Fail the command. This seems like a bad idea since users have an assumption
   that most jj commands will not fail.
 * Use no config. This can potentially have quite bad effects on the repo.
@@ -185,6 +186,7 @@ Consider the following examples
    approved, and thus the next jj command will have the config disabled.
 
 Depending on what has changed, a variety of things could happen:
+
 * A user in a repo that defines `trunk()` could run
   `jj rebase -b <revset> -o trunk()`
   * This would result in it going to the wrong trunk
@@ -205,11 +207,13 @@ If we use best-effort instead, we are likely to run into a different set of
 issues.
 
 The first is that it's no longer clear which config is being used. If I:
+
 1. Have two workspaces A and B with the same state, both approved.
 2. Sync workspace B and approve the config
 3. Check out an old version of workspace A
 
 Now which config is used?
+
 * The most recently approved globally?
 * The most recently approved for this workspace?
 * Some algorithm which determines that the config for A was at a closer commit
@@ -227,6 +231,7 @@ security-conscious, working on a repo they don't trust, and working on a repo
 with managed config.
 
 Due to:
+
 * Significant implementation complexity
   * My prototype without this feature is only ~200 lines of code and ~100 lines
     of tests. This feature would likely double that for the most hacky simple
@@ -391,6 +396,7 @@ includes = [
 #### Read from filesystem or from repo objects?
 
 The tradeoffs are:
+
 * If we read it from the filesystem, then it will not be read if the path is
   not tracked, e.g. because you have done `jj sparse --clear --add lib` or
   because the file matches .gitignore and is not yet tracked.

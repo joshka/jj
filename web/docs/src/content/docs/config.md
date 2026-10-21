@@ -266,6 +266,7 @@ format_signed_off_by_trailer(self)
 ```
 
 Some ready-to-use trailer templates are available for frequently used trailers:
+
 * `format_signed_off_by_trailer(commit)` creates a "Signed-off-by" trailer
   using the committer info.
 * `format_gerrit_change_id_trailer(commit)` creates a "Change-Id" trailer
@@ -1103,6 +1104,7 @@ merge-editor = ["meld", "$left", "$base", "$right", "-o", "$output"]
 ```
 
 The following tools can be used out of the box, as long as they are installed:
+
 - "kdiff3"
 - "meld"
 - "mergiraf"
@@ -1213,6 +1215,7 @@ The file is only rewritten if the subprocess produces a successful exit code.
 
 Tools are defined in a table where the keys are arbitrary identifiers and
 the values have the following properties:
+
  - `command`: The arguments used to run the tool. The first argument is the
    path to an executable file. Arguments can contain these variables that will
    be replaced:

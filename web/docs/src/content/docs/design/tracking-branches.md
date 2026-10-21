@@ -12,6 +12,7 @@ with a number of branches. The `git.auto-local-bookmark` config can mitigate thi
 problem, but we'll get locally-deleted branches instead.
 
 The goal of this plan is to implement
+
 * proper support for tracking/non-tracking remote branches
 * logically consistent data model for importing/exporting Git refs
 
@@ -86,6 +87,7 @@ git_refs                                    # last imported/exported refs
 ```
 
 With the proposed data model, we can
+
 * naturally support remote branches which have no local counterparts
 * deduplicate `branches[name].remote_targets` and `git_refs["refs/remotes"]`
 
@@ -246,6 +248,7 @@ In particular, a merge of local and remote targets is
   * TODO: hide non-tracking branches by default? ...
 
 Note: desired behavior of `jj branch forget` is to
+
 * discard both local and remote branches (without actually removing branches
   at remotes)
 * not abandon commits which belongs to those branches (even if the branch is

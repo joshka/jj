@@ -398,6 +398,7 @@ format_signed_off_by_trailer(self)
 ```
 
 Some ready-to-use trailer templates are available for frequently used trailers:
+
 * `format_signed_off_by_trailer(commit)` creates a "Signed-off-by" trailer
   using the committer info.
 * `format_gerrit_change_id_trailer(commit)` creates a "Change-Id" trailer
@@ -1364,6 +1365,7 @@ The following built-in tools are always available:
 - `:ours` and `:theirs` pick side #1 or side #2 of the conflict respectively.
 
 The following tools can be used out of the box, as long as they are installed:
+
 - "kdiff3"
 - "meld"
 - "mergiraf"
