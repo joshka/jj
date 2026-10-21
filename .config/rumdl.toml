@@ -20,9 +20,6 @@ disable = [
     # 272 findings. Line length should not be excessive.
     # https://github.com/rvben/rumdl/blob/main/docs/md013.md
     "line-length",
-    # 37 findings. Inline HTML is not allowed.
-    # https://github.com/rvben/rumdl/blob/main/docs/md033.md
-    "no-inline-html",
     # 44 findings. Code blocks should use a consistent style.
     # https://github.com/rvben/rumdl/blob/main/docs/md046.md
     "code-block-style",
@@ -53,16 +50,10 @@ disable = [
 # strict = false
 # tables = false
 
-# [no-inline-html]
-# allowed-elements = []
-# allowed-inside = []
-# br-style = "trailing-spaces"
-# disallowed-elements = []
-# drop-attributes = ["target","rel","width","height","align","class","id","style"]
-# fix = false
-# fix-mode = "conservative"
-# strip-wrapper-elements = ["p"]
-
 # [code-block-style]
 # style = "consistent"
 
+[no-inline-html]
+# HTML the docs use on purpose: heading anchors, collapsible sections, images
+# and the README's centered title block.
+allowed-elements = ["a", "br", "code", "details", "div", "figure", "img", "p", "summary"]
