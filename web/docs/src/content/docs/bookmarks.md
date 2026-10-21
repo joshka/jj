@@ -196,8 +196,8 @@ makes several safety checks.
 3. If the remote bookmark already exists on the remote, it must be
    [tracked](#remotes-and-tracked-bookmarks).
 
-[^known-issue]: See "A general note on safety" in
-    <https://git-scm.com/docs/git-push#Documentation/git-push.txt---no-force-with-lease>
+[^known-issue]: See "A general note on safety" in the
+    [`git push` documentation](https://git-scm.com/docs/git-push#Documentation/git-push.txt---no-force-with-lease).
 
 ## Conflicts
 
