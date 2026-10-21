@@ -44,9 +44,6 @@ disable = [
     # 37 findings. Inline HTML is not allowed.
     # https://github.com/rvben/rumdl/blob/main/docs/md033.md
     "no-inline-html",
-    # 18 findings. No bare URLs - wrap URLs in angle brackets.
-    # https://github.com/rvben/rumdl/blob/main/docs/md034.md
-    "no-bare-urls",
     # 7 findings. First line in file should be a top level heading.
     # https://github.com/rvben/rumdl/blob/main/docs/md041.md
     "first-line-heading",

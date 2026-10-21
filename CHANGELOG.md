@@ -1409,7 +1409,7 @@ Thanks to the people who made this release happen!
   [#6787](https://github.com/jj-vcs/jj/issues/6787)
 
 * Fixed problem of loading large Git packfiles.
-  https://github.com/GitoxideLabs/gitoxide/issues/2265
+  <https://github.com/GitoxideLabs/gitoxide/issues/2265>
 
 * The builtin pager won't get stuck when stdin is redirected.
 
@@ -1420,7 +1420,7 @@ Thanks to the people who made this release happen!
   [#8348](https://github.com/jj-vcs/jj/issues/8348)
 
 * Fixed a bug where jj would fail to read git delta objects from pack files.
-  https://github.com/GitoxideLabs/gitoxide/issues/2344
+  <https://github.com/GitoxideLabs/gitoxide/issues/2344>
 
 ### Contributors
 
@@ -2575,7 +2575,7 @@ Thanks to the people who made this release happen!
 ### Fixed bugs
 
 * Fixed problem that old commits could be re-imported from Git.
-  https://github.com/GitoxideLabs/gitoxide/issues/1928
+  <https://github.com/GitoxideLabs/gitoxide/issues/1928>
 
 ## [0.28.1] - 2025-04-04
 
@@ -5382,7 +5382,7 @@ Thanks to the people who made this release happen!
 * `jj duplicate` followed by `jj rebase` of a tree containing both the original
   and duplicate commit no longer crashes. The fix should also resolve any
   remaining
-  instances of https://github.com/jj-vcs/jj/issues/27.
+  instances of <https://github.com/jj-vcs/jj/issues/27>.
 
 * Fix the output of `jj debug completion --help` by reversing fish and zsh text.
 

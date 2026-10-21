@@ -165,7 +165,7 @@ important points are:
   says "Returns blah blah." would be fine.
 
 [rust-lang/rfcs-1574]:
-  https://github.com/rust-lang/rfcs/blob/master/text/1574-more-api-documentation-conventions.md
+  <https://github.com/rust-lang/rfcs/blob/master/text/1574-more-api-documentation-conventions.md>
 
 ### Subcommand comments
 

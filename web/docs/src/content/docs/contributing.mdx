@@ -660,7 +660,7 @@ JJ_TRACE_INCLUDE_ARGS=1 JJ_TRACE=/tmp/trace.json jj log -r 'ancestors(@, 10)'
 ```
 
 The produced profiles can be imported into chrome://tracing (on Google Chrome)
-or https://ui.perfetto.dev/ (all browsers).
+or [https://ui.perfetto.dev/](https://ui.perfetto.dev/) (all browsers).
 
 Only functions annotated with `#[tracing::instrument]` or explicit `trace_span!`
 macros appear in traces. If you need to profile a specific area that isn't

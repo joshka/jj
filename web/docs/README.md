@@ -3,7 +3,7 @@
 [![Built with
 Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
 
-This application powers https://docs.jj-vcs.dev.
+This application powers <https://docs.jj-vcs.dev>.
 
 ## 🧞 Commands
 
