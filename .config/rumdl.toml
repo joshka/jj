@@ -83,9 +83,6 @@ disable = [
     # 63 findings. Link text should be descriptive.
     # https://github.com/rvben/rumdl/blob/main/docs/md059.md
     "descriptive-link-text",
-    # 15 findings. Multiple consecutive spaces.
-    # https://github.com/rvben/rumdl/blob/main/docs/md064.md
-    "no-multiple-consecutive-spaces",
     # 4 findings. List item spacing should be consistent.
     # https://github.com/rvben/rumdl/blob/main/docs/md076.md
     "list-item-spacing",
@@ -206,9 +203,6 @@ disable = [
 
 # [descriptive-link-text]
 # prohibited-texts = ["click here","here","link","more"]
-
-# [no-multiple-consecutive-spaces]
-# allow-sentence-double-space = false
 
 # [list-item-spacing]
 # allow-loose-continuation = false

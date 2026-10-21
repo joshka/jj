@@ -2339,7 +2339,7 @@ file manually. If this option is `"respect"`, `jj` will also attempt to
 propagate that change to the filesystem.
 
 Note that if you modify a file's executable bit before changing this setting
-from `"ignore"` or  `"auto"` to `"respect"`, `jj` may not update the stored
+from `"ignore"` or `"auto"` to `"respect"`, `jj` may not update the stored
 executable bit until you modify the file's contents or update its modification
 time, e.g. with `touch`.
 

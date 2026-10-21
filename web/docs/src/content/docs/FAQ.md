@@ -61,7 +61,7 @@ revisions)" is shown to indicate that `musnqzvt` descends from `tylynnzk`, but
 the nodes connecting them are not in the revset.
 
 To view the elided revisions, change the [revset expression](revsets.md) so it
-includes the connecting revisions.  The `connected()` revset function does
+includes the connecting revisions. The `connected()` revset function does
 exactly this:
 
 ```sh
@@ -546,7 +546,7 @@ A
 To revert the merge in `C`, create a new commit with `jj new C`,
 then `jj restore --from B`, and then describe the message
 with something like `jj desc -m "Revert the merge of D into B`. Now, commit `@`
-undoes the merge of `D` into  `B`. If necessary, you can now rebase it
+undoes the merge of `D` into `B`. If necessary, you can now rebase it
 elsewhere, e.g. `jj rebase -r @ -o main`.
 
 ### How do I deal with divergent changes ('??' after the [change ID])?

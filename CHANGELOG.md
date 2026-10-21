@@ -1386,7 +1386,7 @@ Thanks to the people who made this release happen!
 * `CommitEvolutionEntry` type now has a `predecessors()` method which
   returns the predecessor commits (previous versions) of the entry's commit.
 
-* `CommitEvolutionEntry` type now has a  `inter_diff()` method  which
+* `CommitEvolutionEntry` type now has a `inter_diff()` method which
   returns a `TreeDiff` between the entry's commit and its predecessor version.
   Optionally accepts a fileset literal to limit the diff.
 
@@ -1836,7 +1836,7 @@ Thanks to the people who made this release happen!
 * Various flags on `jj describe` and `jj commit` have been deprecated in favor
   of `jj metaedit`. They are:
   * `describe`: `--author`, `--reset-author`, `--no-edit`
-  * `commit`:   `--author`, `--reset-author`
+  * `commit`: `--author`, `--reset-author`
 
 * The storage format of remote bookmarks and tags has changed. Remote bookmarks
   will be written in both old and new formats to retain forward compatibility.
@@ -2803,7 +2803,7 @@ Thanks to the people who made this release happen!
 
 * This release takes the first steps to make target revision required in
   `bookmark create`, `bookmark move` and `bookmark set`. Those commands will display
-  a warning if the user does not specify target revision  explicitly. In the near
+  a warning if the user does not specify target revision explicitly. In the near
   future those commands will fail if target revision is not specified.
 
 * The `signing.sign-all` config option has been deprecated in favor of
