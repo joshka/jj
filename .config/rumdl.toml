@@ -50,9 +50,6 @@ disable = [
     # 4 findings. Link fragments should reference valid headings.
     # https://github.com/rvben/rumdl/blob/main/docs/md051.md
     "link-fragments",
-    # 11 findings. Link and image reference definitions should be needed.
-    # https://github.com/rvben/rumdl/blob/main/docs/md053.md
-    "link-image-reference-definitions",
     # 3 findings. Relative links should point to existing files.
     # https://github.com/rvben/rumdl/blob/main/docs/md057.md
     "existing-relative-links",
@@ -135,9 +132,6 @@ disable = [
 # check-frontmatter = false
 # ignore-case = true
 # ignore-frontmatter-fields = []
-
-# [link-image-reference-definitions]
-# ignored-definitions = []
 
 # [existing-relative-links]
 # absolute-links = "ignore"
