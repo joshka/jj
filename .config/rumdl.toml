@@ -29,9 +29,6 @@ disable = [
     # 4 findings. Blank line inside blockquote.
     # https://github.com/rvben/rumdl/blob/main/docs/md028.md
     "no-blanks-blockquote",
-    # 144 findings. Spaces after list markers should be consistent.
-    # https://github.com/rvben/rumdl/blob/main/docs/md030.md
-    "list-marker-space",
     # 37 findings. Inline HTML is not allowed.
     # https://github.com/rvben/rumdl/blob/main/docs/md033.md
     "no-inline-html",
@@ -88,13 +85,6 @@ disable = [
 
 # [no-blanks-blockquote]
 # fix = false
-
-# [list-marker-space]
-# ol-align-column = 0
-# ol-multi = 1
-# ol-single = 1
-# ul-multi = 1
-# ul-single = 1
 
 # [no-inline-html]
 # allowed-elements = []

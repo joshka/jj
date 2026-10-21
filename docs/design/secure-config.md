@@ -34,65 +34,65 @@ vectors and what it would take to defend against them.
 
 #### Attack vector 1: No-knowledge attacker
 
-1.  The attacker creates a repo
-2.  The attacker runs
-    `jj config set --repo fix.tools.foo ‘[“malicious”, “command”]’`
-3.  The attacker zips up their repo and sends it to the victim
-4.  The victim unzips the repo, make some changes, then run `jj fix`
-5.  They have now executed an arbitrary command on the victim’s system
+1. The attacker creates a repo
+2. The attacker runs
+   `jj config set --repo fix.tools.foo ‘[“malicious”, “command”]’`
+3. The attacker zips up their repo and sends it to the victim
+4. The victim unzips the repo, make some changes, then run `jj fix`
+5. They have now executed an arbitrary command on the victim’s system
 
 This attack vector can be solved by ensuring that we can determine the user who
 created the repo.
 
 #### Attack vector 2: Basic replay attack
 
-1.  The victim uploads a zip file of a repository they have locally on their
-    system
-2.  The attacker can now see any configs / config references stored in the
-    repository
-3.  The attacker runs
-    `jj config set --repo fix.tools.foo ‘[“malicious”, “command”]’`
-4.  The attacker copies the victim’s cryptographic signature and puts it in
-    their malicious repository.
-5.  The attacker zips up their repo and sends it to the victim
-6.  The victim unzips the repo at an arbitrary location, make some changes, then
-    run `jj fix`
-7.  They have now executed an arbitrary command on the victim’s system
+1. The victim uploads a zip file of a repository they have locally on their
+   system
+2. The attacker can now see any configs / config references stored in the
+   repository
+3. The attacker runs
+   `jj config set --repo fix.tools.foo ‘[“malicious”, “command”]’`
+4. The attacker copies the victim’s cryptographic signature and puts it in
+   their malicious repository.
+5. The attacker zips up their repo and sends it to the victim
+6. The victim unzips the repo at an arbitrary location, make some changes, then
+   run `jj fix`
+7. They have now executed an arbitrary command on the victim’s system
 
 This attack vector can be solved by ensuring that we can determine the path that
 the repo was stored at.
 
 #### Attack vector 3: Replay attack with social engineering to preserve paths
 
-1.  The victim uploads a zip file of a repository they have locally on their
-    system at `/path/to/repo`
-2.  The attacker can now see any configs / config references stored in the
-    repository
-3.  The attacker runs
-    `jj config set --repo fix.tools.foo ‘[“malicious”, “command”]’`
-4.  The attacker copies the victim’s cryptographic signature and puts it in
-    their malicious repository.
-5.  The attacker zips up their repo, sends it to the victim, and instructs them
-    to install it at `/path/to/repo`
-6.  The victim unzips the repo at `/path/to/repo`, make some changes, then run
-    `jj fix`
-7.  They have now executed an arbitrary command on the victim’s system
+1. The victim uploads a zip file of a repository they have locally on their
+   system at `/path/to/repo`
+2. The attacker can now see any configs / config references stored in the
+   repository
+3. The attacker runs
+   `jj config set --repo fix.tools.foo ‘[“malicious”, “command”]’`
+4. The attacker copies the victim’s cryptographic signature and puts it in
+   their malicious repository.
+5. The attacker zips up their repo, sends it to the victim, and instructs them
+   to install it at `/path/to/repo`
+6. The victim unzips the repo at `/path/to/repo`, make some changes, then run
+   `jj fix`
+7. They have now executed an arbitrary command on the victim’s system
 
 This attack vector can be solved by making repository configuration
 untamperable.
 
 #### Attack vector 4: Extremely advanced replay attack with insecure code
 
-1.  The victim creates a repo
-2.  The victim runs `jj config set --repo fix.tools.foo = [“$repo/format.py”]`
-3.  The victim uploads a zip file of a repository they have locally on their
-    system at `/path/to/repo`
-4.  The attacker can now see any configs / config references stored in the
-    repository
-5.  The attacker modifies `format.py` to be malicious
-6.  The attacker zips up their repo and sends it to the victim
-7.  The victim runs `jj fix`
-8.  They have now executed an arbitrary command on the victim’s system
+1. The victim creates a repo
+2. The victim runs `jj config set --repo fix.tools.foo = [“$repo/format.py”]`
+3. The victim uploads a zip file of a repository they have locally on their
+   system at `/path/to/repo`
+4. The attacker can now see any configs / config references stored in the
+   repository
+5. The attacker modifies `format.py` to be malicious
+6. The attacker zips up their repo and sends it to the victim
+7. The victim runs `jj fix`
+8. They have now executed an arbitrary command on the victim’s system
 
 This attack vector cannot feasibly be dealt with. It would require a signature
 of the transitive closure of files that can be accessed via jj configs to solve.
@@ -211,12 +211,12 @@ current plan is 12 jj versions (approximately 1 year). During this period, if a
 config ID has not yet been generated, we will silently perform the following
 (order matters, to ensure failure halfway through doesn’t affect things):
 
-1.  Generate a config ID `abc123`
-2.  Create `$HOME/.config/jj/repo/abc123/metadata.binpb`
-3.  Create `$HOME/.config/jj/repo/abc123/config.toml` as a copy of the original
-    config file
-4.  Atomically generate a `config-id` file containing `abc123`
-5.  Remove the original config file
+1. Generate a config ID `abc123`
+2. Create `$HOME/.config/jj/repo/abc123/metadata.binpb`
+3. Create `$HOME/.config/jj/repo/abc123/config.toml` as a copy of the original
+   config file
+4. Atomically generate a `config-id` file containing `abc123`
+5. Remove the original config file
 6. For the user's convenience, and for older version of jj, we:
    * Try to symlink the old config to the new config
    * If this fails (symlinks don't play nice on windows), we replace it with
