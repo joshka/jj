@@ -157,18 +157,22 @@ recommended steps.
 
 One-time setup:
 
-    rustup toolchain add nightly # wanted for 'rustfmt'
-    rustup toolchain add 1.97.1 # also specified in Cargo.toml
-    cargo install --locked bacon
-    cargo install --locked cargo-insta
-    cargo install --locked cargo-nextest
+```shell
+rustup toolchain add nightly # wanted for 'rustfmt'
+rustup toolchain add 1.97.1 # also specified in Cargo.toml
+cargo install --locked bacon
+cargo install --locked cargo-insta
+cargo install --locked cargo-nextest
+```
 
 During development (adapt according to your preference):
 
-    bacon clippy-all
-    cargo +nightly fmt # Occasionally
-    cargo nextest run --workspace # Occasionally
-    cargo insta test --workspace --test-runner nextest # Occasionally
+```shell
+bacon clippy-all
+cargo +nightly fmt # Occasionally
+cargo nextest run --workspace # Occasionally
+cargo insta test --workspace --test-runner nextest # Occasionally
+```
 
 :::caution
 Build artifacts from debug builds and especially from repeated
@@ -375,23 +379,24 @@ Other tools like `uv`, `cargo-insta`, `cargo-nextest` and more are installed,
 and so you should be able to follow any other recommendations in this guide as
 needed.
 
-!!! tip "Editor integration"
+:::tip[Editor integration]
+Launch your editor from within the `nix develop` shell so that
+rust-analyzer and other LSP tools can find the correct toolchain. For
+example:
 
-    Launch your editor from within the `nix develop` shell so that
-    rust-analyzer and other LSP tools can find the correct toolchain. For
-    example:
+```shell
+nix develop
+code .  # or your editor of choice
+```
 
-    ```shell
-    nix develop
-    code .  # or your editor of choice
-    ```
+:::
 
-!!! note "direnv users"
-
-    If you use [direnv](https://direnv.net/) with
-    [nix-direnv](https://github.com/nix-community/nix-direnv), you can `echo
-    "source_env .envrc.recommended" >> .envrc` to automatically activate the
-    development environment when entering the directory.
+:::note[direnv users]
+If you use [direnv](https://direnv.net/) with
+[nix-direnv](https://github.com/nix-community/nix-direnv), you can `echo
+"source_env .envrc.recommended" >> .envrc` to automatically activate the
+development environment when entering the directory.
+:::
 
 ### Alternative development setup with `mise`
 

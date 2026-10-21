@@ -525,6 +525,7 @@ version and the dependencies needed to build the docs. Install it like so:
     ```
 
     !!! note
+
         If you don't have `~/.local/bin` in your `PATH`, the installer will
         modify your shell profile. To avoid it:
 
@@ -570,6 +571,7 @@ As you edit the `.md` files in `docs/`, the website should be rebuilt and
 reloaded in your browser automatically.
 
 !!! note "If the docs are not updating"
+
     Check the terminal from which you ran `uv run mkdocs serve` for any build
     errors or warnings. Warnings about `"GET /versions.json HTTP/1.1" code 404`
     are expected and harmless.
@@ -586,6 +588,7 @@ MKDOCS_OFFLINE=true uv run mkdocs build
 ## Building the entire website
 
 !!! tip
+
     Building the entire website is not usually necessary. If you are editing
     documentation, the previous section is enough.
 
