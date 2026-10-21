@@ -9,8 +9,8 @@ non-empty slice as input, it's fine to call `slice[0]` and panic.
 
 ## Markdown
 
-Try to wrap at 80 columns. Rumdl checks Markdown in CI;
-line-length checks are not enabled yet.
+Wrap prose at 80 columns. Rumdl checks Markdown in CI, including line length
+outside code blocks and headings.
 
 Local installation is optional. To check or fix Markdown with the repository's
 configuration, run `mise check:markdown` or `mise fix:markdown`. Mise installs
@@ -24,8 +24,7 @@ The Nix development shell also includes rumdl. Run
 or add `--fix` to apply fixes.
 
 Editors should use `.config/rumdl.toml` rather than a separate rule
-set. The configuration records counts and default settings for disabled rules.
-Enable further rules and their cleanup in separate changes.
+set.
 
 ## Prefer lower-level tests to end-to-end tests
 

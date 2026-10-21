@@ -1,14 +1,6 @@
-# Rumdl enables these rules by default. We disable the ones that report findings
-# in jj's existing Markdown so adding the tool requires no formatting changes.
-# The list is long because it records each difference from rumdl's defaults, not
-# because it defines a new style. Remove exceptions as we discuss and address them;
-# rules that do not suit jj can stay disabled or use different settings.
+# Rumdl's default rules, with the exceptions below. The merge-conflict rule is
+# suppressed inline around the examples of conflict markers in the docs.
 # See https://github.com/jj-vcs/jj/issues/10210.
-#
-# Baseline: 7f96d3eb, counted with rumdl 0.2.78 on 2026-10-21, 113 files.
-# 1,276 findings across 30 default rules. Counts are diagnostics, not lines
-# changed, and are a snapshot to recount when enabling a rule. The merge-conflict
-# rule is suppressed inline around the examples of conflict markers in the docs.
 
 [global]
 # Include both documentation sites. The generated CLI reference is not checked;
@@ -17,16 +9,13 @@ include = ["**/*.md", "**/*.mdx"]
 # Symlinks duplicate files already covered by the scan.
 exclude = ["**/node_modules/**", "**/cli/docs/**", "**/docs/governance/GOVERNANCE.md"]
 disable = [
-    # 44 findings. Code blocks should use a consistent style.
+    # MkDocs admonition and tab bodies are indented, which this rule reads as
+    # indented code blocks; fencing them would break the admonitions. The
+    # mkdocs flavor understands admonitions but requires 4-space list nesting,
+    # which doesn't render correctly with mdx_truly_sane_lists.
     # https://github.com/rvben/rumdl/blob/main/docs/md046.md
     "code-block-style",
 ]
-
-# Commented settings below show the disabled rules' default options, as reported
-# by rumdl config --defaults. Rules without options need only removal from disable.
-
-# [code-block-style]
-# style = "consistent"
 
 [no-inline-html]
 # HTML the docs use on purpose: heading anchors, collapsible sections, images
