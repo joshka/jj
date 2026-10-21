@@ -35,9 +35,6 @@ disable = [
     # 203 findings. Commands in code blocks should show output.
     # https://github.com/rvben/rumdl/blob/main/docs/md014.md
     "commands-show-output",
-    # 3 findings. Headings should be surrounded by blank lines.
-    # https://github.com/rvben/rumdl/blob/main/docs/md022.md
-    "blanks-around-headings",
     # 7 findings. Trailing punctuation in heading.
     # https://github.com/rvben/rumdl/blob/main/docs/md026.md
     "no-trailing-punctuation",
@@ -142,11 +139,6 @@ disable = [
 
 # [commands-show-output]
 # show-output = true
-
-# [blanks-around-headings]
-# allowed-at-start = true
-# lines-above = 1
-# lines-below = 1
 
 # [no-trailing-punctuation]
 # punctuation = ".,;:!"
