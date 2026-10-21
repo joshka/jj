@@ -217,8 +217,6 @@ Jujutsu is designed so that the underlying data and storage model is abstract.
 Today, only the Git backend is production-ready. The Git backend uses the
 [gitoxide](https://github.com/Byron/gitoxide) Rust library.
 
-[backends]: https://docs.jj-vcs.dev/latest/glossary#backend
-
 The Git backend is fully featured and maintained, and allows you to use Jujutsu
 with any Git remote. The commits you create will look like regular Git commits.
 You can fetch branches from a regular Git remote and push branches to the

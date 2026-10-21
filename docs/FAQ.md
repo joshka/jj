@@ -656,12 +656,9 @@ revsets. This seemed unlikely to be accepted by the Git project.
 
 [change]: glossary.md#change
 [change ID]: glossary.md#change-id
-[colocated]: glossary.md#colocated-workspaces
 [commit ID]: glossary.md#commit-id
-[commits]: glossary.md#commit
 [config]: config.md
 
-[gerrit-integration]: https://gist.github.com/thoughtpolice/8f2fd36ae17cd11b8e7bd93a70e31ad6
 [gitignore]: https://git-scm.com/docs/gitignore
 
 [operator]: revsets.md#operators
