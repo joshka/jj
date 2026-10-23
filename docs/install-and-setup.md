@@ -63,6 +63,18 @@ Or install from the [AUR repository](https://aur.archlinux.org/packages/jujutsu-
 yay -S jujutsu-git
 ```
 
+#### Debian and Ubuntu
+
+The `jujutsu` package is available in [Debian testing and
+unstable](https://packages.debian.org/source/sid/jujutsu) and in Ubuntu 26.10
+and newer:
+
+```shell
+sudo apt install jujutsu
+```
+
+These packages may lag behind the latest jj release.
+
 #### NixOS
 
 If you're on NixOS you can install a **released** version of `jj` using the
